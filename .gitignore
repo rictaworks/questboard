@@ -1,0 +1,13 @@
+# 除外対象（CLAUDE.md, README.md, SPEC/ 以外）
+/.claude/
+/.env
+/CLIENT/
+/DEBUG/
+/DELETE/
+/ENV/
+/TASKS/
+/WORK/
+/app-ui/
+/questboard_design_document.md
+/.agents/
+/AGENTS.md
