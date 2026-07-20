@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -11,9 +12,21 @@ import (
 	"github.com/rictaworks/questboard/src/sync-server/internal/sharding"
 )
 
+const (
+	// MaxMessageSize defines the maximum size limit for incoming WebSocket messages (512 KB).
+	MaxMessageSize = 512 * 1024
+	// PongWait is the maximum time allowed to read the next pong message from the peer.
+	PongWait = 60 * time.Second
+	// PingPeriod is the period for sending pings to peer. Must be less than PongWait.
+	PingPeriod = (PongWait * 9) / 10
+	// WriteWait is the maximum time allowed to write a message to the peer.
+	WriteWait = 10 * time.Second
+)
+
 type Handler struct {
-	router   *sharding.Router
-	upgrader websocket.Upgrader
+	router    *sharding.Router
+	upgrader  websocket.Upgrader
+	readLimit int64
 }
 
 func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
@@ -22,6 +35,7 @@ func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: newOriginChecker(allowedOrigins),
 		},
+		readLimit: MaxMessageSize,
 	}
 }
 
@@ -44,9 +58,36 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 	}
 	defer conn.Close()
 
+	conn.SetReadLimit(h.readLimit)
+	_ = conn.SetReadDeadline(time.Now().Add(PongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(PongWait))
+		return nil
+	})
+
+	ticker := time.NewTicker(PingPeriod)
+	defer ticker.Stop()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+			_ = conn.SetReadDeadline(time.Now().Add(PongWait))
+		}
+	}()
+
 	for {
-		if _, _, err := conn.ReadMessage(); err != nil {
+		select {
+		case <-done:
 			return
+		case <-ticker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }

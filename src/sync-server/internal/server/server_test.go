@@ -15,6 +15,7 @@ import (
 
 	"github.com/rictaworks/questboard/src/sync-server/internal/config"
 	"github.com/rictaworks/questboard/src/sync-server/internal/server"
+	"github.com/rictaworks/questboard/src/sync-server/internal/ws"
 )
 
 func TestHealthAndWebSocketConnection(t *testing.T) {
@@ -80,5 +81,49 @@ func TestHealthAndWebSocketConnection(t *testing.T) {
 		if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 			t.Fatalf("websocket read error = %v, want timeout or clean close", err)
 		}
+	}
+}
+
+func TestWebSocketMessageSizeLimit(t *testing.T) {
+	t.Parallel()
+
+	app, err := server.New(config.Config{
+		Address:    ":0",
+		ShardCount: 2,
+	})
+	if err != nil {
+		t.Fatalf("server.New() error = %v", err)
+	}
+
+	httpServer := httptest.NewServer(app.Engine())
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	// MaxMessageSize is 512KB. Send a message slightly larger (513KB)
+	largeMessage := make([]byte, ws.MaxMessageSize+1024)
+	if err := conn.WriteMessage(websocket.BinaryMessage, largeMessage); err != nil {
+		t.Fatalf("websocket write large message failed: %v", err)
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatal("expected error when reading oversized message, got nil")
+	}
+
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) || closeErr.Code != websocket.CloseMessageTooBig {
+		t.Fatalf("websocket read error = %v, want CloseError code %d (CloseMessageTooBig)", err, websocket.CloseMessageTooBig)
 	}
 }

@@ -9,7 +9,8 @@
     "build": "NEXT_PUBLIC_ENV=production next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "npm run build && node --test test/*.test.mjs"
+    "test": "npm run test:go && npm run build && node --test test/*.test.mjs",
+    "test:go": "go test ./... ./src/sync-server/..."
   },
   "repository": {
     "type": "git",
