@@ -110,7 +110,7 @@ test('middleware matcher stays in sync with routing locales', async () => {
 });
 
 test('forbidden browser dialogs are not used', async () => {
-  const files = await walk('src');
+  const files = (await walk('src')).filter((file) => !file.startsWith('src/backend/vendor/'));
   const contents = await Promise.all(files.map((file) => read(file)));
   const joined = contents.join('\n');
 
@@ -139,4 +139,38 @@ test('production build omits development auth banner', async () => {
       assert.fail(`development-only auth banner leaked into the production build artifact: ${file}`);
     }
   }
+});
+
+test('backend scaffold uses env vars for config and secrets', async () => {
+  const database = await read('src/backend/config/database.yml');
+  const routes = await read('src/backend/config/routes.rb');
+  const envExample = await read('src/backend/.env.example');
+  const backendFiles = (await walk('src/backend')).filter((file) => (
+    /\.(rb|yml)$/.test(file)
+    && (file.startsWith('src/backend/app/')
+      || file.startsWith('src/backend/config/')
+      || file.startsWith('src/backend/spec/'))
+  ));
+  const backendSource = (await Promise.all(backendFiles.map((file) => read(file)))).join('\n');
+
+  assert.match(database, /default:[\s\S]*adapter: sqlite3/);
+  assert.match(database, /development:[\s\S]*database: storage\/development\.sqlite3/);
+  assert.match(database, /test:[\s\S]*database: storage\/test\.sqlite3/);
+  assert.match(database, /production:[\s\S]*url: <%= ENV\.fetch\("DATABASE_URL"\) %>/);
+  assert.match(routes, /get "\/healthz", to: "health#show"/);
+  assert.match(routes, /namespace :admin do[\s\S]*root to: "dashboard#show"/);
+
+  for (const variable of [
+    'RAILS_MASTER_KEY',
+    'DATABASE_URL',
+    'CORS_ALLOWED_ORIGINS',
+    'ADMIN_BASIC_AUTH_USERNAME',
+    'ADMIN_BASIC_AUTH_PASSWORD',
+    'SECRET_KEY_BASE',
+  ]) {
+    assert.match(envExample, new RegExp(`^${variable}=`, 'm'));
+  }
+
+  assert.equal(/ADMIN_BASIC_AUTH_(USERNAME|PASSWORD)\s*=\s*["'][^"']+["']/.test(backendSource), false);
+  assert.equal(/http_basic_authenticate_with\s+name:\s*["'][^"']+["']/.test(backendSource), false);
 });

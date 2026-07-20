@@ -1,0 +1,8 @@
+/.env
+/.env.local
+/.env.*.local
+/.github/
+/config/master.key
+/config/credentials.yml.enc
+/vendor/bundle/
+/.bundle/
