@@ -1,0 +1,46 @@
+/* Veliora Vision — Spacing, Radius, Border Tokens */
+
+:root {
+  /* ── Spacing Scale ── */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+
+  /* ── Fluid Section Padding ── */
+  --section-pad-y:    clamp(2.5rem, 5vw, 4rem);
+  --section-pad-x:    clamp(1rem, 3vw, 2.5rem);
+  --section-pad-hero: clamp(4rem, 8vw, 7rem);
+
+  /* ── Component Spacing ── */
+  --card-pad:     clamp(1.8rem, 4vw, 3rem) 1.5rem;
+  --nav-height:   64px;
+  --btn-pad:      0.85rem 2.4rem;
+
+  /* ── Grid Gaps ── */
+  --gap-card:     1.2rem;
+  --gap-gallery:  6px;
+  --gap-social:   1rem;
+
+  /* ── Border Radius ── */
+  --radius-sm:    2px;    /* buttons */
+  --radius-md:    4px;    /* cards, gallery */
+  --radius-lg:    6px;    /* service cards */
+  --radius-full:  50%;    /* social icon circles */
+
+  /* ── Border Width ── */
+  --border-width:       1px;
+  --border-width-btn:   1.5px;
+
+  /* ── Max Widths ── */
+  --max-text:     780px;  /* hero/cta content */
+  --max-body:     340px;  /* vision body copy */
+}

@@ -1,0 +1,14 @@
+{
+  "Home": {
+    "eyebrow": "Strategy board",
+    "headline": "Bring team decisions together in one place",
+    "description": "This is the Questboard Next.js frontend scaffold. It ships with design tokens, FontAwesome, and i18n from the start.",
+    "primaryAction": "View design tokens",
+    "secondaryAction": "View locale setup",
+    "developmentAuthBadge": "Development mode is treated as already authenticated",
+    "designTokensTitle": "Design tokens",
+    "designTokensDescription": "CSS variables are imported directly from token files.",
+    "localesTitle": "Locales",
+    "localesDescription": "ja, en, fr, zh, ru, es, ar"
+  }
+}

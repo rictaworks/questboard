@@ -1,0 +1,14 @@
+{
+  "Home": {
+    "eyebrow": "戦略ボード",
+    "headline": "チームの意思決定をひとつの場所に集約する",
+    "description": "Questboard の Next.js フロントエンド雛形です。デザイントークン、FontAwesome、i18n 基盤を最初から備えています。",
+    "primaryAction": "デザイントークンを見る",
+    "secondaryAction": "ロケール構成を見る",
+    "developmentAuthBadge": "開発環境では認証済みとして扱われます",
+    "designTokensTitle": "デザイントークン",
+    "designTokensDescription": "CSS 変数をそのまま取り込んでいます。",
+    "localesTitle": "ロケール",
+    "localesDescription": "ja, en, fr, zh, ru, es, ar"
+  }
+}

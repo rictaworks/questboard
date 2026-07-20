@@ -1,0 +1,127 @@
+@import '../styles/tokens/colors.css';
+@import '../styles/tokens/typography.css';
+@import '../styles/tokens/spacing.css';
+@import '../styles/tokens/effects.css';
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(123, 47, 255, 0.28), transparent 34%),
+    linear-gradient(180deg, var(--color-deep), var(--color-navy));
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.home-shell {
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-8);
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.hero-card,
+.panel,
+.dev-auth-banner {
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: rgba(18, 19, 45, 0.72);
+  backdrop-filter: var(--blur-overlay);
+  box-shadow: var(--shadow-glow-md);
+}
+
+.hero-card {
+  padding: var(--space-8);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  color: var(--color-purple-light);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+}
+
+.hero-card h1,
+.panel h2 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.hero-card h1 {
+  font-size: clamp(2.5rem, 5vw, 4.75rem);
+  line-height: var(--lh-tight);
+}
+
+.hero-copy {
+  max-width: 40rem;
+  margin: var(--space-4) 0 0;
+  color: rgba(247, 244, 255, 0.88);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0 var(--space-4);
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.button-primary {
+  background: var(--color-purple);
+  color: white;
+}
+
+.button-secondary {
+  border: var(--border-width) solid var(--border-default);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--space-4);
+}
+
+.panel,
+.dev-auth-banner {
+  padding: var(--space-5);
+}
+
+.dev-auth-banner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-purple-light);
+}

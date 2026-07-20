@@ -1,0 +1,64 @@
+/* Veliora Vision — Effects, Shadows, Animation Tokens */
+
+:root {
+  /* ── Glow Shadows (box-shadow) ── */
+  --shadow-glow-sm:   0 0 12px var(--color-glow-mid);
+  --shadow-glow-md:   0 0 30px var(--color-glow), 0 0 60px var(--color-glow-wide);
+  --shadow-glow-lg:   0 0 50px var(--color-glow), 0 0 100px var(--color-glow-wide);
+
+  /* ── Text Glow ── */
+  --text-glow-hero:   0 0 60px rgba(168, 85, 247, 0.5);
+  --text-glow-cta:    0 0 50px rgba(168, 85, 247, 0.4);
+  --text-glow-stat:   0 0 30px rgba(168, 85, 247, 0.8);
+
+  /* ── Icon Glow ── */
+  --icon-glow:        0 0 20px var(--color-glow);
+
+  /* ── Backdrop Blur ── */
+  --blur-nav:         blur(14px);
+  --blur-overlay:     blur(8px);
+  --blur-light:       blur(1px);
+
+  /* ── Gradient Overlays ── */
+  --gradient-hero-radial: radial-gradient(ellipse 70% 60% at 50% 40%, rgba(123,47,255,0.25) 0%, transparent 70%);
+  --gradient-card-inner: radial-gradient(ellipse at 50% 0%, rgba(123,47,255,0.18), transparent 65%);
+  --gradient-divider: linear-gradient(to right, transparent, rgba(123,47,255,0.35), transparent);
+  --gradient-hero-bottom: linear-gradient(to bottom, rgba(6,7,26,0.1) 0%, rgba(6,7,26,0.55) 100%);
+  --gradient-accent-line: linear-gradient(to right, #7b2fff, transparent);
+
+  /* ── Image Filter (standard brand treatment) ── */
+  --img-filter-default: brightness(0.75) saturate(1.3) hue-rotate(200deg);
+  --img-filter-hero: brightness(0.45) saturate(1.6) hue-rotate(220deg);
+  --img-filter-hover: brightness(0.9) saturate(1.6) hue-rotate(200deg);
+
+  /* ── Transitions ── */
+  --transition-fast:   0.2s ease;
+  --transition-base:   0.3s ease;
+  --transition-slow:   0.5s ease;
+
+  /* ── Animations ── */
+  /* glowPulse: icon opacity pulse */
+  /* bounce: scroll chevron */
+  /* streak: stats light line */
+}
+
+/* ── Keyframes ── */
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1; }
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(8px); }
+}
+
+@keyframes streak {
+  0%   { transform: translateX(-30%); }
+  100% { transform: translateX(30%); }
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

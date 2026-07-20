@@ -1,0 +1,48 @@
+/* Veliora Vision — Color Tokens */
+
+:root {
+  /* ── Base Palette ── */
+  --color-navy:          #06071a;   /* primary background — deep space black-navy */
+  --color-deep:          #080b2a;   /* slightly lighter deep bg */
+  --color-card:          rgba(30, 20, 70, 0.7);  /* card/surface — dark violet glass */
+
+  /* ── Purple Spectrum ── */
+  --color-purple:        #7b2fff;   /* primary accent — electric violet */
+  --color-purple-mid:    #9b59f5;   /* mid purple — gradients */
+  --color-purple-light:  #c084fc;   /* light violet — highlights, icon color */
+  --color-violet:        #4c1d95;   /* dark violet — background overlays */
+  --color-accent:        #a855f7;   /* semantic accent — interactive text */
+
+  /* ── Glow ── */
+  --color-glow:          rgba(123, 47, 255, 0.55);
+  --color-glow-mid:      rgba(123, 47, 255, 0.35);
+  --color-glow-wide:     rgba(123, 47, 255, 0.15);
+  --color-glow-text:     rgba(168, 85, 247, 0.5);
+
+  /* ── Text ── */
+  --color-text:          #e2e8f0;   /* primary text — cool off-white */
+  --color-muted:         #94a3b8;   /* secondary text — slate-400 */
+  --color-white:         #ffffff;
+
+  /* ── Border ── */
+  --color-border:        rgba(123, 47, 255, 0.35);
+  --color-border-active: #7b2fff;
+  --color-border-subtle: rgba(255, 255, 255, 0.15);
+
+  /* ── Semantic Aliases ── */
+  --bg-page:             var(--color-navy);
+  --bg-card:             var(--color-card);
+  --bg-nav:              rgba(6, 7, 26, 0.85);
+  --bg-overlay:          rgba(6, 7, 26, 0.35);
+
+  --text-primary:        var(--color-text);
+  --text-secondary:      var(--color-muted);
+  --text-accent:         var(--color-purple-light);
+  --text-heading:        var(--color-white);
+
+  --border-default:      var(--color-border);
+  --border-active:       var(--color-border-active);
+
+  --interactive-accent:  var(--color-purple);
+  --interactive-hover-bg: rgba(123, 47, 255, 0.3);
+}
