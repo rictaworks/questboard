@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "http://localhost:26831/rictaworks/questboard.git"
+    "url": "https://github.com/rictaworks/questboard.git"
   },
   "license": "ISC",
   "dependencies": {

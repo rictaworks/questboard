@@ -30,6 +30,20 @@ async function read(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8');
 }
 
+async function loadRouting() {
+  const source = await read('src/i18n/routing.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
+  return moduleShim.exports;
+}
+
+const {defaultLocale, locales} = await loadRouting();
+const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
+
 test('design tokens keep expected values', async () => {
   const colors = await read('src/styles/tokens/colors.css');
   const typography = await read('src/styles/tokens/typography.css');
@@ -38,12 +52,14 @@ test('design tokens keep expected values', async () => {
 
   assert.match(colors, /--color-purple:\s*#7b2fff;/);
   assert.match(typography, /--font-display:\s*'Cinzel',\s*'Georgia',\s*serif;/);
-  assert.match(spacing, /--space-6:\s*1\.5rem;/);
-  assert.match(effects, /--shadow-elevated:\s*0 24px 60px rgba\(12, 10, 28, 0\.45\);/);
+  assert.match(typography, /--font-body:\s*'Raleway',\s*'Helvetica Neue',\s*sans-serif;/);
+  assert.match(spacing, /--space-6:\s*24px;/);
+  assert.match(spacing, /--radius-lg:\s*6px;/);
+  assert.match(effects, /--shadow-glow-md:\s*0 0 30px var\(--color-glow\), 0 0 60px var\(--color-glow-wide\);/);
 });
 
 test('all locale files exist and placeholder locales stay scaffolded', async () => {
-  for (const locale of ['ja', 'en', 'fr', 'zh', 'ru', 'es', 'ar']) {
+  for (const locale of locales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
     assert.ok(json.Home, `${locale} message namespace missing`);
     assert.ok(json.Home.headline, `${locale} headline missing`);
@@ -54,7 +70,7 @@ test('all locale files exist and placeholder locales stay scaffolded', async () 
   assert.doesNotMatch(ja.Home.headline, /^\[TODO]/);
   assert.doesNotMatch(en.Home.headline, /^\[TODO]/);
 
-  for (const locale of ['fr', 'zh', 'ru', 'es', 'ar']) {
+  for (const locale of pendingLocales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
     assert.match(json.Home.headline, /^\[TODO] translate$/);
   }
@@ -83,6 +99,14 @@ test('UI source does not contain hardcoded JSX text', async () => {
   }
 
   assert.deepEqual(violations, []);
+});
+
+test('middleware matcher stays in sync with routing locales', async () => {
+  const middleware = await read('src/middleware.ts');
+  const matcherMatch = middleware.match(/matcher: \['\/', '\/\(([^)]+)\)\/:path\*'\]/);
+
+  assert.ok(matcherMatch, 'middleware matcher pattern not found');
+  assert.deepEqual(matcherMatch[1].split('|'), [...locales]);
 });
 
 test('forbidden browser dialogs are not used', async () => {

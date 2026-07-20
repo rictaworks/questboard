@@ -21,7 +21,7 @@ body {
   min-height: 100vh;
   background:
     radial-gradient(circle at top, rgba(123, 47, 255, 0.28), transparent 34%),
-    linear-gradient(180deg, var(--color-ink-900), var(--color-ink-950));
+    linear-gradient(180deg, var(--color-deep), var(--color-navy));
   color: var(--color-text);
   font-family: var(--font-body);
 }
@@ -42,11 +42,11 @@ a {
 .hero-card,
 .panel,
 .dev-auth-banner {
-  border: var(--border-soft);
+  border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-lg);
   background: rgba(18, 19, 45, 0.72);
-  backdrop-filter: var(--backdrop-blur);
-  box-shadow: var(--shadow-elevated);
+  backdrop-filter: var(--blur-overlay);
+  box-shadow: var(--shadow-glow-md);
 }
 
 .hero-card {
@@ -58,7 +58,7 @@ a {
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
-  color: var(--color-purple-soft);
+  color: var(--color-purple-light);
   text-transform: uppercase;
   letter-spacing: 0.12em;
   font-size: 0.78rem;
@@ -72,7 +72,7 @@ a {
 
 .hero-card h1 {
   font-size: clamp(2.5rem, 5vw, 4.75rem);
-  line-height: var(--line-height-tight);
+  line-height: var(--lh-tight);
 }
 
 .hero-copy {
@@ -104,7 +104,7 @@ a {
 }
 
 .button-secondary {
-  border: var(--border-soft);
+  border: var(--border-width) solid var(--border-default);
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -123,5 +123,5 @@ a {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--color-purple-soft);
+  color: var(--color-purple-light);
 }

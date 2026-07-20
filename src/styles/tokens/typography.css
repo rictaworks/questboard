@@ -1,6 +1,45 @@
+/* Veliora Vision — Typography Tokens */
+/* Fonts loaded from Google Fonts CDN — no local font files available */
+/* If offline use required, provide Cinzel and Raleway TTF/OTF files */
+
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Raleway:wght@300;400;600;700&display=swap');
+
 :root {
-  --font-display: 'Cinzel', 'Georgia', serif;
-  --font-body: 'Inter', 'Segoe UI', sans-serif;
-  --font-mono: 'SFMono-Regular', 'Consolas', monospace;
-  --line-height-tight: 1.1;
+  /* ── Font Families ── */
+  --font-display:  'Cinzel', 'Georgia', serif;   /* headings, logo, stats, section titles */
+  --font-body:     'Raleway', 'Helvetica Neue', sans-serif; /* body, nav, labels, UI copy */
+
+  /* ── Font Weights ── */
+  --fw-light:      300;
+  --fw-regular:    400;
+  --fw-semibold:   600;
+  --fw-bold:       700;
+  --fw-black:      900;
+
+  /* ── Display Scale (Cinzel) ── */
+  --text-hero:     clamp(2.2rem, 6vw, 4.2rem);   /* hero h1 */
+  --text-cta:      clamp(2rem, 5.5vw, 3.8rem);   /* cta h2 */
+  --text-section:  clamp(1.4rem, 3vw, 2rem);     /* section h2 */
+  --text-title:    clamp(1rem, 2.5vw, 1.3rem);   /* section-title labels */
+  --text-stat:     clamp(3rem, 8vw, 5.5rem);     /* giant stat numbers */
+  --text-stat-suffix: clamp(1.5rem, 4vw, 2.8rem);
+
+  /* ── Body Scale (Raleway) ── */
+  --text-body:     0.9rem;   /* standard body copy */
+  --text-small:    0.82rem;  /* nav links, service names */
+  --text-xs:       0.78rem;  /* service desc, footer */
+  --text-xxs:      0.72rem;  /* eyebrow/label text */
+
+  /* ── Letter Spacing ── */
+  --ls-display:    0.15em;   /* logo text */
+  --ls-label:      0.28em;   /* section-label eyebrows */
+  --ls-nav:        0.1em;    /* nav links */
+  --ls-stat:       0.18em;   /* stat labels */
+  --ls-section:    0.2em;    /* section titles */
+  --ls-btn:        0.1em;    /* button text */
+
+  /* ── Line Heights ── */
+  --lh-heading:    1.15;
+  --lh-body:       1.7;
+  --lh-tight:      1.2;
 }
