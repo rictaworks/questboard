@@ -10,3 +10,8 @@
 /app-ui/
 /.agents/
 /AGENTS.md
+/.next/
+/node_modules/
+/coverage/
+/.env.local
+/.env.*.local

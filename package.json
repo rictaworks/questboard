@@ -1,0 +1,35 @@
+{
+  "name": "questboard",
+  "version": "1.0.0",
+  "description": "Questboard frontend scaffold",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NEXT_PUBLIC_ENV=development next dev",
+    "build": "NEXT_PUBLIC_ENV=production next build",
+    "start": "next start",
+    "test": "node --test test/*.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/rictaworks/questboard.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^7.3.1",
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
+    "@fortawesome/react-fontawesome": "^3.5.0",
+    "next": "^16.2.10",
+    "next-intl": "^4.13.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^10.7.0",
+    "eslint-config-next": "^16.2.10",
+    "typescript": "^5.9.3"
+  }
+}

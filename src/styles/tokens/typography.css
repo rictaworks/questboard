@@ -1,0 +1,6 @@
+:root {
+  --font-display: 'Cinzel', 'Georgia', serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'SFMono-Regular', 'Consolas', monospace;
+  --line-height-tight: 1.1;
+}

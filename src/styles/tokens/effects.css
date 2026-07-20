@@ -1,0 +1,5 @@
+:root {
+  --border-soft: 1px solid var(--color-border);
+  --shadow-elevated: 0 24px 60px rgba(12, 10, 28, 0.45);
+  --backdrop-blur: blur(24px);
+}

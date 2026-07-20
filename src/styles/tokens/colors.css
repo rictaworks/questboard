@@ -1,0 +1,9 @@
+:root {
+  --color-purple: #7b2fff;
+  --color-purple-soft: #c39bff;
+  --color-ink-950: #0f1020;
+  --color-ink-900: #171833;
+  --color-surface: #1f2142;
+  --color-text: #f7f4ff;
+  --color-border: rgba(255, 255, 255, 0.12);
+}
