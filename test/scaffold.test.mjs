@@ -94,12 +94,16 @@ test('forbidden browser dialogs are not used', async () => {
 });
 
 test('production build omits development auth banner', async () => {
-  const buildArtifact = path.join(root, '.next');
   const marker = 'development-auth-bypass';
-  const files = (await walk('.next')).filter((file) => !file.endsWith('/'));
+  let files;
+  try {
+    files = (await walk('.next')).filter((file) => !file.endsWith('/') && !file.endsWith('.map'));
+  } catch {
+    assert.fail('.next directory does not exist. Run "npm run build" before running tests.');
+  }
 
   for (const file of files) {
-    const fullPath = path.join(buildArtifact, file);
+    const fullPath = path.join(root, file);
     let contents;
     try {
       contents = await readFile(fullPath, 'utf8');
@@ -108,7 +112,7 @@ test('production build omits development auth banner', async () => {
     }
 
     if (contents.includes(marker)) {
-      assert.fail('development-only auth banner leaked into the production build');
+      assert.fail(`development-only auth banner leaked into the production build artifact: ${file}`);
     }
   }
 });

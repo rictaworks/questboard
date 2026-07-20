@@ -1,3 +1,10 @@
 import nextVitals from 'eslint-config-next/core-web-vitals';
 
-export default nextVitals;
+const config = [
+  {
+    ignores: ['app-ui/**', '.next/**', 'node_modules/**'],
+  },
+  ...(Array.isArray(nextVitals) ? nextVitals : [nextVitals]),
+];
+
+export default config;
