@@ -63,14 +63,13 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown sync server: %w", err)
-	}
+	httpErr := s.httpServer.Shutdown(ctx)
 
 	s.wsHandler.Shutdown()
+	waitErr := s.wsHandler.Wait(ctx)
 
-	if err := s.wsHandler.Wait(ctx); err != nil {
-		return fmt.Errorf("shutdown sync server: waiting for websocket connections: %w", err)
+	if httpErr != nil || waitErr != nil {
+		return fmt.Errorf("shutdown sync server: %w", errors.Join(httpErr, waitErr))
 	}
 
 	return nil

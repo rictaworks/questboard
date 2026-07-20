@@ -115,9 +115,14 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 
 	conn, err := h.upgrader.Upgrade(ctx.Writer, ctx.Request, nil)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{
-			"error": "websocket upgrade failed",
-		})
+		// The upgrader already wrote its own error response (e.g. a 403 for a
+		// rejected Origin) directly to ctx.Writer before returning err, so only
+		// write a fallback response if it hasn't written one.
+		if !ctx.Writer.Written() {
+			ctx.JSON(http.StatusBadRequest, gin.H{
+				"error": "websocket upgrade failed",
+			})
+		}
 		return
 	}
 	defer conn.Close()
