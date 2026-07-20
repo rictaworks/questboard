@@ -1,12 +1,4 @@
 class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
-  def json_column(table_definition, name, **options)
-    if connection.adapter_name == "PostgreSQL"
-      table_definition.jsonb name, **options
-    else
-      table_definition.json name, **options
-    end
-  end
-
   def change
     create_table :users, id: :bigint do |t|
       t.string :google_sub, null: false
@@ -66,8 +58,8 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.bigint :board_id, null: false
       t.integer :object_type_id, null: false
       t.integer :color_id, null: false
-      json_column(t, :geometry, null: false, default: {})
-      json_column(t, :text_crdt, null: false, default: {})
+      t.jsonb :geometry, null: false, default: {}
+      t.jsonb :text_crdt, null: false, default: {}
       t.bigint :parent_frame_id
       t.datetime :deleted_at
     end
@@ -87,7 +79,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.bigint :object_id, null: false
       t.bigint :user_id, null: false
       t.string :property, null: false
-      json_column(t, :value, null: false, default: {})
+      t.jsonb :value, null: false, default: {}
       t.bigint :lamport_ts, null: false
       t.string :client_id, null: false
     end
@@ -157,7 +149,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.integer :event_def_id, null: false
       t.bigint :user_id, null: false
       t.bigint :board_id, null: false
-      json_column(t, :props, null: false, default: {}, comment: "PII禁止")
+      t.jsonb :props, null: false, default: {}, comment: "PII禁止"
       t.datetime :occurred_at, null: false
     end
 

@@ -55,10 +55,30 @@ RSpec.describe "Questboard database schema and seeds" do
     if connection.adapter_name == "PostgreSQL"
       expect(kpi_event_props.comment).to eq("PII禁止")
     else
-      expect(Rails.root.join("db/schema.rb").read).to include('comment: "PII禁止"')
+      migration_content = File.read(Rails.root.join("db/migrate/20260720230735_create_questboard_schema.rb"))
+      expect(migration_content).to include('comment: "PII禁止"')
     end
 
     expect(connection.primary_key("user_settings")).to eq("user_id")
+
+    if connection.adapter_name == "PostgreSQL"
+      expect(connection.columns("objects").find { |c| c.name == "geometry" }.sql_type).to eq("jsonb")
+      expect(connection.columns("objects").find { |c| c.name == "text_crdt" }.sql_type).to eq("jsonb")
+      expect(connection.columns("object_ops").find { |c| c.name == "value" }.sql_type).to eq("jsonb")
+      expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
+    end
+
+    schema_content = Rails.root.join("db/schema.rb").read
+    expect(schema_content).to match(/t\.jsonb? "geometry"/)
+    expect(schema_content).to match(/t\.jsonb? "text_crdt"/)
+    expect(schema_content).to match(/t\.jsonb? "value"/)
+    expect(schema_content).to match(/t\.jsonb? "props"/)
+
+    migration_content = File.read(Rails.root.join("db/migrate/20260720230735_create_questboard_schema.rb"))
+    expect(migration_content).to include("t.jsonb :geometry")
+    expect(migration_content).to include("t.jsonb :text_crdt")
+    expect(migration_content).to include("t.jsonb :value")
+    expect(migration_content).to include("t.jsonb :props")
 
     board_member_indexes = connection.indexes("board_members")
     expect(board_member_indexes.any? { |index| index.unique && index.columns == %w[board_id user_id] }).to be(true)
