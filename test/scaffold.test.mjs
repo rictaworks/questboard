@@ -174,3 +174,23 @@ test('backend scaffold uses env vars for config and secrets', async () => {
   assert.equal(/ADMIN_BASIC_AUTH_(USERNAME|PASSWORD)\s*=\s*["'][^"']+["']/.test(backendSource), false);
   assert.equal(/http_basic_authenticate_with\s+name:\s*["'][^"']+["']/.test(backendSource), false);
 });
+
+test('sync server scaffold is workspace-enabled and board-shard aware', async () => {
+  const goWork = await read('go.work');
+  const goMod = await read('src/sync-server/go.mod');
+  const main = await read('src/sync-server/cmd/sync-server/main.go');
+  const router = await read('src/sync-server/internal/sharding/router.go');
+  const handler = await read('src/sync-server/internal/ws/handler.go');
+  const server = await read('src/sync-server/internal/server/server.go');
+
+  assert.match(goWork, /use \([\s\S]*\.\/src\/sync-server[\s\S]*\)/);
+  assert.match(goMod, /module github\.com\/rictaworks\/questboard\/src\/sync-server/);
+  assert.match(main, /config\.FromEnv\(\)/);
+  assert.match(main, /server\.New\(cfg\)/);
+  assert.match(router, /type Router struct/);
+  assert.match(router, /Resolve\(boardID string\)/);
+  assert.match(handler, /Query\("boardId"\)/);
+  assert.match(handler, /CheckOrigin:/);
+  assert.match(server, /GET\("\/healthz"/);
+  assert.match(server, /GET\("\/ws"/);
+});
