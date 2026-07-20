@@ -19,7 +19,7 @@ This document captures the main application-specific threats that matter for the
 
 | ID | Threat | Why it matters | Main defenses |
 |---|---|---|---|
-| T1 | Google OAuth account takeover | User identity is the primary auth boundary | Verify `sub`, use secure session cookies, short-lived auth codes |
+| T1 | Google OAuth account takeover / login CSRF | User identity is the primary auth boundary | Validate disposable `state` bound to session, verify `sub` (and OIDC `iss`/`aud`/`exp`/`signature`/`nonce` / PKCE), use secure session cookies |
 | T2 | BASIC-auth admin compromise | Admin dashboard exposes operational and KPI data | Strong credentials, HTTPS only, lock down routes and headers |
 | T3 | F7 authorization bypass | Board role checks gate edit/comment/view actions | Enforce F7 server-side for every Rails and WS action |
 | T4 | F6 concurrent-edit race conditions | Conflicting ops can corrupt board state | Lamport/LWW rules, CRDT for text, deterministic tie-breaking |

@@ -11,7 +11,7 @@ This checklist maps OWASP Top 10 concerns to Questboard-specific checks.
 
 ## A02 Cryptographic Failures
 
-- [ ] Google OAuth code exchange verifies `sub` and uses secure session cookies
+- [ ] Google OAuth flow requires disposable `state` bound to session (login CSRF prevention), verifies `sub` (plus OIDC `iss`/`aud`/`exp`/`signature`/`nonce` and PKCE if applicable), and uses secure session cookies
 - [ ] BASIC-auth credentials are stored and transmitted securely
 - [ ] shared board tokens are high-entropy and not guessable
 - [ ] HTTPS is required for auth, session, and admin traffic
@@ -19,9 +19,9 @@ This checklist maps OWASP Top 10 concerns to Questboard-specific checks.
 ## A03 Injection
 
 - [ ] object ops are schema-validated before persistence
-- [ ] `object_ops.value`, `comments.body`, `objects.text_crdt`, and KPI props are escaped or parameterized
+- [ ] SQL/NoSQL injection: all DB access uses bound parameters / parameterized queries without string concatenation
+- [ ] XSS prevention: user inputs (`object_ops.value`, `comments.body`, `objects.text_crdt`) are rendered as plain text by default, or sanitized with strict allowlist and URL scheme validation for rich text
 - [ ] WebSocket payloads are rejected unless they match the allowed op schema
-- [ ] SQL access uses bound parameters and no string-concatenated query paths remain
 
 ## A04 Insecure Design
 
