@@ -27,9 +27,18 @@ RSpec.describe "Backend scaffold", type: :request do
     expect(response).to have_http_status(:unauthorized)
 
     credentials = ActionController::HttpAuthentication::Basic.encode_credentials("admin", "secret")
-    get "/admin", headers: {"Authorization" => credentials}
+    get "/admin", headers: { "Authorization" => credentials }
 
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body)).to eq("status" => "ok", "area" => "admin")
+  end
+
+  it "fails safe with 401 when admin credentials are not configured" do
+    ENV["ADMIN_BASIC_AUTH_USERNAME"] = nil
+    ENV["ADMIN_BASIC_AUTH_PASSWORD"] = nil
+
+    get "/admin"
+
+    expect(response).to have_http_status(:unauthorized)
   end
 end
