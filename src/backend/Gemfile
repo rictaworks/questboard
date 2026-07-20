@@ -8,6 +8,7 @@ gem "sqlite3", ">= 2.1"
 gem "pg", ">= 1.6"
 gem "rack-cors"
 gem "bootsnap", require: false
+gem "thruster", require: false
 
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"

@@ -208,6 +208,7 @@ GEM
     securerandom (0.4.1)
     sqlite3 (2.9.5-x86_64-linux-gnu)
     thor (1.5.0)
+    thruster (0.1.23-x86_64-linux)
     timeout (0.6.1)
     tsort (0.2.0)
     tzinfo (2.0.6)
@@ -232,6 +233,7 @@ DEPENDENCIES
   rails (~> 8.0.2)
   rspec-rails (~> 8.0)
   sqlite3 (>= 2.1)
+  thruster
 
 BUNDLED WITH
-   2.4.19
+   2.6.9
