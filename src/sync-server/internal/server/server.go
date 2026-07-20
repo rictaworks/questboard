@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 type Server struct {
 	engine     *gin.Engine
 	httpServer *http.Server
+	wsHandler  *ws.Handler
 }
 
 func New(cfg config.Config) (*Server, error) {
@@ -24,10 +26,12 @@ func New(cfg config.Config) (*Server, error) {
 		return nil, err
 	}
 
+	wsHandler := ws.NewHandler(router, cfg.AllowedOrigins)
+
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.GET("/healthz", healthHandler)
-	engine.GET("/ws", ws.NewHandler(router, cfg.AllowedOrigins).ServeHTTP)
+	engine.GET("/ws", wsHandler.ServeHTTP)
 
 	httpServer := &http.Server{
 		Addr:              cfg.Address,
@@ -42,6 +46,7 @@ func New(cfg config.Config) (*Server, error) {
 	return &Server{
 		engine:     engine,
 		httpServer: httpServer,
+		wsHandler:  wsHandler,
 	}, nil
 }
 
@@ -49,13 +54,23 @@ func (s *Server) Engine() *gin.Engine {
 	return s.engine
 }
 
-func (s *Server) HTTPServer() *http.Server {
-	return s.httpServer
-}
-
 func (s *Server) Run() error {
 	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("run sync server: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	if err := s.httpServer.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown sync server: %w", err)
+	}
+
+	s.wsHandler.Shutdown()
+
+	if err := s.wsHandler.Wait(ctx); err != nil {
+		return fmt.Errorf("shutdown sync server: waiting for websocket connections: %w", err)
 	}
 
 	return nil

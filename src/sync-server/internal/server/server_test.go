@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -125,5 +126,84 @@ func TestWebSocketMessageSizeLimit(t *testing.T) {
 	var closeErr *websocket.CloseError
 	if !errors.As(err, &closeErr) || closeErr.Code != websocket.CloseMessageTooBig {
 		t.Fatalf("websocket read error = %v, want CloseError code %d (CloseMessageTooBig)", err, websocket.CloseMessageTooBig)
+	}
+}
+
+func TestWebSocketOriginValidation(t *testing.T) {
+	t.Parallel()
+
+	app, err := server.New(config.Config{
+		Address:        ":0",
+		ShardCount:     2,
+		AllowedOrigins: []string{"https://allowed.example"},
+	})
+	if err != nil {
+		t.Fatalf("server.New() error = %v", err)
+	}
+
+	httpServer := httptest.NewServer(app.Engine())
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
+
+	disallowedHeader := http.Header{}
+	disallowedHeader.Set("Origin", "https://evil.example")
+	if _, _, err := websocket.DefaultDialer.Dial(wsURL, disallowedHeader); err == nil {
+		t.Fatal("websocket dial with disallowed Origin succeeded, want rejection")
+	}
+
+	allowedHeader := http.Header{}
+	allowedHeader.Set("Origin", "https://allowed.example")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, allowedHeader)
+	if err != nil {
+		t.Fatalf("websocket dial with allowed Origin failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+}
+
+func TestGracefulShutdownClosesWebSocketConnections(t *testing.T) {
+	t.Parallel()
+
+	app, err := server.New(config.Config{
+		Address:    ":0",
+		ShardCount: 2,
+	})
+	if err != nil {
+		t.Fatalf("server.New() error = %v", err)
+	}
+
+	httpServer := httptest.NewServer(app.Engine())
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		shutdownDone <- app.Shutdown(ctx)
+	}()
+
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+
+	_, _, err = conn.ReadMessage()
+	var closeErr *websocket.CloseError
+	if !errors.As(err, &closeErr) || closeErr.Code != websocket.CloseGoingAway {
+		t.Fatalf("websocket read error = %v, want CloseError code %d (CloseGoingAway)", err, websocket.CloseGoingAway)
+	}
+
+	if err := <-shutdownDone; err != nil {
+		t.Fatalf("app.Shutdown() error = %v", err)
 	}
 }

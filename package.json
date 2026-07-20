@@ -10,7 +10,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "npm run test:go && npm run build && node --test test/*.test.mjs",
-    "test:go": "go test ./... ./src/sync-server/..."
+    "test:go": "go test ./tools/... ./src/sync-server/..."
   },
   "repository": {
     "type": "git",

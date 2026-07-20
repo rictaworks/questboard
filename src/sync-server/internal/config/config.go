@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -12,12 +13,17 @@ type Config struct {
 	AllowedOrigins []string
 }
 
-func FromEnv() Config {
+func FromEnv() (Config, error) {
+	shardCount, err := parseShardCount(os.Getenv("SYNC_SERVER_SHARD_COUNT"))
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Address:        listenAddress(),
-		ShardCount:     parseShardCount(os.Getenv("SYNC_SERVER_SHARD_COUNT")),
+		ShardCount:     shardCount,
 		AllowedOrigins: splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
-	}
+	}, nil
 }
 
 func listenAddress() string {
@@ -32,17 +38,21 @@ func listenAddress() string {
 	return ":8080"
 }
 
-func parseShardCount(raw string) int {
+func parseShardCount(raw string) (int, error) {
 	if raw == "" {
-		return 1
+		return 1, nil
 	}
 
 	count, err := strconv.Atoi(raw)
-	if err != nil || count < 1 {
-		return 1
+	if err != nil {
+		return 0, fmt.Errorf("SYNC_SERVER_SHARD_COUNT must be an integer: %q", raw)
 	}
 
-	return count
+	if count < 1 {
+		return 0, fmt.Errorf("SYNC_SERVER_SHARD_COUNT must be at least 1: %q", raw)
+	}
+
+	return count, nil
 }
 
 func splitList(raw string) []string {

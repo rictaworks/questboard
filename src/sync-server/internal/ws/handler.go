@@ -1,9 +1,11 @@
 package ws
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +29,11 @@ type Handler struct {
 	router    *sharding.Router
 	upgrader  websocket.Upgrader
 	readLimit int64
+
+	mu      sync.Mutex
+	closing bool
+	closeCh chan struct{}
+	conns   sync.WaitGroup
 }
 
 func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
@@ -36,10 +43,67 @@ func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 			CheckOrigin: newOriginChecker(allowedOrigins),
 		},
 		readLimit: MaxMessageSize,
+		closeCh:   make(chan struct{}),
 	}
 }
 
+// Shutdown stops the handler from accepting new connections and signals every
+// active connection to close. It does not block; call Wait afterward to block
+// until connections have finished closing.
+func (h *Handler) Shutdown() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.closing {
+		return
+	}
+
+	h.closing = true
+	close(h.closeCh)
+}
+
+// Wait blocks until every connection registered before Shutdown was called
+// has closed, or ctx is done, whichever happens first.
+func (h *Handler) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.conns.Wait()
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// acquire registers a new connection attempt, unless Shutdown has already
+// been called. The check and the WaitGroup increment happen atomically under
+// h.mu so a connection can never register after Wait has observed zero active
+// connections.
+func (h *Handler) acquire() bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.closing {
+		return false
+	}
+
+	h.conns.Add(1)
+	return true
+}
+
 func (h *Handler) ServeHTTP(ctx *gin.Context) {
+	if !h.acquire() {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "server shutting down",
+		})
+		return
+	}
+	defer h.conns.Done()
+
 	boardID := ctx.Query("boardId")
 
 	if _, err := h.router.Resolve(boardID); err != nil {
@@ -82,6 +146,11 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 	for {
 		select {
 		case <-done:
+			return
+		case <-h.closeCh:
+			_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			closeMessage := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+			_ = conn.WriteMessage(websocket.CloseMessage, closeMessage)
 			return
 		case <-ticker.C:
 			_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
