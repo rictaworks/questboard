@@ -1,0 +1,23 @@
+/.env
+/.env.local
+/.env.*.local
+/config/master.key
+/config/credentials.yml.enc
+
+# Ignore all logfiles and tempfiles.
+/log/*
+!/log/.keep
+/tmp/*
+!/tmp/.keep
+
+# Storage for uploaded files
+/storage/*
+!/storage/.keep
+
+# SQLite databases
+/db/*.sqlite3
+/db/*.sqlite3-*
+
+# Vendor bundle & cache
+/vendor/bundle/
+/.bundle/
