@@ -17,6 +17,9 @@
     "url": "https://github.com/rictaworks/questboard.git"
   },
   "license": "ISC",
+  "overrides": {
+    "postcss": "^8.5.10"
+  },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
     "@fortawesome/free-solid-svg-icons": "^7.3.1",
