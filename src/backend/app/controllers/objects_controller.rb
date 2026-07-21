@@ -166,7 +166,11 @@ class ObjectsController < ApplicationController
   end
 
   def create_geometry
-    create_params.fetch(:geometry, {}).to_h
+    default_geom = { "x" => 0, "y" => 0, "w" => 100, "h" => 100, "rotation" => 0 }
+    geom_params = create_params[:geometry]
+    return default_geom if geom_params.nil?
+
+    default_geom.merge(geom_params.to_h)
   end
 
   def object_type_code_param

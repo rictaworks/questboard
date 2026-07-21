@@ -195,4 +195,83 @@ RSpec.describe "Objects", type: :request do
     expect(response).to have_http_status(:ok)
     expect(FrameLock.find_by(object_id:)).to be_nil
   end
+
+  it "restricts parent_frame_id to valid frames on the same board" do
+    board_a_payload = create_board(title: "Board A")
+    share_token_a = board_a_payload.fetch("board").fetch("shareToken")
+
+    board_b_payload = create_board(title: "Board B")
+    share_token_b = board_b_payload.fetch("board").fetch("shareToken")
+
+    # Create a frame in Board B
+    sign_in(owner)
+    object_b = create_object(
+      share_token: share_token_b,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 100, h: 100, rotation: 0 }
+    )
+
+    # Attempt to create an object in Board A with parent_frame_id from Board B
+    post "/boards/#{share_token_a}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: object_b.fetch("id"),
+      geometry: { x: 10, y: 10, w: 20, h: 20, rotation: 0 }
+    }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body).fetch("error")).to match(/parent frame/i)
+  end
+
+  it "safely creates an object when geometry parameter is omitted" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky"
+    }, as: :json
+
+    expect(response).to have_http_status(:created)
+    payload = JSON.parse(response.body)
+    expect(payload.fetch("geometry")).to include(
+      "x" => 0,
+      "y" => 0,
+      "w" => 100,
+      "h" => 100,
+      "rotation" => 0
+    )
+  end
+
+  it "allows child object updates and deletion even after parent frame is deleted" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    parent_frame = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: parent_frame.fetch("id"),
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    expect(response).to have_http_status(:created)
+    child_id = JSON.parse(response.body).fetch("id")
+
+    # Delete parent frame
+    delete "/boards/#{share_token}/objects/#{parent_frame.fetch('id')}", as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Child sticky should still be moveable and deleteable without parent validation 422 error
+    patch "/boards/#{share_token}/objects/#{child_id}/move", params: {
+      geometry: { x: 20, y: 20 }
+    }, as: :json
+    expect(response).to have_http_status(:ok)
+
+    delete "/boards/#{share_token}/objects/#{child_id}", as: :json
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(child_id).deleted_at).to be_present
+  end
 end
