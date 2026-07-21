@@ -14,12 +14,11 @@ class Board < ApplicationRecord
     end
   end
 
-  def upsert_member!(user:, role_code:)
+  def join_member!(user:, role_code:)
     role = Role.find_by!(code: role_code.to_s)
 
-    board_members.find_or_initialize_by(user: user).tap do |member|
+    board_members.find_or_create_by!(user:) do |member|
       member.role = role
-      member.save!
     end
   end
 

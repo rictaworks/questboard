@@ -19,7 +19,7 @@ class BoardsController < ApplicationController
       return
     end
 
-    membership = board.upsert_member!(user: current_user, role_code:)
+    membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity

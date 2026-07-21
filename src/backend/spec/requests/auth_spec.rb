@@ -22,7 +22,7 @@ RSpec.describe "Google authentication", type: :request do
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
-    }
+    }, as: :json
 
     expect(response).to have_http_status(:created)
     expect(JSON.parse(response.body)).to eq(
@@ -54,7 +54,7 @@ RSpec.describe "Google authentication", type: :request do
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "bad-token"
-    }
+    }, as: :json
 
     expect(response).to have_http_status(:unprocessable_entity)
     expect(JSON.parse(response.body)).to eq("error" => "reCAPTCHA verification failed")
@@ -71,7 +71,7 @@ RSpec.describe "Google authentication", type: :request do
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
-    }
+    }, as: :json
 
     delete "/session"
 

@@ -29,14 +29,14 @@ RSpec.describe "Boards", type: :request do
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
-    }
+    }, as: :json
 
     expect(response).to have_http_status(:created)
   end
 
   def create_board(title: "Strategy Board")
     sign_in(owner)
-    post "/boards", params: { title: }
+    post "/boards", params: { title: }, as: :json
 
     expect(response).to have_http_status(:created)
     JSON.parse(response.body)
@@ -45,7 +45,7 @@ RSpec.describe "Boards", type: :request do
   it "creates a board and assigns the creator as owner" do
     sign_in(owner)
 
-    post "/boards", params: { title: "Launch Plan" }
+    post "/boards", params: { title: "Launch Plan" }, as: :json
 
     expect(response).to have_http_status(:created)
     payload = JSON.parse(response.body)
@@ -64,7 +64,7 @@ RSpec.describe "Boards", type: :request do
 
     sign_in(member)
 
-    post "/boards/#{share_token}/join", params: { role_code: "editor" }
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
 
     expect(response).to have_http_status(:created)
     membership = BoardMember.find_by!(board: Board.find_by!(share_token:), user: member)
@@ -73,24 +73,70 @@ RSpec.describe "Boards", type: :request do
     expect(membership.role.code).to eq("editor")
   end
 
+  it "prevents existing members from self-elevating via join" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "viewer" }, as: :json
+    expect(response).to have_http_status(:created)
+    expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("viewer")
+
+    # Attempt to self-elevate to editor by re-joining
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("viewer")
+  end
+
   it "lets the owner change another member role and blocks non-owners" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
 
     sign_in(member)
-    post "/boards/#{share_token}/join", params: { role_code: "viewer" }
+    post "/boards/#{share_token}/join", params: { role_code: "viewer" }, as: :json
     expect(response).to have_http_status(:created)
 
     sign_in(owner)
-    patch "/boards/#{share_token}/members/#{member.id}", params: { role_code: "commenter" }
+    patch "/boards/#{share_token}/members/#{member.id}", params: { role_code: "commenter" }, as: :json
 
     expect(response).to have_http_status(:ok)
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("commenter")
 
     sign_in(member)
-    patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "editor" }
+    patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "editor" }, as: :json
 
     expect(response).to have_http_status(:forbidden)
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("commenter")
+  end
+
+  it "blocks form-encoded CSRF requests and unauthorized origins" do
+    sign_in(owner)
+
+    # Form-encoded request should be rejected with 415
+    post "/boards", params: { title: "CSRF Board" }, headers: { "CONTENT_TYPE" => "application/x-www-form-urlencoded" }
+    expect(response).to have_http_status(:unsupported_media_type)
+
+    # Forbidden origin request should be rejected with 403
+    post "/boards", params: { title: "Evil Board" }, headers: { "HTTP_ORIGIN" => "http://evil-attacker.com" }, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    # Combined forbidden origin and forbidden content-type should be safely rejected with 403 without DoubleRenderError
+    post "/boards", params: { title: "Evil Form Board" }, headers: {
+      "HTTP_ORIGIN" => "http://evil-attacker.com",
+      "CONTENT_TYPE" => "application/x-www-form-urlencoded"
+    }
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "allows CORS preflight for PATCH method" do
+    process :options, "/boards/test-token/members/1", headers: {
+      "HTTP_ORIGIN" => "http://localhost:3000",
+      "HTTP_ACCESS_CONTROL_REQUEST_METHOD" => "PATCH"
+    }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.headers["Access-Control-Allow-Origin"]).to eq("http://localhost:3000")
+    expect(response.headers["Access-Control-Allow-Methods"]).to include("PATCH")
   end
 end
