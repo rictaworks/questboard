@@ -34,5 +34,31 @@
     "callbackStateMismatch": "[TODO] translate",
     "callbackFailure": "[TODO] translate",
     "callbackRecovery": "[TODO] translate"
+  },
+  "BoardCreate": {
+    "heading": "[TODO] translate",
+    "description": "[TODO] translate",
+    "signInHint": "[TODO] translate",
+    "titleLabel": "[TODO] translate",
+    "titlePlaceholder": "[TODO] translate",
+    "submitButton": "[TODO] translate",
+    "creatingButton": "[TODO] translate",
+    "successHeading": "[TODO] translate",
+    "successDescription": "[TODO] translate",
+    "shareUrlLabel": "[TODO] translate",
+    "createError": "[TODO] translate"
+  },
+  "BoardInvite": {
+    "heading": "[TODO] translate",
+    "description": "[TODO] translate",
+    "roleLabel": "[TODO] translate",
+    "viewerRole": "[TODO] translate",
+    "commenterRole": "[TODO] translate",
+    "editorRole": "[TODO] translate",
+    "joinButton": "[TODO] translate",
+    "joiningButton": "[TODO] translate",
+    "successHeading": "[TODO] translate",
+    "successDescription": "[TODO] translate",
+    "errorMessage": "[TODO] translate"
   }
 }

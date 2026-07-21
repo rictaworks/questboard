@@ -34,5 +34,31 @@
     "callbackStateMismatch": "Authentication state did not match",
     "callbackFailure": "Google sign-in failed",
     "callbackRecovery": "Go back to the login screen and try again."
+  },
+  "BoardCreate": {
+    "heading": "Create a board",
+    "description": "Create a board and generate a share URL.",
+    "signInHint": "Use the sign-in panel above to create a board.",
+    "titleLabel": "Board title",
+    "titlePlaceholder": "Example: 2026 roadmap",
+    "submitButton": "Create board",
+    "creatingButton": "Creating...",
+    "successHeading": "Share URL created",
+    "successDescription": "Share the URL for “{title}” with your team.",
+    "shareUrlLabel": "Share URL",
+    "createError": "Unable to create the board"
+  },
+  "BoardInvite": {
+    "heading": "Join a board",
+    "description": "Open the share URL and choose the role you want to join with.",
+    "roleLabel": "Invite role",
+    "viewerRole": "Viewer",
+    "commenterRole": "Commenter",
+    "editorRole": "Editor",
+    "joinButton": "Join with this role",
+    "joiningButton": "Joining...",
+    "successHeading": "You joined the board",
+    "successDescription": "You joined “{title}” as {role}.",
+    "errorMessage": "Unable to join the board"
   }
 }

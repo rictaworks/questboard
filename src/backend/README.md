@@ -30,6 +30,9 @@ API surface grows. Current endpoints:
 | GET    | `/session` | Current session   | cookie      |
 | DELETE | `/session` | Logout            | cookie      |
 | POST   | `/auth/google_sessions` | Google login callback | none |
+| POST   | `/boards` | Create a board | cookie |
+| POST   | `/boards/:share_token/join` | Join a board by share token | cookie |
+| PATCH  | `/boards/:share_token/members/:user_id` | Update a board member role | cookie |
 
 ## Lint & security
 

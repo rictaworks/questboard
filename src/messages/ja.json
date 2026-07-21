@@ -34,5 +34,31 @@
     "callbackStateMismatch": "認証状態が一致しません",
     "callbackFailure": "Google ログインに失敗しました",
     "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。"
+  },
+  "BoardCreate": {
+    "heading": "ボードを作成",
+    "description": "作成すると共有URLを発行できます。",
+    "signInHint": "ボードを作成するには、上のログイン欄で認証してください。",
+    "titleLabel": "ボード名",
+    "titlePlaceholder": "例: 2026年ロードマップ",
+    "submitButton": "ボードを作成",
+    "creatingButton": "作成しています",
+    "successHeading": "共有URLを作成しました",
+    "successDescription": "「{title}」の共有URLを発行しました。",
+    "shareUrlLabel": "共有URL",
+    "createError": "ボードの作成に失敗しました"
+  },
+  "BoardInvite": {
+    "heading": "ボードに参加",
+    "description": "共有URLから参加し、ロールを選択できます。",
+    "roleLabel": "参加ロール",
+    "viewerRole": "閲覧者",
+    "commenterRole": "コメント可",
+    "editorRole": "編集者",
+    "joinButton": "このロールで参加",
+    "joiningButton": "参加しています",
+    "successHeading": "ボードに参加しました",
+    "successDescription": "「{title}」に {role} として参加済みです。",
+    "errorMessage": "ボードへの参加に失敗しました"
   }
 }
