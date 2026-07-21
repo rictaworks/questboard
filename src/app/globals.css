@@ -41,7 +41,8 @@ a {
 
 .hero-card,
 .panel,
-.dev-auth-banner {
+.dev-auth-banner,
+.auth-panel {
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-lg);
   background: rgba(18, 19, 45, 0.72);
@@ -115,7 +116,8 @@ a {
 }
 
 .panel,
-.dev-auth-banner {
+.dev-auth-banner,
+.auth-panel {
   padding: var(--space-5);
 }
 
@@ -124,4 +126,49 @@ a {
   align-items: center;
   gap: var(--space-2);
   color: var(--color-purple-light);
+}
+
+.auth-section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.auth-section h2 {
+  margin: 0;
+  font-family: var(--font-display);
+}
+
+.auth-panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.auth-panel-development {
+  color: var(--color-purple-light);
+}
+
+.auth-status,
+.auth-user {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.auth-copy,
+.auth-error {
+  margin: 0;
+}
+
+.auth-error {
+  color: #ff8da1;
+}
+
+.auth-button {
+  justify-self: start;
+}
+
+.auth-callback-card {
+  min-height: 16rem;
+  align-content: center;
 }

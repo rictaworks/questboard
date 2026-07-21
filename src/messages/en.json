@@ -9,6 +9,30 @@
     "designTokensTitle": "Design tokens",
     "designTokensDescription": "CSS variables are imported directly from token files.",
     "localesTitle": "Locales",
-    "localesDescription": "ja, en, fr, zh, ru, es, ar"
+    "localesDescription": "ja, en, fr, zh, ru, es, ar",
+    "authSectionTitle": "Sign in"
+  },
+  "Auth": {
+    "loadingSession": "Checking your session",
+    "loginHeading": "Sign in with Google",
+    "loginDescription": "Use Google OAuth and reCAPTCHA to sign in.",
+    "signInButton": "Continue with Google",
+    "sessionLoadError": "Unable to load the session",
+    "signedInHeading": "You are signed in",
+    "signedInDescription": "Signed in as {displayName}",
+    "signOutButton": "Sign out",
+    "signOutError": "Unable to sign out",
+    "developmentHeading": "Development mode is treated as already authenticated",
+    "developmentDescription": "This development-only branch never appears in production UI.",
+    "developmentDisplayName": "Development user",
+    "unknownUser": "Unknown user",
+    "callbackHeading": "Completing Google sign-in",
+    "callbackDescription": "Sending the authorization code and reCAPTCHA token.",
+    "callbackSuccess": "Authentication succeeded",
+    "callbackRedirecting": "Returning to the previous screen",
+    "callbackMissingCode": "Authorization code not found",
+    "callbackStateMismatch": "Authentication state did not match",
+    "callbackFailure": "Google sign-in failed",
+    "callbackRecovery": "Go back to the login screen and try again."
   }
 }

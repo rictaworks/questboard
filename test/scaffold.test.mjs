@@ -62,7 +62,9 @@ test('all locale files exist and placeholder locales stay scaffolded', async () 
   for (const locale of locales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
     assert.ok(json.Home, `${locale} message namespace missing`);
+    assert.ok(json.Auth, `${locale} auth namespace missing`);
     assert.ok(json.Home.headline, `${locale} headline missing`);
+    assert.ok(json.Home.authSectionTitle, `${locale} auth section title missing`);
   }
 
   const ja = JSON.parse(await read('src/messages/ja.json'));

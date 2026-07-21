@@ -1,12 +1,11 @@
-import {faLanguage, faShieldHalved} from '@fortawesome/free-solid-svg-icons';
+import {faLanguage} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {getTranslations} from 'next-intl/server';
 
-import {isDevelopmentEnvironment} from '@/lib/environment';
+import AuthPanel from '@/components/auth-panel';
 
 export default async function LocaleHomePage() {
   const t = await getTranslations('Home');
-  const isDevelopmentAuthEnabled = isDevelopmentEnvironment();
 
   return (
     <main className="home-shell">
@@ -27,13 +26,6 @@ export default async function LocaleHomePage() {
         </div>
       </section>
 
-      {isDevelopmentAuthEnabled ? (
-        <aside className="dev-auth-banner" data-testid="development-auth-bypass">
-          <FontAwesomeIcon icon={faShieldHalved} />
-          <span>{t('developmentAuthBadge')}</span>
-        </aside>
-      ) : null}
-
       <section className="grid" id="design-tokens">
         <article className="panel">
           <h2>{t('designTokensTitle')}</h2>
@@ -43,6 +35,11 @@ export default async function LocaleHomePage() {
           <h2>{t('localesTitle')}</h2>
           <p>{t('localesDescription')}</p>
         </article>
+      </section>
+
+      <section className="auth-section" aria-labelledby="auth-heading">
+        <h2 id="auth-heading">{t('authSectionTitle')}</h2>
+        <AuthPanel />
       </section>
     </main>
   );

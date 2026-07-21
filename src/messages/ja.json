@@ -9,6 +9,30 @@
     "designTokensTitle": "デザイントークン",
     "designTokensDescription": "CSS 変数をそのまま取り込んでいます。",
     "localesTitle": "ロケール",
-    "localesDescription": "ja, en, fr, zh, ru, es, ar"
+    "localesDescription": "ja, en, fr, zh, ru, es, ar",
+    "authSectionTitle": "ログイン"
+  },
+  "Auth": {
+    "loadingSession": "セッションを確認しています",
+    "loginHeading": "Googleでログイン",
+    "loginDescription": "Google OAuth と reCAPTCHA を使ってログインします。",
+    "signInButton": "Googleで続ける",
+    "sessionLoadError": "セッションの読み込みに失敗しました",
+    "signedInHeading": "ログイン済みです",
+    "signedInDescription": "{displayName} としてログインしています",
+    "signOutButton": "ログアウト",
+    "signOutError": "ログアウトに失敗しました",
+    "developmentHeading": "開発環境では認証済みとして扱われます",
+    "developmentDescription": "本番 UI には表示されない開発専用の分岐です。",
+    "developmentDisplayName": "開発ユーザー",
+    "unknownUser": "不明なユーザー",
+    "callbackHeading": "Google ログインを完了しています",
+    "callbackDescription": "認可コードと reCAPTCHA トークンを送信しています。",
+    "callbackSuccess": "認証に成功しました",
+    "callbackRedirecting": "元の画面へ戻ります",
+    "callbackMissingCode": "認可コードが見つかりません",
+    "callbackStateMismatch": "認証状態が一致しません",
+    "callbackFailure": "Google ログインに失敗しました",
+    "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。"
   }
 }

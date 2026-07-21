@@ -9,6 +9,30 @@
     "designTokensTitle": "[TODO] translate",
     "designTokensDescription": "[TODO] translate",
     "localesTitle": "[TODO] translate",
-    "localesDescription": "[TODO] translate"
+    "localesDescription": "[TODO] translate",
+    "authSectionTitle": "[TODO] translate"
+  },
+  "Auth": {
+    "loadingSession": "[TODO] translate",
+    "loginHeading": "[TODO] translate",
+    "loginDescription": "[TODO] translate",
+    "signInButton": "[TODO] translate",
+    "sessionLoadError": "[TODO] translate",
+    "signedInHeading": "[TODO] translate",
+    "signedInDescription": "[TODO] translate",
+    "signOutButton": "[TODO] translate",
+    "signOutError": "[TODO] translate",
+    "developmentHeading": "[TODO] translate",
+    "developmentDescription": "[TODO] translate",
+    "developmentDisplayName": "[TODO] translate",
+    "unknownUser": "[TODO] translate",
+    "callbackHeading": "[TODO] translate",
+    "callbackDescription": "[TODO] translate",
+    "callbackSuccess": "[TODO] translate",
+    "callbackRedirecting": "[TODO] translate",
+    "callbackMissingCode": "[TODO] translate",
+    "callbackStateMismatch": "[TODO] translate",
+    "callbackFailure": "[TODO] translate",
+    "callbackRecovery": "[TODO] translate"
   }
 }
