@@ -3,6 +3,7 @@ class Board < ApplicationRecord
 
   has_many :board_members, dependent: :destroy
   has_many :users, through: :board_members
+  has_many :board_objects, class_name: "BoardObject", foreign_key: :board_id
 
   validates :title, presence: true
 
