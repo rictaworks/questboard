@@ -61,6 +61,7 @@ class PermissionService
     move_object: :edit_object,
     resize_object: :edit_object,
     recolor_object: :edit_object,
+    recolor: :edit_object,
     align: :edit_object,
     group: :edit_object,
     ungroup: :edit_object,

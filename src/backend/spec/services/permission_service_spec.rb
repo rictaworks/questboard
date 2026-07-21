@@ -162,5 +162,29 @@ RSpec.describe PermissionService do
       expect(service.authorize(:commenter, :edit_comment, other_comment_state)).to be(false)
       expect(service.authorize(:commenter, :delete_comment, other_comment_state)).to be(false)
     end
+
+    it "supports all 14 seeded radial menu item action codes for editors" do
+      seeded_menu_actions = %i[
+        create_sticky
+        create_shape
+        create_text
+        create_frame
+        duplicate
+        delete
+        lock
+        unlock
+        comment
+        align
+        group
+        ungroup
+        recolor
+        share
+      ]
+
+      seeded_menu_actions.each do |action_code|
+        state = (action_code == :unlock ? locked_by_self_state : unlocked_state)
+        expect(service.authorize(:editor, action_code, state)).to be(true), "expected editor to be authorized for #{action_code}"
+      end
+    end
   end
 end
