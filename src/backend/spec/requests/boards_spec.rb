@@ -110,6 +110,37 @@ RSpec.describe "Boards", type: :request do
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("commenter")
   end
 
+  it "prevents the sole owner from demoting themselves" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "viewer" }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body)).to eq("error" => "Cannot remove the last owner")
+    expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: owner).role.code).to eq("owner")
+  end
+
+  it "allows an owner to demote themselves once another owner exists" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "viewer" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/members/#{member.id}", params: { role_code: "owner" }, as: :json
+    expect(response).to have_http_status(:ok)
+
+    patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "viewer" }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: owner).role.code).to eq("viewer")
+    expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: member).role.code).to eq("owner")
+  end
+
   it "blocks form-encoded CSRF requests and unauthorized origins" do
     sign_in(owner)
 

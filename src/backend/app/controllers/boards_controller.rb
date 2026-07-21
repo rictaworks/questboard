@@ -38,11 +38,20 @@ class BoardsController < ApplicationController
       return
     end
 
-    target_member = board.board_members.includes(:role).find_by!(user_id: params.require(:user_id))
+    user_id = params.require(:user_id)
     role = Role.find_by!(code: role_code_param)
-    target_member.update!(role:)
 
-    render json: serialize_board(board, target_member)
+    board.with_lock do
+      target_member = board.board_members.includes(:role).find_by!(user_id:)
+
+      if demotes_last_owner?(board:, target_member:, new_role: role)
+        render json: { error: "Cannot remove the last owner" }, status: :unprocessable_entity
+        return
+      end
+
+      target_member.update!(role:)
+      render json: serialize_board(board, target_member)
+    end
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordNotFound
@@ -67,6 +76,17 @@ class BoardsController < ApplicationController
 
   def role_code_param
     params.require(:role_code)
+  end
+
+  def demotes_last_owner?(board:, target_member:, new_role:)
+    return false unless target_member.role.code == "owner"
+    return false if new_role.code == "owner"
+
+    !board.board_members
+      .joins(:role)
+      .where(roles: { code: "owner" })
+      .where.not(id: target_member.id)
+      .exists?
   end
 
   def serialize_board(board, membership)
