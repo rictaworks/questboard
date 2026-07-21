@@ -58,12 +58,9 @@ export function buildGoogleAuthorizationUrl({
   state: string;
 }): string {
   const searchParams = new URLSearchParams({
-    access_type: "offline",
     client_id: clientId,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    include_granted_scopes: "true",
-    prompt: "consent",
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "openid profile email",

@@ -36,8 +36,10 @@ module Auth
 
       Identity.new(
         sub: token_info.fetch("sub"),
-        display_name: user_info.fetch("name")
+        display_name: user_info.fetch("name", nil) || user_info.fetch("email")
       )
+    rescue KeyError => e
+      raise RequestError, "Google OAuth response was missing an expected field: #{e.key}"
     end
 
     private
