@@ -3,6 +3,7 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {getTranslations} from 'next-intl/server';
 
 import AuthPanel from '@/components/auth-panel';
+import BoardCreatePanel from '@/components/board-create-panel';
 
 export default async function LocaleHomePage() {
   const t = await getTranslations('Home');
@@ -40,6 +41,10 @@ export default async function LocaleHomePage() {
       <section className="auth-section" aria-labelledby="auth-heading">
         <h2 id="auth-heading">{t('authSectionTitle')}</h2>
         <AuthPanel />
+      </section>
+
+      <section className="board-section" aria-labelledby="board-create-heading">
+        <BoardCreatePanel />
       </section>
     </main>
   );
