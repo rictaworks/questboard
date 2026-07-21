@@ -16,6 +16,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.bigint "user_id", null: false
     t.integer "role_id", null: false
     t.index ["board_id", "user_id"], name: "index_board_members_on_board_id_and_user_id", unique: true
+    t.index ["role_id"], name: "index_board_members_on_role_id"
   end
 
   create_table "boards", force: :cascade do |t|
@@ -36,6 +37,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.text "body", null: false
     t.datetime "created_at", null: false
     t.index ["object_id"], name: "index_comments_on_object_id"
+    t.index ["user_id"], name: "index_comments_on_user_id"
   end
 
   create_table "effect_masters", force: :cascade do |t|
@@ -48,12 +50,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.string "code", null: false
     t.integer "effect_id", null: false
     t.index ["code"], name: "index_event_defs_on_code", unique: true
+    t.index ["effect_id"], name: "index_event_defs_on_effect_id"
   end
 
   create_table "frame_locks", force: :cascade do |t|
     t.bigint "object_id", null: false
     t.bigint "locked_by", null: false
     t.datetime "locked_at", null: false
+    t.index ["locked_by"], name: "index_frame_locks_on_locked_by"
     t.index ["object_id"], name: "index_frame_locks_on_object_id", unique: true
   end
 
@@ -71,6 +75,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.index ["board_id"], name: "index_kpi_events_on_board_id"
     t.index ["event_def_id"], name: "index_kpi_events_on_event_def_id"
     t.index ["occurred_at"], name: "index_kpi_events_on_occurred_at"
+    t.index ["user_id"], name: "index_kpi_events_on_user_id"
   end
 
   create_table "object_ops", force: :cascade do |t|
@@ -82,6 +87,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.bigint "lamport_ts", null: false
     t.string "client_id", null: false
     t.index ["board_id"], name: "index_object_ops_on_board_id"
+    t.index ["object_id", "client_id", "lamport_ts"], name: "index_object_ops_on_object_id_and_client_id_and_lamport_ts", unique: true
     t.index ["object_id"], name: "index_object_ops_on_object_id"
     t.index ["user_id"], name: "index_object_ops_on_user_id"
   end
@@ -137,6 +143,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
   create_table "user_settings", primary_key: "user_id", force: :cascade do |t|
     t.integer "intensity_id", null: false
     t.boolean "sound_enabled", default: false, null: false
+    t.index ["intensity_id"], name: "index_user_settings_on_intensity_id"
   end
 
   create_table "users", force: :cascade do |t|

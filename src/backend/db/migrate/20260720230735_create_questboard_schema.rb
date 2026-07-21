@@ -29,6 +29,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
     end
 
     add_index :board_members, %i[board_id user_id], unique: true
+    add_index :board_members, :role_id
     add_foreign_key :board_members, :boards
     add_foreign_key :board_members, :users
     add_foreign_key :board_members, :roles, column: :role_id
@@ -87,6 +88,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
     add_index :object_ops, :board_id
     add_index :object_ops, :object_id
     add_index :object_ops, :user_id
+    add_index :object_ops, %i[object_id client_id lamport_ts], unique: true
     add_foreign_key :object_ops, :boards
     add_foreign_key :object_ops, :objects
     add_foreign_key :object_ops, :users
@@ -98,6 +100,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
     end
 
     add_index :frame_locks, :object_id, unique: true
+    add_index :frame_locks, :locked_by
     add_foreign_key :frame_locks, :objects
     add_foreign_key :frame_locks, :users, column: :locked_by
 
@@ -109,6 +112,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
     end
 
     add_index :comments, :object_id
+    add_index :comments, :user_id
     add_foreign_key :comments, :objects
     add_foreign_key :comments, :users
 
@@ -144,6 +148,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
     end
 
     add_index :event_defs, :code, unique: true
+    add_index :event_defs, :effect_id
     add_foreign_key :event_defs, :effect_masters, column: :effect_id
 
     create_table :kpi_events, id: :bigint do |t|
@@ -156,6 +161,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
 
     add_index :kpi_events, :event_def_id
     add_index :kpi_events, :board_id
+    add_index :kpi_events, :user_id
     add_index :kpi_events, :occurred_at
     add_foreign_key :kpi_events, :event_defs, column: :event_def_id
     add_foreign_key :kpi_events, :users
@@ -172,6 +178,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.boolean :sound_enabled, null: false, default: false
     end
 
+    add_index :user_settings, :intensity_id
     add_foreign_key :user_settings, :users, column: :user_id
     add_foreign_key :user_settings, :intensity_masters, column: :intensity_id
   end

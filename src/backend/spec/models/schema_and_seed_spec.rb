@@ -10,6 +10,10 @@ RSpec.describe "Questboard database schema and seeds" do
     connection.select_value("SELECT COUNT(*) FROM #{quoted_table}").to_i
   end
 
+  def all_migrations_content
+    Dir.glob(Rails.root.join("db/migrate/*.rb")).sort.map { |path| File.read(path) }.join("\n")
+  end
+
   def seed_table_total
     %w[
       roles
@@ -55,8 +59,7 @@ RSpec.describe "Questboard database schema and seeds" do
     if connection.adapter_name == "PostgreSQL"
       expect(kpi_event_props.comment).to eq("PII禁止")
     else
-      migration_content = File.read(Rails.root.join("db/migrate/20260720230735_create_questboard_schema.rb"))
-      expect(migration_content).to include('comment: "PII禁止"')
+      expect(all_migrations_content).to include('comment: "PII禁止"')
     end
 
     expect(connection.primary_key("user_settings")).to eq("user_id")
@@ -77,7 +80,7 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(schema_content).to match(/t\.jsonb "value"/)
     expect(schema_content).to match(/t\.jsonb "props"/)
 
-    migration_content = File.read(Rails.root.join("db/migrate/20260720230735_create_questboard_schema.rb"))
+    migration_content = all_migrations_content
     expect(migration_content).to include("t.jsonb :geometry")
     expect(migration_content).to include("t.jsonb :text_crdt")
     expect(migration_content).to include("t.jsonb :value")
@@ -85,9 +88,28 @@ RSpec.describe "Questboard database schema and seeds" do
 
     board_member_indexes = connection.indexes("board_members")
     expect(board_member_indexes.any? { |index| index.unique && index.columns == %w[board_id user_id] }).to be(true)
+    expect(board_member_indexes.any? { |index| index.columns == %w[role_id] }).to be(true)
 
     frame_lock_indexes = connection.indexes("frame_locks")
     expect(frame_lock_indexes.any? { |index| index.unique && index.columns == %w[object_id] }).to be(true)
+    expect(frame_lock_indexes.any? { |index| index.columns == %w[locked_by] }).to be(true)
+
+    comment_indexes = connection.indexes("comments")
+    expect(comment_indexes.any? { |index| index.columns == %w[user_id] }).to be(true)
+
+    event_def_indexes = connection.indexes("event_defs")
+    expect(event_def_indexes.any? { |index| index.columns == %w[effect_id] }).to be(true)
+
+    kpi_event_indexes = connection.indexes("kpi_events")
+    expect(kpi_event_indexes.any? { |index| index.columns == %w[user_id] }).to be(true)
+
+    user_setting_indexes = connection.indexes("user_settings")
+    expect(user_setting_indexes.any? { |index| index.columns == %w[intensity_id] }).to be(true)
+
+    object_op_indexes = connection.indexes("object_ops")
+    expect(object_op_indexes.any? { |index|
+      index.unique && index.columns == %w[object_id client_id lamport_ts]
+    }).to be(true)
   end
 
   it "keeps Sqlite3JsonbCompat definitions in sync with actual database schema" do
