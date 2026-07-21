@@ -24,7 +24,7 @@ module Auth
       @client_secret = client_secret.to_s.strip
       @redirect_uri = redirect_uri.to_s.strip
 
-      raise ConfigurationError, "Google OAuth configuration is incomplete" if [@client_id, @client_secret, @redirect_uri].any?(&:empty?)
+      raise ConfigurationError, "Google OAuth configuration is incomplete" if [ @client_id, @client_secret, @redirect_uri ].any?(&:empty?)
     end
 
     def exchange_code!(code:, code_verifier:)
