@@ -14,6 +14,13 @@ import {
 
 const callbackStateKey = googleAuthStorageKeys.state;
 
+type CallbackState = {
+  errorMessage: string | null;
+  status: "loading" | "success" | "error";
+  codeVerifier: string | null;
+  returnTo: string;
+};
+
 export default function GoogleCallback({
   code,
   state
@@ -23,27 +30,37 @@ export default function GoogleCallback({
 }) {
   const t = useTranslations("Auth");
   const router = useRouter();
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+
+  const isMissingParams = !code || !state;
+
+  const [{errorMessage, status}, setCallbackState] = useState<CallbackState>(() => ({
+    codeVerifier: null,
+    errorMessage: isMissingParams ? t("callbackMissingCode") : null,
+    returnTo: "/",
+    status: isMissingParams ? "error" : "loading"
+  }));
 
   useEffect(() => {
-    if (!code || !state) {
-      setStatus("error");
-      setErrorMessage(t("callbackMissingCode"));
-      return;
-    }
-
-    const storedState = window.sessionStorage.getItem(callbackStateKey);
-    const codeVerifier = window.sessionStorage.getItem(googleAuthStorageKeys.codeVerifier);
-    const returnTo = normalizeReturnTo(window.sessionStorage.getItem(googleAuthStorageKeys.returnTo));
-
-    if (storedState !== state || !codeVerifier) {
-      setStatus("error");
-      setErrorMessage(t("callbackStateMismatch"));
+    if (isMissingParams || status !== "loading") {
       return;
     }
 
     void (async () => {
+      const storedState = window.sessionStorage.getItem(callbackStateKey);
+      const codeVerifier = window.sessionStorage.getItem(googleAuthStorageKeys.codeVerifier);
+      const rawReturnTo = window.sessionStorage.getItem(googleAuthStorageKeys.returnTo);
+      const returnTo = normalizeReturnTo(rawReturnTo);
+
+      if (storedState !== state || !codeVerifier) {
+        setCallbackState({
+          codeVerifier: null,
+          errorMessage: t("callbackStateMismatch"),
+          returnTo,
+          status: "error"
+        });
+        return;
+      }
+
       try {
         const settings = readGoogleAuthSettings();
         const recaptchaToken = await loadRecaptchaToken(settings.recaptchaSiteKey, "login");
@@ -68,14 +85,23 @@ export default function GoogleCallback({
         window.sessionStorage.removeItem(googleAuthStorageKeys.codeVerifier);
         window.sessionStorage.removeItem(googleAuthStorageKeys.state);
         window.sessionStorage.removeItem(googleAuthStorageKeys.returnTo);
-        setStatus("success");
+        setCallbackState({
+          codeVerifier: null,
+          errorMessage: null,
+          returnTo,
+          status: "success"
+        });
         router.replace(returnTo as never);
       } catch (error) {
-        setStatus("error");
-        setErrorMessage(error instanceof Error ? error.message : t("callbackFailure"));
+        setCallbackState({
+          codeVerifier: null,
+          errorMessage: error instanceof Error ? error.message : t("callbackFailure"),
+          returnTo,
+          status: "error"
+        });
       }
     })();
-  }, [code, router, state, t]);
+  }, [code, isMissingParams, router, state, status, t]);
 
   return (
     <main className="home-shell">

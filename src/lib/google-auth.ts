@@ -1,9 +1,4 @@
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
-type PublicEnvName =
-  | "NEXT_PUBLIC_BACKEND_URL"
-  | "NEXT_PUBLIC_GOOGLE_CLIENT_ID"
-  | "NEXT_PUBLIC_GOOGLE_REDIRECT_URI"
-  | "NEXT_PUBLIC_RECAPTCHA_SITE_KEY";
 
 export const googleAuthStorageKeys = {
   codeVerifier: "questboard.google.codeVerifier",
@@ -11,22 +6,30 @@ export const googleAuthStorageKeys = {
   state: "questboard.google.state"
 } as const;
 
-export function readRequiredPublicEnv(name: PublicEnvName): string {
-  const value = process.env[name];
+export function readGoogleAuthSettings() {
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
+  const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
-  if (!value) {
-    throw new Error(`${name} is required`);
+  if (!backendUrl) {
+    throw new Error("NEXT_PUBLIC_BACKEND_URL is required");
+  }
+  if (!clientId) {
+    throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is required");
+  }
+  if (!redirectUri) {
+    throw new Error("NEXT_PUBLIC_GOOGLE_REDIRECT_URI is required");
+  }
+  if (!recaptchaSiteKey) {
+    throw new Error("NEXT_PUBLIC_RECAPTCHA_SITE_KEY is required");
   }
 
-  return value;
-}
-
-export function readGoogleAuthSettings() {
   return {
-    backendUrl: readRequiredPublicEnv("NEXT_PUBLIC_BACKEND_URL"),
-    clientId: readRequiredPublicEnv("NEXT_PUBLIC_GOOGLE_CLIENT_ID"),
-    redirectUri: readRequiredPublicEnv("NEXT_PUBLIC_GOOGLE_REDIRECT_URI"),
-    recaptchaSiteKey: readRequiredPublicEnv("NEXT_PUBLIC_RECAPTCHA_SITE_KEY")
+    backendUrl,
+    clientId,
+    redirectUri,
+    recaptchaSiteKey
   };
 }
 

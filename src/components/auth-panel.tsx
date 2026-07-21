@@ -23,14 +23,14 @@ const isDevelopmentMode = process.env.NEXT_PUBLIC_ENV === "development";
 
 export default function AuthPanel() {
   const t = useTranslations("Auth");
-  const [sessionState, setSessionState] = useState<SessionState | null>(null);
+  const [sessionState, setSessionState] = useState<SessionState | null>(() =>
+    isDevelopmentMode ? {authenticated: true, displayName: t("developmentDisplayName")} : null
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(!isDevelopmentMode);
 
   useEffect(() => {
     if (isDevelopmentMode) {
-      setSessionState({authenticated: true, displayName: t("developmentDisplayName")});
-      setLoading(false);
       return;
     }
 
