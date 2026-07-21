@@ -17,7 +17,7 @@ class Board < ApplicationRecord
   def join_member!(user:, role_code:)
     role = Role.find_by!(code: role_code.to_s)
 
-    board_members.find_or_create_by!(user:) do |member|
+    board_members.create_or_find_by!(user:) do |member|
       member.role = role
     end
   end

@@ -86,7 +86,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
     try {
       const {backendUrl} = readGoogleAuthSettings();
-      const response = await fetch(`${backendUrl}/boards/${shareToken}/join`, {
+      const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}/join`, {
         body: JSON.stringify({role_code: roleCode}),
         credentials: 'include',
         headers: {
