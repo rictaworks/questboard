@@ -68,11 +68,14 @@ RSpec.describe "Questboard database schema and seeds" do
       expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
     end
 
+    # schema.rb は t.jsonb 呼び出しのまま維持すること。SQLite ではこの呼び出しを
+    # sqlite3_jsonb_compat.rb が json 型として実体化するため、schema.rb 上の表記が
+    # t.json になると db:schema:load を使う PostgreSQL 環境で jsonb が失われる。
     schema_content = Rails.root.join("db/schema.rb").read
-    expect(schema_content).to match(/t\.jsonb? "geometry"/)
-    expect(schema_content).to match(/t\.jsonb? "text_crdt"/)
-    expect(schema_content).to match(/t\.jsonb? "value"/)
-    expect(schema_content).to match(/t\.jsonb? "props"/)
+    expect(schema_content).to match(/t\.jsonb "geometry"/)
+    expect(schema_content).to match(/t\.jsonb "text_crdt"/)
+    expect(schema_content).to match(/t\.jsonb "value"/)
+    expect(schema_content).to match(/t\.jsonb "props"/)
 
     migration_content = File.read(Rails.root.join("db/migrate/20260720230735_create_questboard_schema.rb"))
     expect(migration_content).to include("t.jsonb :geometry")

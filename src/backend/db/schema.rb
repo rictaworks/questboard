@@ -3,26 +3,26 @@
 # incrementally modify your database, and then regenerate this schema definition.
 #
 # This file is the source Rails uses to define your schema when running `bin/rails
-# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends
-# to be faster and is potentially less error prone than running all of your
+# db:schema:load`. When creating a new database, `bin/rails db:schema:load` tends to
+# be faster and is potentially less error prone than running all of your
 # migrations from scratch. Old migrations may fail to apply correctly if those
 # migrations use external dependencies or application code.
 #
-# It is strongly recommended that you check this file into your version control system.
+# It's strongly recommended that you check this file into your version control system.
 
 ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
-  create_table "boards", force: :cascade do |t|
-    t.string "title", null: false
-    t.string "share_token", null: false
-    t.datetime "created_at", null: false
-    t.index ["share_token"], name: "index_boards_on_share_token", unique: true
-  end
-
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
     t.integer "role_id", null: false
     t.index ["board_id", "user_id"], name: "index_board_members_on_board_id_and_user_id", unique: true
+  end
+
+  create_table "boards", force: :cascade do |t|
+    t.string "title", null: false
+    t.string "share_token", null: false
+    t.datetime "created_at", null: false
+    t.index ["share_token"], name: "index_boards_on_share_token", unique: true
   end
 
   create_table "color_palettes", force: :cascade do |t|
@@ -65,7 +65,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.integer "event_def_id", null: false
     t.bigint "user_id", null: false
     t.bigint "board_id", null: false
-    t.json "props", default: {}, null: false, comment: "PII禁止"
+    t.jsonb "props", default: {}, null: false, comment: "PII禁止"
     t.datetime "occurred_at", null: false
     t.index ["board_id"], name: "index_kpi_events_on_board_id"
     t.index ["event_def_id"], name: "index_kpi_events_on_event_def_id"
@@ -77,7 +77,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.bigint "object_id", null: false
     t.bigint "user_id", null: false
     t.string "property", null: false
-    t.json "value", default: {}, null: false
+    t.jsonb "value", default: {}, null: false
     t.bigint "lamport_ts", null: false
     t.string "client_id", null: false
     t.index ["board_id"], name: "index_object_ops_on_board_id"
@@ -94,8 +94,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.bigint "board_id", null: false
     t.integer "object_type_id", null: false
     t.integer "color_id", null: false
-    t.json "geometry", default: {}, null: false
-    t.json "text_crdt", default: {}, null: false
+    t.jsonb "geometry", default: {}, null: false
+    t.jsonb "text_crdt", default: {}, null: false
     t.bigint "parent_frame_id"
     t.datetime "deleted_at"
     t.index ["board_id"], name: "index_objects_on_board_id"
@@ -133,7 +133,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.index ["user_id", "quest_id"], name: "index_user_quests_on_user_id_and_quest_id", unique: true
   end
 
-  create_table "user_settings", primary_key: "user_id", id: :bigint, force: :cascade do |t|
+  create_table "user_settings", primary_key: "user_id", force: :cascade do |t|
     t.integer "intensity_id", null: false
     t.boolean "sound_enabled", default: false, null: false
   end
@@ -154,17 +154,17 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
   add_foreign_key "frame_locks", "objects"
   add_foreign_key "frame_locks", "users", column: "locked_by"
   add_foreign_key "kpi_events", "boards"
-  add_foreign_key "kpi_events", "event_defs", column: "event_def_id"
+  add_foreign_key "kpi_events", "event_defs"
   add_foreign_key "kpi_events", "users"
   add_foreign_key "object_ops", "boards"
   add_foreign_key "object_ops", "objects"
   add_foreign_key "object_ops", "users"
   add_foreign_key "objects", "boards"
   add_foreign_key "objects", "color_palettes", column: "color_id"
-  add_foreign_key "objects", "object_types", column: "object_type_id"
+  add_foreign_key "objects", "object_types"
   add_foreign_key "objects", "objects", column: "parent_frame_id"
-  add_foreign_key "user_quests", "quests", column: "quest_id"
+  add_foreign_key "user_quests", "quests"
   add_foreign_key "user_quests", "users"
   add_foreign_key "user_settings", "intensity_masters", column: "intensity_id"
-  add_foreign_key "user_settings", "users", column: "user_id"
+  add_foreign_key "user_settings", "users"
 end
