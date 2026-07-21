@@ -34,6 +34,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.bigint "object_id", null: false
     t.bigint "user_id", null: false
     t.text "body", null: false
+    t.datetime "created_at", null: false
     t.index ["object_id"], name: "index_comments_on_object_id"
   end
 

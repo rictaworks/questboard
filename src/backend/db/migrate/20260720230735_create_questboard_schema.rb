@@ -105,6 +105,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.bigint :object_id, null: false
       t.bigint :user_id, null: false
       t.text :body, null: false
+      t.datetime :created_at, null: false
     end
 
     add_index :comments, :object_id
