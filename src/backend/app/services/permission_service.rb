@@ -20,27 +20,6 @@ class PermissionService
     delete_comment
   ].freeze
 
-  LOCK_SET_ACTIONS = %i[
-    lock_frame
-    lock
-  ].freeze
-
-  LOCK_RELEASE_ACTIONS = %i[
-    unlock_frame
-    unlock
-  ].freeze
-
-  BOARD_ADMIN_ACTIONS = %i[
-    delete_board
-    change_role
-    role_change
-  ].freeze
-
-  SHARE_ACTIONS = %i[
-    share_board
-    share
-  ].freeze
-
   ACTION_ALIASES = {
     view_board: :view_board,
     view: :view_board,

@@ -186,5 +186,18 @@ RSpec.describe PermissionService do
         expect(service.authorize(:editor, action_code, state)).to be(true), "expected editor to be authorized for #{action_code}"
       end
     end
+
+    it "denies unknown roles and actions by default" do
+      expect(service.authorize(:superadmin, :view_board, unlocked_state)).to be(false)
+      expect(service.authorize(:editor, :launch_missiles, unlocked_state)).to be(false)
+      expect(service.authorize(nil, :view_board, unlocked_state)).to be(false)
+      expect(service.authorize(:owner, nil, unlocked_state)).to be(false)
+    end
+
+    it "authorizes owner for any action name, including ones outside the known alias map" do
+      # owner権限は「全アクション可」の仕様通り、アクション名の妥当性チェックより先に許可される。
+      # action は常にアプリ内部のコードが渡す値でありユーザー入力ではないため、これは意図した挙動。
+      expect(service.authorize(:owner, :some_future_action_not_yet_defined, unlocked_state)).to be(true)
+    end
   end
 end
