@@ -2,10 +2,7 @@ class ObjectsController < ApplicationController
   before_action :require_current_user!
 
   def create
-    board = find_board!
-    member = board_membership_for(board)
-    return head :forbidden unless member
-    authorize_object!(member.role.code, :create_object)
+    board = find_authorized_board!(:create_object)
     return if performed?
 
     object = board.board_objects.create!(
@@ -38,11 +35,7 @@ class ObjectsController < ApplicationController
   end
 
   def destroy
-    board = find_board!
-    object = find_board_object!(board)
-    member = board_membership_for(board)
-    return head :forbidden unless member
-    authorize_object!(member.role.code, :delete_object, object)
+    object = find_authorized_object!(:delete_object)
     return if performed?
 
     object.update!(deleted_at: Time.current)
@@ -54,11 +47,7 @@ class ObjectsController < ApplicationController
   end
 
   def lock
-    board = find_board!
-    object = find_board_object!(board)
-    member = board_membership_for(board)
-    return head :forbidden unless member
-    authorize_object!(member.role.code, :lock_frame, object)
+    object = find_authorized_object!(:lock_frame)
     return if performed?
 
     lock = object.frame_lock || object.build_frame_lock
@@ -69,14 +58,12 @@ class ObjectsController < ApplicationController
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordNotUnique
+    render json: { error: "Object was locked by another user" }, status: :conflict
   end
 
   def unlock
-    board = find_board!
-    object = find_board_object!(board)
-    member = board_membership_for(board)
-    return head :forbidden unless member
-    authorize_object!(member.role.code, :unlock_frame, object)
+    object = find_authorized_object!(:unlock_frame)
     return if performed?
 
     object.frame_lock&.destroy!
@@ -101,6 +88,34 @@ class ObjectsController < ApplicationController
     board.board_objects.active.find(params.require(:id))
   end
 
+  # boardのみを必要とするアクション(create)向け。認可失敗時はforbiddenをrenderしてnilを返す。
+  def find_authorized_board!(action)
+    board = find_board!
+    return unless authorize_member!(board:, action:)
+
+    board
+  end
+
+  # 既存オブジェクトを必要とするアクション(destroy/lock/unlock/move/resize/rotate)向け。
+  # 認可失敗時はforbiddenをrenderしてnilを返す。
+  def find_authorized_object!(action)
+    board = find_board!
+    object = find_board_object!(board)
+    return unless authorize_member!(board:, action:, object:)
+
+    object
+  end
+
+  def authorize_member!(board:, action:, object: nil)
+    member = board_membership_for(board)
+    unless member
+      head :forbidden
+      return false
+    end
+
+    authorize_object!(member.role.code, action, object)
+  end
+
   def authorize_object!(role_code, action, object = nil)
     state = object_state(object)
     return true if PermissionService.new.authorize(role_code, action, state)
@@ -110,11 +125,7 @@ class ObjectsController < ApplicationController
   end
 
   def mutate_geometry(action)
-    board = find_board!
-    object = find_board_object!(board)
-    member = board_membership_for(board)
-    return head :forbidden unless member
-    authorize_object!(member.role.code, action, object)
+    object = find_authorized_object!(action)
     return if performed?
 
     updated_geometry = object.geometry.merge(geometry_params.to_h)
