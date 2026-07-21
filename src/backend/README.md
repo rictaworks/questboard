@@ -8,6 +8,7 @@ Rails API scaffold for questboard.
 2. Set `DATABASE_URL` for production Postgres
 3. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
 4. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
+5. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, and `RECAPTCHA_SECRET_KEY`
 
 ## Admin access
 
@@ -26,6 +27,9 @@ API surface grows. Current endpoints:
 | ------ | ---------- | ---------------- | ----------- |
 | GET    | `/healthz` | Health check      | none        |
 | GET    | `/admin`   | Admin dashboard   | HTTP Basic  |
+| GET    | `/session` | Current session   | cookie      |
+| DELETE | `/session` | Logout            | cookie      |
+| POST   | `/auth/google_sessions` | Google login callback | none |
 
 ## Lint & security
 

@@ -49,6 +49,11 @@ RSpec.describe "Questboard database schema and seeds" do
       "intensity_masters"
     )
 
+    user_columns = connection.columns("users").map(&:name)
+    expect(user_columns).to include("google_sub", "display_name", "created_at")
+    user_indexes = connection.indexes("users")
+    expect(user_indexes.any? { |index| index.unique && index.columns == %w[google_sub] }).to be(true)
+
     object_columns = connection.columns("objects").map(&:name)
     expect(object_columns).to include("geometry", "text_crdt", "parent_frame_id", "deleted_at")
 

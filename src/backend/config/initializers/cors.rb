@@ -14,6 +14,6 @@ end
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins(*allowed_origins)
-    resource "*", headers: :any, methods: %i[get head options]
+    resource "*", headers: :any, methods: %i[get head options post delete], credentials: true
   end
 end
