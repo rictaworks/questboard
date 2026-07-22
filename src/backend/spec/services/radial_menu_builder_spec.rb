@@ -23,14 +23,14 @@ RSpec.describe RadialMenuBuilder do
   it "covers the 7 target × 4 role × 3 selection matrix" do
     targets = %i[blank sticky shape text connector image frame]
     roles = %i[owner editor commenter viewer]
-    selection_counts = [0, 1, 2]
+    selection_counts = [ 0, 1, 2 ]
 
     targets.product(roles, selection_counts).each do |target_kind, role, selection_count|
       result = builder.build(
         target_kind:,
         selection_count:,
         role:,
-        usage_stats: {duplicate: 10, delete: 9, comment: 8, align: 7, group: 6, ungroup: 5, recolor: 4, share: 3, create_sticky: 2, create_shape: 1}
+        usage_stats: { duplicate: 10, delete: 9, comment: 8, align: 7, group: 6, ungroup: 5, recolor: 4, share: 3, create_sticky: 2, create_shape: 1 }
       )
 
       expect(result[:center]).to eq(code: :cancel, label: "キャンセル")
@@ -74,15 +74,15 @@ RSpec.describe RadialMenuBuilder do
       target_kind: :shape,
       selection_count: 3,
       role: :editor,
-      usage_stats: {delete: 4, duplicate: 9, align: 2, group: 1}
+      usage_stats: { delete: 4, duplicate: 9, align: 2, group: 1 }
     )
 
     expect(result[:items].map { |item| item[:code] }).to eq(%i[duplicate delete align group])
     expect(result[:rings].first.map { |item| item.slice(:code, :ring, :slot) }).to eq([
-      {code: :duplicate, ring: 1, slot: 1},
-      {code: :delete, ring: 1, slot: 2},
-      {code: :align, ring: 1, slot: 3},
-      {code: :group, ring: 1, slot: 4}
+      { code: :duplicate, ring: 1, slot: 1 },
+      { code: :delete, ring: 1, slot: 2 },
+      { code: :align, ring: 1, slot: 3 },
+      { code: :group, ring: 1, slot: 4 }
     ])
   end
 
@@ -107,7 +107,7 @@ RSpec.describe RadialMenuBuilder do
         create_frame: 2,
         ungroup: 1
       },
-      target_state: {locked: false}
+      target_state: { locked: false }
     )
 
     expect(result[:items].size).to be >= 9
@@ -118,8 +118,8 @@ RSpec.describe RadialMenuBuilder do
   end
 
   it "switches between lock and unlock using target state" do
-    unlocked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: {locked: false})
-    locked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: {locked: true, actor_id: 1, lock_owner_id: 1})
+    unlocked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: { locked: false })
+    locked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: { locked: true, actor_id: 1, lock_owner_id: 1 })
 
     expect(unlocked[:items].map { |item| item[:code] }).to include(:lock)
     expect(unlocked[:items].map { |item| item[:code] }).not_to include(:unlock)

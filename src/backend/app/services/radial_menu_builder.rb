@@ -40,9 +40,9 @@ class RadialMenuBuilder
     normalized_selection_count = selection_count.to_i
     normalized_target_state = normalize_target_state(target_state)
 
-    center = {code: :cancel, label: "キャンセル"}
+    center = { code: :cancel, label: "キャンセル" }
 
-    return {visible: false, center:, rings: [], items: []} if normalized_role == :viewer
+    return { visible: false, center:, rings: [], items: [] } if normalized_role == :viewer
 
     candidate_codes = candidate_codes_for(
       target_kind: normalized_target_kind,
@@ -52,7 +52,7 @@ class RadialMenuBuilder
     usage_stats = normalize_usage_stats(usage_stats)
     ordered_items = rank_items(executable_codes, usage_stats)
 
-    return {visible: false, center:, rings: [], items: []} if ordered_items.empty?
+    return { visible: false, center:, rings: [], items: [] } if ordered_items.empty?
 
     rings = ordered_items.each_slice(8).map.with_index(1) do |slice, ring_index|
       slice.map.with_index(1) do |item, slot_index|
@@ -123,7 +123,7 @@ class RadialMenuBuilder
         frequency: usage_stats.frequency_for(code)
       }
     end.sort_by do |item|
-      [-item[:frequency], item[:sort_order], item[:code].to_s]
+      [ -item[:frequency], item[:sort_order], item[:code].to_s ]
     end
   end
 end
