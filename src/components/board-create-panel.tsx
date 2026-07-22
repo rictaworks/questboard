@@ -17,22 +17,20 @@ type CreatedBoard = {
   shareUrl: string;
 };
 
-const isDevelopmentMode = process.env.NEXT_PUBLIC_ENV === 'development';
-
 export default function BoardCreatePanel() {
   const t = useTranslations('BoardCreate');
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    isDevelopmentMode ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
+    process.env.NEXT_PUBLIC_ENV === 'development' ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
   );
-  const [loading, setLoading] = useState(!isDevelopmentMode);
+  const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    if (isDevelopmentMode) {
+    if (process.env.NEXT_PUBLIC_ENV === 'development') {
       return;
     }
 

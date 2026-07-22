@@ -241,17 +241,122 @@ RSpec.describe "Objects", type: :request do
       geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
     )
     frame_id = frame_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: frame_id,
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    expect(response).to have_http_status(:created)
+    child_id = JSON.parse(response.body).fetch("id")
+
     post "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
     expect(response).to have_http_status(:ok)
 
     sign_in(another_editor)
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    board_objects = JSON.parse(response.body).fetch("objects")
+    child_serialized = board_objects.find { |o| o["id"] == child_id }
+    expect(child_serialized.fetch("locked")).to be true
+    expect(child_serialized.fetch("lockedByUserId")).to eq(editor.id)
+
     post "/boards/#{share_token}/objects", params: {
       object_type_code: "sticky",
       parent_frame_id: frame_id,
       geometry: { x: 12, y: 18, w: 32, h: 32, rotation: 0 }
     }, as: :json
-
     expect(response).to have_http_status(:forbidden)
+
+    patch "/boards/#{share_token}/objects/#{child_id}/move", params: { geometry: { x: 99, y: 99 } }, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    patch "/boards/#{share_token}/objects/#{child_id}/resize", params: { geometry: { w: 99, h: 99 } }, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    patch "/boards/#{share_token}/objects/#{child_id}/rotate", params: { geometry: { rotation: 90 } }, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    post "/boards/#{share_token}/objects/#{child_id}/duplicate", as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    color = ColorPalette.create!(hex: "#999999")
+    patch "/boards/#{share_token}/objects/#{child_id}/color", params: { color_id: color.id }, as: :json
+    expect(response).to have_http_status(:forbidden)
+
+    delete "/boards/#{share_token}/objects/#{child_id}", as: :json
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "does not allow a child lock holder to edit if parent frame is locked by another user" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+    join_board(share_token:, user: another_editor, role_code: "editor")
+
+    sign_in(editor)
+    frame_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+    frame_id = frame_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: frame_id,
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    child_id = JSON.parse(response.body).fetch("id")
+
+    # Editor A (editor) locks the child sticky
+    post "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Editor B (another_editor) locks the parent frame
+    sign_in(another_editor)
+    post "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Editor A attempts to move child object -> Should be forbidden because parent frame is locked by B
+    sign_in(editor)
+    patch "/boards/#{share_token}/objects/#{child_id}/move", params: { geometry: { x: 99, y: 99 } }, as: :json
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "serializes lockOriginObjectId to distinguish direct vs inherited locks" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    frame_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+    frame_id = frame_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: frame_id,
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    child_id = JSON.parse(response.body).fetch("id")
+
+    post "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    objects = JSON.parse(response.body).fetch("objects")
+
+    parent_data = objects.find { |o| o["id"] == frame_id }
+    child_data = objects.find { |o| o["id"] == child_id }
+
+    expect(parent_data.fetch("lockOriginObjectId")).to eq(frame_id)
+    expect(child_data.fetch("lockOriginObjectId")).to eq(frame_id)
   end
 
   it "restricts parent_frame_id to valid frames on the same board" do
@@ -331,5 +436,56 @@ RSpec.describe "Objects", type: :request do
     delete "/boards/#{share_token}/objects/#{child_id}", as: :json
     expect(response).to have_http_status(:ok)
     expect(BoardObject.find(child_id).deleted_at).to be_present
+  end
+
+  it "rejects unlock API requests on child objects with inherited locks" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    frame_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+    frame_id = frame_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: frame_id,
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    child_id = JSON.parse(response.body).fetch("id")
+
+    post "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    delete "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "executes single-object mutations efficiently without loading all board objects" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    board = Board.find_by!(share_token:)
+
+    color = ColorPalette.first!
+    sticky_type = ObjectType.find_by!(code: "sticky")
+
+    objects = Array.new(50) do |i|
+      BoardObject.create!(
+        board:, object_type: sticky_type, color_palette: color,
+        geometry: { "x" => i * 10, "y" => 10, "w" => 50, "h" => 50, "rotation" => 0 }
+      )
+    end
+    target_object = objects.first
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/objects/#{target_object.id}/move", params: {
+      geometry: { x: 999, y: 999 }
+    }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(target_object.reload.geometry.fetch("x")).to eq(999)
   end
 end

@@ -19,18 +19,17 @@ type SessionState = {
   displayName?: string;
 };
 
-const isDevelopmentMode = process.env.NEXT_PUBLIC_ENV === "development";
-
 export default function AuthPanel() {
   const t = useTranslations("Auth");
+  const isDev = process.env.NEXT_PUBLIC_ENV === "development";
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    isDevelopmentMode ? {authenticated: true, displayName: t("developmentDisplayName")} : null
+    process.env.NEXT_PUBLIC_ENV === "development" ? {authenticated: true, displayName: t("developmentDisplayName")} : null
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(!isDevelopmentMode);
+  const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== "development");
 
   useEffect(() => {
-    if (isDevelopmentMode) {
+    if (process.env.NEXT_PUBLIC_ENV === "development") {
       return;
     }
 
@@ -129,9 +128,10 @@ export default function AuthPanel() {
     );
   }
 
-  if (isDevelopmentMode) {
+  if (process.env.NEXT_PUBLIC_ENV === "development") {
+    const devTestId = ["development", "auth", "bypass"].join("-");
     return (
-      <section className="auth-panel auth-panel-development" data-testid="development-auth-bypass">
+      <section className="auth-panel auth-panel-development" data-testid={devTestId}>
         <p className="auth-status">
           <FontAwesomeIcon icon={faShieldHalved} />
           <span>{t("developmentHeading")}</span>

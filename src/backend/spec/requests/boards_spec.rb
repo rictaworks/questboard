@@ -209,4 +209,59 @@ RSpec.describe "Boards", type: :request do
     expect(response.headers["Access-Control-Allow-Origin"]).to eq("http://localhost:3000")
     expect(response.headers["Access-Control-Allow-Methods"]).to include("PATCH")
   end
+
+  def seed_object_support
+    ObjectType.upsert_all(
+      [
+        { code: "sticky" },
+        { code: "shape" },
+        { code: "text" },
+        { code: "connector" },
+        { code: "image" },
+        { code: "frame" }
+      ],
+      unique_by: :index_object_types_on_code
+    )
+
+    ColorPalette.upsert_all(
+      [
+        { hex: "#FDE68A" }
+      ],
+      unique_by: :index_color_palettes_on_hex
+    )
+  end
+
+  it "resolves ancestor locks without N+1 queries regardless of object tree size" do
+    seed_object_support
+    board_payload = create_board(title: "Deep Hierarchy Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    board = Board.find_by!(share_token:)
+
+    color = ColorPalette.first!
+    frame_type = ObjectType.find_by!(code: "frame")
+    sticky_type = ObjectType.find_by!(code: "sticky")
+
+    parent = nil
+    20.times do |i|
+      frame = BoardObject.create!(
+        board:, object_type: frame_type, color_palette: color, parent_frame: parent,
+        geometry: { "x" => i * 10, "y" => i * 10, "w" => 200, "h" => 200, "rotation" => 0 }
+      )
+      BoardObject.create!(
+        board:, object_type: sticky_type, color_palette: color, parent_frame: frame,
+        geometry: { "x" => i * 10 + 5, "y" => i * 10 + 5, "w" => 50, "h" => 50, "rotation" => 0 }
+      )
+      if i == 5
+        FrameLock.create!(object_id: frame.id, locked_by: owner.id, locked_at: Time.current)
+      end
+      parent = frame
+    end
+
+    sign_in(owner)
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    payload = JSON.parse(response.body)
+
+    expect(payload.fetch("objects").length).to eq(40)
+  end
 end

@@ -11,6 +11,14 @@ class BoardObject < ApplicationRecord
 
   validate :parent_frame_must_belong_to_same_board
 
+  def active_locks_in_chain
+    BoardLockResolver.new(self).active_locks_in_chain(self)
+  end
+
+  def effective_frame_lock(current_user_id: nil)
+    BoardLockResolver.new(self).effective_lock(self, current_user_id:)
+  end
+
   private
 
   def parent_frame_must_belong_to_same_board

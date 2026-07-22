@@ -7,7 +7,7 @@ class ObjectsController < ApplicationController
 
     membership = board_membership_for(board)
     parent_frame = active_parent_frame_for(board)
-    if parent_frame && membership && !authorize_object!(membership.role.code, :edit_object, object_state(parent_frame))
+    if parent_frame && membership && !authorize_object!(membership.role.code, :edit_object, parent_frame)
       return
     end
 
@@ -103,7 +103,12 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:unlock_frame)
     return if performed?
 
-    object.frame_lock&.destroy!
+    unless object.frame_lock.present?
+      head :forbidden
+      return
+    end
+
+    object.frame_lock.destroy!
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
@@ -181,14 +186,14 @@ class ObjectsController < ApplicationController
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
+  def lock_resolver_for(object)
+    @lock_resolver ||= BoardLockResolver.for_chain(object)
+  end
+
   def object_state(object)
     return {} unless object
 
-    {
-      locked: object.frame_lock.present?,
-      locked_by_user_id: object.frame_lock&.locked_by,
-      current_user_id: current_user&.id
-    }
+    lock_resolver_for(object).object_state(object, current_user_id: current_user&.id)
   end
 
   def board_membership_for(board)
@@ -196,7 +201,8 @@ class ObjectsController < ApplicationController
   end
 
   def serialize_object(object)
-    lock = object.frame_lock
+    resolver = lock_resolver_for(object)
+    lock = resolver.effective_lock(object, current_user_id: current_user&.id)
 
     {
       id: object.id,
@@ -208,7 +214,8 @@ class ObjectsController < ApplicationController
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,
-      lockedAt: lock&.locked_at&.iso8601
+      lockedAt: lock&.locked_at&.iso8601,
+      lockOriginObjectId: lock&.object_id
     }
   end
 

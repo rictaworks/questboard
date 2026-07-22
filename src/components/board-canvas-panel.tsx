@@ -2,7 +2,7 @@
 
 import {faClone, faLock, faPenToSquare, faPalette, faRotateRight, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
 import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
@@ -20,6 +20,7 @@ export interface BoardCanvasObject {
   locked: boolean;
   lockedByUserId?: number | null;
   lockedAt?: string | null;
+  lockOriginObjectId?: number | null;
 }
 
 export interface BoardCanvasData {
@@ -54,12 +55,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   const toastIdRef = useRef(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const [viewport, setViewport] = useState({width: 0, height: 0});
-  const [cameraState, setCameraState] = useState<CameraState>(() => controllerRef.current.getState());
+  const [cameraState, setCameraState] = useState<CameraState>(createCameraState);
   const [selection, setSelection] = useState<number[]>([]);
   const [interaction, setInteraction] = useState<Interaction>(null);
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const cameraStateRef = useRef<CameraState>(controllerRef.current.getState());
+  const cameraStateRef = useRef<CameraState>(cameraState);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
 
@@ -92,7 +93,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
     const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
     setCameraState({...nextCamera});
-  }, [contentBounds, viewport.width, viewport.height]);
+  }, [contentBounds, viewport]);
 
   useEffect(() => {
     if (!canvasRef.current || typeof ResizeObserver === 'undefined') {
@@ -117,6 +118,54 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       resizeObserverRef.current = null;
     };
   }, []);
+
+  const enqueueToast = useCallback((message: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((current) => [...current, {id, message}]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4000);
+  }, []);
+
+  const mutateObject = useCallback(
+    async (
+      objectId: number,
+      action: 'move' | 'resize' | 'rotate' | 'duplicate' | 'color' | 'delete' | 'lock' | 'unlock',
+      payload: Record<string, unknown> = {}
+    ) => {
+      const object = objects.find((entry) => entry.id === objectId);
+      if (!object) {
+        return;
+      }
+
+      if (!canPerformBoardAction(roleCode, actionToPermission(action), objectToLockState(object), currentUserId)) {
+        enqueueToast(t('permissionDenied'));
+        return;
+      }
+
+      try {
+        const {backendUrl} = readGoogleAuthSettings();
+        const {url, method, headers} = buildMutationRequest(boardData.board.shareToken, objectId, action);
+        const body = headers && Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
+        const response = await fetch(`${backendUrl}${url}`, {
+          body,
+          credentials: 'include',
+          headers: body ? headers : undefined,
+          method,
+        });
+
+        if (!response.ok) {
+          const errorPayload = (await response.json().catch(() => ({}))) as {error?: string};
+          throw new Error(errorPayload.error ?? t('actionFailed'));
+        }
+
+        await onReloadBoard();
+      } catch (error) {
+        enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
+      }
+    },
+    [boardData.board.shareToken, currentUserId, enqueueToast, objects, onReloadBoard, roleCode, t]
+  );
 
   useEffect(() => {
     if (!interaction) {
@@ -170,10 +219,17 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       }
 
       if (current.kind === 'rotate') {
-        const centerX = current.origin.x + current.origin.w / 2;
-        const centerY = current.origin.y + current.origin.h / 2;
-        const startAngle = Math.atan2(current.startY - centerY, current.startX - centerX);
-        const nextAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX);
+        const stageRect = canvasRef.current?.getBoundingClientRect();
+        const stageLeft = stageRect?.left ?? 0;
+        const stageTop = stageRect?.top ?? 0;
+
+        const centerWorldX = current.origin.x + current.origin.w / 2;
+        const centerWorldY = current.origin.y + current.origin.h / 2;
+        const centerScreenX = stageLeft + viewport.width / 2 + (centerWorldX - cameraStateRef.current.x) * cameraStateRef.current.zoom;
+        const centerScreenY = stageTop + viewport.height / 2 + (centerWorldY - cameraStateRef.current.y) * cameraStateRef.current.zoom;
+
+        const startAngle = Math.atan2(current.startY - centerScreenY, current.startX - centerScreenX);
+        const nextAngle = Math.atan2(event.clientY - centerScreenY, event.clientX - centerScreenX);
         const nextRotation = current.origin.rotation + ((nextAngle - startAngle) * 180) / Math.PI;
         setPreviewGeometry((previous) => ({
           ...previous,
@@ -194,7 +250,16 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
         return;
       }
 
-      const targetObject = objectsRef.current.find((object) => object.id === ('objectId' in current ? current.objectId : -1));
+      if (current.kind === 'marquee') {
+        const selectionRect = normalizeRect(current.startX, current.startY, current.currentX, current.currentY);
+        const nextSelection = objectsRef.current
+          .filter((object) => intersects(selectionRect, objectToScreenRect(object.geometry, cameraStateRef.current, viewport)))
+          .map((object) => object.id);
+        setSelection(nextSelection);
+        return;
+      }
+
+      const targetObject = objectsRef.current.find((object) => object.id === current.objectId);
       if (!targetObject) {
         return;
       }
@@ -216,12 +281,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
         await mutateObject(targetObject.id, 'rotate', {
           geometry: {rotation: Math.round(nextGeometry.rotation)},
         });
-      } else if (current.kind === 'marquee') {
-        const selectionRect = normalizeRect(current.startX, current.startY, current.currentX, current.currentY);
-        const nextSelection = objectsRef.current
-          .filter((object) => intersects(selectionRect, objectToScreenRect(object.geometry, cameraStateRef.current, viewport)))
-          .map((object) => object.id);
-        setSelection(nextSelection);
       }
     };
 
@@ -232,49 +291,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [interaction, viewport]);
+  }, [interaction, mutateObject, viewport]);
 
   const visibleObjects = useMemo(() => objects.map((object) => {
     const draft = previewGeometry[object.id];
     return draft ? {...object, geometry: draft} : object;
   }), [objects, previewGeometry]);
-
-  async function mutateObject(
-    objectId: number,
-    action: 'move' | 'resize' | 'rotate' | 'duplicate' | 'color' | 'delete' | 'lock' | 'unlock',
-    payload: Record<string, unknown> = {}
-  ) {
-    const object = objects.find((entry) => entry.id === objectId);
-    if (!object) {
-      return;
-    }
-
-    if (!canPerformBoardAction(roleCode, actionToPermission(action), objectToLockState(object), currentUserId)) {
-      enqueueToast(t('permissionDenied'));
-      return;
-    }
-
-    try {
-      const {backendUrl} = readGoogleAuthSettings();
-      const {url, method, headers} = buildMutationRequest(boardData.board.shareToken, objectId, action);
-      const body = headers && Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
-      const response = await fetch(`${backendUrl}${url}`, {
-        body,
-        credentials: 'include',
-        headers: body ? headers : undefined,
-        method,
-      });
-
-      if (!response.ok) {
-        const errorPayload = await response.json().catch(() => ({})) as {error?: string};
-        throw new Error(errorPayload.error ?? t('actionFailed'));
-      }
-
-      await onReloadBoard();
-    } catch (error) {
-      enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
-    }
-  }
 
   function handleBackgroundPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || event.target !== event.currentTarget) {
@@ -392,6 +414,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   }
 
   function toggleLock(object: BoardCanvasObject) {
+    const isInheritedLock = object.locked && object.lockOriginObjectId != null && object.lockOriginObjectId !== object.id;
+    if (isInheritedLock) {
+      enqueueToast(t('permissionDenied'));
+      return;
+    }
+
     void mutateObject(object.id, object.locked ? 'unlock' : 'lock');
   }
 
@@ -409,14 +437,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       contentBounds,
     });
     setCameraState({...controllerRef.current.getState()});
-  }
-
-  function enqueueToast(message: string) {
-    const id = ++toastIdRef.current;
-    setToasts((current) => [...current, {id, message}]);
-    window.setTimeout(() => {
-      setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 4000);
   }
 
   const minimap = resolveMinimapBounds(viewport);
@@ -495,6 +515,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                 </button>
                 <button
                   className="board-object-action board-object-action-lock"
+                  disabled={object.locked && object.lockOriginObjectId != null && object.lockOriginObjectId !== object.id}
                   onClick={(event) => {
                     event.stopPropagation();
                     toggleLock(object);

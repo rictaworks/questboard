@@ -14,22 +14,20 @@ type SessionState = {
   displayName?: string;
 };
 
-const isDevelopmentMode = process.env.NEXT_PUBLIC_ENV === 'development';
-
 export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const t = useTranslations('BoardInvite');
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    isDevelopmentMode ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
+    process.env.NEXT_PUBLIC_ENV === 'development' ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
   );
-  const [loading, setLoading] = useState(!isDevelopmentMode);
+  const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [roleCode, setRoleCode] = useState<'viewer' | 'commenter' | 'editor'>('viewer');
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
 
   useEffect(() => {
-    if (isDevelopmentMode) {
+    if (process.env.NEXT_PUBLIC_ENV === 'development') {
       return;
     }
 
@@ -77,7 +75,6 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
   useEffect(() => {
     if (!sessionState?.authenticated) {
-      setBoardData(null);
       return;
     }
 

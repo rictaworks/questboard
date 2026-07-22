@@ -107,17 +107,21 @@ class BoardsController < ApplicationController
   end
 
   def serialize_canvas_board(board, membership)
+    active_objects = board.board_objects.active.includes(:object_type, :frame_lock).order(:id).to_a
+    resolver = BoardLockResolver.new(active_objects)
+
     {
       board: serialize_board_attributes(board),
       membership: serialize_membership(membership),
       objectTypes: ObjectType.order(:id).map { |type| { id: type.id, code: type.code } },
       colorPalettes: ColorPalette.order(:id).map { |color| { id: color.id, hex: color.hex } },
-      objects: board.board_objects.active.includes(:object_type, :frame_lock).order(:id).map { |object| serialize_board_object(object) }
+      objects: active_objects.map { |object| serialize_board_object(object, resolver) }
     }
   end
 
-  def serialize_board_object(object)
-    lock = object.frame_lock
+  def serialize_board_object(object, resolver = nil)
+    resolver ||= BoardLockResolver.new(object.board)
+    lock = resolver.effective_lock(object, current_user_id: current_user&.id)
 
     {
       id: object.id,
@@ -129,7 +133,8 @@ class BoardsController < ApplicationController
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,
-      lockedAt: lock&.locked_at&.iso8601
+      lockedAt: lock&.locked_at&.iso8601,
+      lockOriginObjectId: lock&.object_id
     }
   end
 
