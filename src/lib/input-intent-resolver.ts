@@ -1,4 +1,8 @@
+import type {FullGestureState} from '@use-gesture/vanilla';
+
 type UseGestureModule = typeof import('@use-gesture/vanilla');
+type DragGestureState = FullGestureState<'drag'>;
+type PinchGestureState = FullGestureState<'pinch'>;
 
 export type InputDevice = 'mouse' | 'touch' | 'pen' | 'wheel' | 'keyboard';
 export type InputPhase = 'start' | 'change' | 'end' | 'contextmenu' | 'longpress' | 'dblclick' | 'wheel' | 'keydown' | 'keyup';
@@ -91,6 +95,15 @@ export const DEFAULT_INPUT_INTENT_RESOLVER_OPTIONS: InputIntentResolverOptions =
   palmContactAreaThresholdPx: 1600,
 };
 
+// PointerEvent.buttons is a bitmask (https://developer.mozilla.org/en-US/docs/Web/API/MouseEvent/buttons).
+const PRIMARY_BUTTON_BITMASK = 1;
+const SECONDARY_BUTTON_BITMASK = 2;
+const AUXILIARY_BUTTON_BITMASK = 4;
+// PointerEvent.button (not .buttons) uses 0 for the primary button.
+const PRIMARY_BUTTON_INDEX = 0;
+const MULTI_TOUCH_THRESHOLD = 2;
+const MAX_SUPPORTED_TOUCH_COUNT = 2;
+
 export function resolveHitTargetFromElement(element: Element | null): HitTarget {
   const hitElement = element?.closest?.('[data-obj-id]') as HTMLElement | null | undefined;
 
@@ -158,23 +171,23 @@ export function resolveCanvasIntent(
     return input.phase === 'change' || input.phase === 'end' ? {kind: 'draw'} : {kind: 'ignore'};
   }
 
-  if (input.touchCount >= 2) {
+  if (input.touchCount >= MULTI_TOUCH_THRESHOLD) {
     return resolveMultiTouchIntent(input, options);
   }
 
-  if (input.modifiers.spaceKey && input.buttons === 1) {
+  if (input.modifiers.spaceKey && input.buttons === PRIMARY_BUTTON_BITMASK) {
     return {kind: 'pan', source: 'space', deltaX: input.movementX, deltaY: input.movementY};
   }
 
-  if (input.buttons === 4 || input.buttons === 2) {
+  if (input.buttons === AUXILIARY_BUTTON_BITMASK || input.buttons === SECONDARY_BUTTON_BITMASK) {
     return {kind: 'pan', source: 'button', deltaX: input.movementX, deltaY: input.movementY};
   }
 
-  if (input.hitTarget.kind === 'handle' && input.buttons === 1) {
+  if (input.hitTarget.kind === 'handle' && input.buttons === PRIMARY_BUTTON_BITMASK) {
     return input.phase === 'change' ? {kind: 'resize', mode: input.hitTarget.handleMode ?? 'resize'} : {kind: 'ignore'};
   }
 
-  if (input.hitTarget.kind === 'connection-point' && input.buttons === 1) {
+  if (input.hitTarget.kind === 'connection-point' && input.buttons === PRIMARY_BUTTON_BITMASK) {
     return input.phase === 'change' ? {kind: 'connect'} : {kind: 'ignore'};
   }
 
@@ -303,8 +316,11 @@ export class CanvasInputController {
     keyboardEvent.preventDefault();
     this.spacePressed = false;
   };
-  private readonly handleDragState = (state: any) => {
-    const event = state.event as PointerEvent | undefined;
+  private readonly releaseSpaceListener = () => {
+    this.spacePressed = false;
+  };
+  private readonly handleDragState = (state: DragGestureState) => {
+    const event = state.event as PointerEvent;
     if (!event) {
       return;
     }
@@ -320,7 +336,7 @@ export class CanvasInputController {
       this.armLongPress(pointerInput, event);
     }
 
-    if (state.touches > 2) {
+    if (state.touches > MAX_SUPPORTED_TOUCH_COUNT) {
       this.resetLongPress();
       return;
     }
@@ -334,7 +350,7 @@ export class CanvasInputController {
 
     if (state.last) {
       this.clearLongPressTimer();
-      if (event.button === 0 && Math.hypot(pointerInput.movementX, pointerInput.movementY) <= this.resolverOptions.clickThresholdPx) {
+      if (event.button === PRIMARY_BUTTON_INDEX && Math.hypot(pointerInput.movementX, pointerInput.movementY) <= this.resolverOptions.clickThresholdPx) {
         const intent = this.resolver.resolve(pointerInput);
         this.emitIntent(intent, event);
       }
@@ -348,8 +364,8 @@ export class CanvasInputController {
       this.emitIntent(intent, event);
     }
   };
-  private readonly handlePinchState = (state: any) => {
-    const event = state.event as PointerEvent | undefined;
+  private readonly handlePinchState = (state: PinchGestureState) => {
+    const event = state.event as PointerEvent;
     if (!event) {
       return;
     }
@@ -360,22 +376,22 @@ export class CanvasInputController {
     }
 
     if (state.first) {
-      this.pinchBaseDistance = state.da?.[0] ?? null;
+      this.pinchBaseDistance = state.da[0];
     }
 
-    const pinchDistance = state.da?.[0];
-    const pinchDistanceDeltaPx = this.pinchBaseDistance == null || pinchDistance == null ? 0 : pinchDistance - this.pinchBaseDistance;
+    const pinchDistance = state.da[0];
+    const pinchDistanceDeltaPx = this.pinchBaseDistance == null ? 0 : pinchDistance - this.pinchBaseDistance;
     const intent = this.resolver.resolve({
       kind: 'pointer',
       phase: state.last ? 'end' : 'change',
       device: 'touch',
       buttons: 1,
-      touchCount: state.touches ?? 2,
-      movementX: state.movement?.[0] ?? 0,
-      movementY: state.movement?.[1] ?? 0,
-      elapsedTimeMs: state.elapsedTime ?? 0,
+      touchCount: state.touches,
+      movementX: state.movement[0],
+      movementY: state.movement[1],
+      elapsedTimeMs: state.elapsedTime,
       hitTarget: resolveHitTargetFromElement(event.target as Element | null),
-      modifiers: this.readModifiers(event as MouseEvent),
+      modifiers: this.readModifiers(event),
       selection: this.readSelection(),
       activeTool: this.getActiveTool(),
       pinchDistanceDeltaPx,
@@ -407,7 +423,6 @@ export class CanvasInputController {
   async attach(target: EventTarget): Promise<void> {
     this.detach();
     const sessionId = ++this.attachSession;
-    this.ensureGestureEnvironment();
 
     const {DragGesture, PinchGesture} = await loadGestureModule();
     if (this.attachSession !== sessionId) {
@@ -423,6 +438,11 @@ export class CanvasInputController {
     target.addEventListener('dblclick', this.dblClickListener);
     target.addEventListener('keydown', this.keyDownListener);
     target.addEventListener('keyup', this.keyUpListener);
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('blur', this.releaseSpaceListener);
+      document.addEventListener('visibilitychange', this.releaseSpaceListener);
+    }
   }
 
   detach(): void {
@@ -440,6 +460,11 @@ export class CanvasInputController {
       this.target.removeEventListener('keyup', this.keyUpListener);
     }
 
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('blur', this.releaseSpaceListener);
+      document.removeEventListener('visibilitychange', this.releaseSpaceListener);
+    }
+
     this.target = null;
     this.resetLongPress();
     this.pinchBaseDistance = null;
@@ -452,22 +477,21 @@ export class CanvasInputController {
     }
   }
 
-  private buildPointerInput(state: any, event: PointerEvent, phase: InputPhase): PointerInput {
+  private buildPointerInput(state: DragGestureState, event: PointerEvent, phase: InputPhase): PointerInput {
     return {
       kind: 'pointer',
       phase,
       device: (event.pointerType === 'pen' ? 'pen' : event.pointerType === 'touch' ? 'touch' : 'mouse') as PointerInput['device'],
-      buttons: event.buttons ?? state.buttons ?? 0,
-      touchCount: state.touches ?? 0,
-      movementX: state.movement?.[0] ?? 0,
-      movementY: state.movement?.[1] ?? 0,
-      elapsedTimeMs: state.elapsedTime ?? 0,
+      buttons: event.buttons ?? state.buttons,
+      touchCount: state.touches,
+      movementX: state.movement[0],
+      movementY: state.movement[1],
+      elapsedTimeMs: state.elapsedTime,
       hitTarget: resolveHitTargetFromElement(event.target as Element | null),
       modifiers: this.readModifiers(event),
       selection: this.readSelection(),
       palmContactAreaPx2: readContactAreaPx2(event),
       activeTool: this.getActiveTool(),
-      pinchDistanceDeltaPx: state.da ? state.da[0] : undefined,
     };
   }
 
@@ -519,47 +543,6 @@ export class CanvasInputController {
   private readSelection(): SelectionSnapshot {
     return {selectedIds: this.getSelection()};
   }
-
-  private ensureGestureEnvironment(): void {
-    const root = globalThis as typeof globalThis & {
-      window?: any;
-      document?: any;
-      HTMLElement?: typeof HTMLElement;
-    };
-
-    if (typeof root.window === 'undefined') {
-      const fakeDocument = {
-        createElement() {
-          return {};
-        },
-        pointerLockElement: null,
-        exitPointerLock() {},
-      };
-
-      root.window = {
-        document: fakeDocument,
-        navigator: {maxTouchPoints: 0},
-        onpointerdown: null,
-        ontouchstart: null,
-        setTimeout: globalThis.setTimeout.bind(globalThis),
-        clearTimeout: globalThis.clearTimeout.bind(globalThis),
-      };
-    }
-
-    if (typeof root.document === 'undefined') {
-      root.document = root.window.document;
-    }
-
-    if (typeof root.HTMLElement === 'undefined') {
-      root.HTMLElement = class GestureHTMLElement extends EventTarget {
-        setPointerCapture() {}
-        releasePointerCapture() {}
-        hasPointerCapture() {
-          return false;
-        }
-      } as unknown as typeof HTMLElement;
-    }
-  }
 }
 
 function resolveWheelIntent(input: WheelInput): CanvasIntent {
@@ -605,7 +588,7 @@ function isLongPressEligible(input: PointerInput, options: InputIntentResolverOp
 }
 
 function isLongPressArmable(input: PointerInput): boolean {
-  return input.device !== 'pen' && input.buttons === 1;
+  return input.device !== 'pen' && input.buttons === PRIMARY_BUTTON_BITMASK;
 }
 
 function readAttribute(element: HTMLElement, name: string): string | null {

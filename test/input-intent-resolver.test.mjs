@@ -18,10 +18,23 @@ if (typeof globalThis.HTMLElement === 'undefined') {
 }
 
 if (typeof globalThis.document === 'undefined') {
-  globalThis.document = {
-    pointerLockElement: null,
-    exitPointerLock() {},
-  };
+  globalThis.document = new (class FakeDocument extends EventTarget {
+    createElement() {
+      return {};
+    }
+  })();
+  globalThis.document.pointerLockElement = null;
+  globalThis.document.exitPointerLock = () => {};
+}
+
+if (typeof globalThis.window === 'undefined') {
+  globalThis.window = new (class FakeWindow extends EventTarget {})();
+  globalThis.window.document = globalThis.document;
+  globalThis.window.navigator = {maxTouchPoints: 0};
+  globalThis.window.onpointerdown = null;
+  globalThis.window.ontouchstart = null;
+  globalThis.window.setTimeout = globalThis.setTimeout.bind(globalThis);
+  globalThis.window.clearTimeout = globalThis.clearTimeout.bind(globalThis);
 }
 
 async function loadModule() {
@@ -288,6 +301,30 @@ test('longpress remains active on subsequent pointer moves and prevents resuming
   // No additional intents should be fired after the radial menu
   assert.equal(intents.length, 1);
 
+  controller.detach();
+});
+
+test('space key state resets on window blur to avoid stuck pan mode', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+
+  canvas.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+  window.dispatchEvent(new Event('blur'));
+
+  canvas.nextHitTarget = null;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 20, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 20, pointerType: 'mouse', buttons: 1, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(intents.at(-1)?.kind, 'marquee');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 20, pointerType: 'mouse', buttons: 0, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
   controller.detach();
 });
 
