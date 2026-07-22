@@ -59,6 +59,7 @@ RSpec.describe "Boards", type: :request do
   end
 
   it "shows the persisted board canvas state to members" do
+    seed_object_support
     board_payload = create_board(title: "Canvas Board")
     share_token = board_payload.fetch("board").fetch("shareToken")
 

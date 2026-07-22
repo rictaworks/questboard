@@ -28,11 +28,11 @@ class BoardLockResolver
   def initialize(board_or_objects)
     objects = if board_or_objects.is_a?(Board)
                 board_or_objects.board_objects.active.includes(:frame_lock)
-              elsif board_or_objects.respond_to?(:to_a)
+    elsif board_or_objects.respond_to?(:to_a)
                 board_or_objects.to_a
-              else
-                [board_or_objects].compact
-              end
+    else
+                [ board_or_objects ].compact
+    end
 
     @objects_by_id = objects.index_by(&:id)
   end
