@@ -10,12 +10,15 @@ Rails.application.routes.draw do
   end
 
   resources :boards, only: :create
+  get "/boards/:share_token", to: "boards#show"
   post "/boards/:share_token/join", to: "boards#join"
   patch "/boards/:share_token/members/:user_id", to: "boards#update_member_role"
   post "/boards/:share_token/objects", to: "objects#create"
   patch "/boards/:share_token/objects/:id/move", to: "objects#move"
   patch "/boards/:share_token/objects/:id/resize", to: "objects#resize"
   patch "/boards/:share_token/objects/:id/rotate", to: "objects#rotate"
+  post "/boards/:share_token/objects/:id/duplicate", to: "objects#duplicate"
+  patch "/boards/:share_token/objects/:id/color", to: "objects#recolor"
   post "/boards/:share_token/objects/:id/lock", to: "objects#lock"
   delete "/boards/:share_token/objects/:id/lock", to: "objects#unlock"
   delete "/boards/:share_token/objects/:id", to: "objects#destroy"

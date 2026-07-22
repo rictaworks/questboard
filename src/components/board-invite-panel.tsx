@@ -6,17 +6,12 @@ import {FormEvent, useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
 import AuthPanel from '@/components/auth-panel';
+import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
-};
-
-type JoinedBoard = {
-  title: string;
-  shareToken: string;
-  roleCode: string;
 };
 
 const isDevelopmentMode = process.env.NEXT_PUBLIC_ENV === 'development';
@@ -31,7 +26,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [roleCode, setRoleCode] = useState<'viewer' | 'commenter' | 'editor'>('viewer');
   const [joining, setJoining] = useState(false);
-  const [joinedBoard, setJoinedBoard] = useState<JoinedBoard | null>(null);
+  const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
 
   useEffect(() => {
     if (isDevelopmentMode) {
@@ -80,6 +75,51 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     };
   }, [authT]);
 
+  useEffect(() => {
+    if (!sessionState?.authenticated) {
+      setBoardData(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+
+    void (async () => {
+      try {
+        const {backendUrl} = readGoogleAuthSettings();
+        const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
+          credentials: 'include',
+          signal: abortController.signal
+        });
+
+        if (response.status === 401) {
+          setSessionState({authenticated: false});
+          return;
+        }
+
+        if (response.status === 403 || response.status === 404) {
+          setBoardData(null);
+          return;
+        }
+
+        if (!response.ok) {
+          throw new Error(t('errorMessage'));
+        }
+
+        setBoardData(await response.json() as BoardCanvasData);
+        setErrorMessage(null);
+      } catch (error) {
+        if (!abortController.signal.aborted) {
+          setBoardData(null);
+          setErrorMessage(error instanceof Error ? error.message : t('errorMessage'));
+        }
+      }
+    })();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [sessionState?.authenticated, shareToken, t]);
+
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setJoining(true);
@@ -110,12 +150,15 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         membership: {role: {code: string}};
       };
 
-      setJoinedBoard({
-        title: payload.board.title,
-        shareToken: payload.board.shareToken,
-        roleCode: payload.membership.role.code
-      });
+      setBoardData(null);
       setErrorMessage(null);
+      const boardResponse = await fetch(`${backendUrl}/boards/${encodeURIComponent(payload.board.shareToken)}`, {
+        credentials: 'include'
+      });
+
+      if (boardResponse.ok) {
+        setBoardData(await boardResponse.json() as BoardCanvasData);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t('errorMessage'));
     } finally {
@@ -145,20 +188,39 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     );
   }
 
+  function roleOptions(t: (key: 'viewerRole' | 'commenterRole' | 'editorRole') => string) {
+    return [
+      {code: 'viewer' as const, label: t('viewerRole')},
+      {code: 'commenter' as const, label: t('commenterRole')},
+      {code: 'editor' as const, label: t('editorRole')}
+    ];
+  }
+
+  if (boardData) {
+    return (
+      <BoardCanvasPanel
+        boardData={boardData}
+        onReloadBoard={async () => {
+          const {backendUrl} = readGoogleAuthSettings();
+          const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
+            credentials: 'include'
+          });
+
+          if (!response.ok) {
+            throw new Error(t('errorMessage'));
+          }
+
+          setBoardData(await response.json() as BoardCanvasData);
+        }}
+      />
+    );
+  }
+
   return (
     <section className="board-panel">
       <h1>{t('heading')}</h1>
       <p className="board-copy">{t('description')}</p>
       {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
-      {joinedBoard ? (
-        <div className="board-success">
-          <p className="auth-status">{t('successHeading')}</p>
-          <p className="board-copy">{t('successDescription', {role: labelForRole(joinedBoard.roleCode, t), title: joinedBoard.title})}</p>
-          <p className="board-copy">
-            <a href={`/b/${joinedBoard.shareToken}`}>{joinedBoard.shareToken}</a>
-          </p>
-        </div>
-      ) : null}
       <form className="board-form" onSubmit={(event) => void handleJoin(event)}>
         <fieldset className="field">
           <legend className="field-label">{t('roleLabel')}</legend>
@@ -183,16 +245,4 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       </form>
     </section>
   );
-}
-
-function roleOptions(t: (key: 'viewerRole' | 'commenterRole' | 'editorRole') => string) {
-  return [
-    {code: 'viewer' as const, label: t('viewerRole')},
-    {code: 'commenter' as const, label: t('commenterRole')},
-    {code: 'editor' as const, label: t('editorRole')}
-  ];
-}
-
-function labelForRole(roleCode: string, t: (key: 'viewerRole' | 'commenterRole' | 'editorRole') => string) {
-  return roleOptions(t).find((option) => option.code === roleCode)?.label ?? roleCode;
 }

@@ -5,6 +5,12 @@ class ObjectsController < ApplicationController
     board = find_authorized_board!(:create_object)
     return if performed?
 
+    membership = board_membership_for(board)
+    parent_frame = active_parent_frame_for(board)
+    if parent_frame && membership && !authorize_object!(membership.role.code, :edit_object, object_state(parent_frame))
+      return
+    end
+
     object = board.board_objects.create!(
       object_type: ObjectType.find_by!(code: object_type_code_param),
       color_palette: ColorPalette.first!,
@@ -32,6 +38,37 @@ class ObjectsController < ApplicationController
 
   def rotate
     mutate_geometry(:rotate_object)
+  end
+
+  def duplicate
+    object = find_authorized_object!(:edit_object)
+    return if performed?
+
+    duplicated_object = object.board.board_objects.create!(
+      object_type: object.object_type,
+      color_palette: object.color_palette,
+      parent_frame_id: object.parent_frame_id,
+      geometry: object.geometry.merge("x" => object.geometry.fetch("x", 0) + 24, "y" => object.geometry.fetch("y", 0) + 24),
+      deleted_at: nil
+    )
+
+    render json: serialize_object(duplicated_object), status: :created
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board or object not found" }, status: :not_found
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  end
+
+  def recolor
+    object = find_authorized_object!(:recolor_object)
+    return if performed?
+
+    object.update!(color_palette: ColorPalette.find(params.require(:color_id)))
+    render json: serialize_object(object)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board or object not found" }, status: :not_found
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
   def destroy
@@ -86,6 +123,13 @@ class ObjectsController < ApplicationController
 
   def find_board_object!(board = find_board!)
     board.board_objects.active.find(params.require(:id))
+  end
+
+  def active_parent_frame_for(board)
+    parent_frame_id = create_params[:parent_frame_id]
+    return if parent_frame_id.blank?
+
+    board.board_objects.active.find_by(id: parent_frame_id)
   end
 
   # boardのみを必要とするアクション(create)向け。認可失敗時はforbiddenをrenderしてnilを返す。
@@ -169,7 +213,7 @@ class ObjectsController < ApplicationController
   end
 
   def create_params
-    params.permit(:object_type_code, :parent_frame_id, geometry: %i[x y w h rotation])
+    params.permit(:object_type_code, :parent_frame_id, :color_id, geometry: %i[x y w h rotation])
   end
 
   def geometry_params

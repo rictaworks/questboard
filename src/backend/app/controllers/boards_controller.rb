@@ -1,6 +1,16 @@
 class BoardsController < ApplicationController
   before_action :require_current_user!
 
+  def show
+    board = Board.find_by!(share_token: params.require(:share_token))
+    membership = board_membership_for(board)
+    return unless authorize_board_view!(board:, membership:)
+
+    render json: serialize_canvas_board(board, membership)
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board not found" }, status: :not_found
+  end
+
   def create
     board = Board.create_with_owner!(title: create_params.fetch(:title), owner: current_user)
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
@@ -96,6 +106,33 @@ class BoardsController < ApplicationController
     }
   end
 
+  def serialize_canvas_board(board, membership)
+    {
+      board: serialize_board_attributes(board),
+      membership: serialize_membership(membership),
+      objectTypes: ObjectType.order(:id).map { |type| { id: type.id, code: type.code } },
+      colorPalettes: ColorPalette.order(:id).map { |color| { id: color.id, hex: color.hex } },
+      objects: board.board_objects.active.includes(:object_type, :frame_lock).order(:id).map { |object| serialize_board_object(object) }
+    }
+  end
+
+  def serialize_board_object(object)
+    lock = object.frame_lock
+
+    {
+      id: object.id,
+      boardId: object.board_id,
+      objectTypeCode: object.object_type.code,
+      colorId: object.color_id,
+      parentFrameId: object.parent_frame_id,
+      geometry: object.geometry,
+      deletedAt: object.deleted_at&.iso8601,
+      locked: lock.present?,
+      lockedByUserId: lock&.locked_by,
+      lockedAt: lock&.locked_at&.iso8601
+    }
+  end
+
   def serialize_board_attributes(board)
     {
       id: board.id,
@@ -112,5 +149,16 @@ class BoardsController < ApplicationController
         code: membership.role.code
       }
     }
+  end
+
+  def board_membership_for(board)
+    board.board_members.includes(:role).find_by(user: current_user)
+  end
+
+  def authorize_board_view!(board:, membership:)
+    return true if membership && PermissionService.new.authorize(membership.role.code, :view_board, {})
+
+    head :forbidden
+    false
   end
 end

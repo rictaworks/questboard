@@ -58,6 +58,45 @@ RSpec.describe "Boards", type: :request do
     expect(membership.role.code).to eq("owner")
   end
 
+  it "shows the persisted board canvas state to members" do
+    board_payload = create_board(title: "Canvas Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    color = ColorPalette.first!
+    object_type = ObjectType.find_by!(code: "frame")
+
+    BoardObject.create!(
+      board: Board.find_by!(share_token:),
+      object_type:,
+      color_palette: color,
+      geometry: { "x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0 },
+      deleted_at: nil
+    )
+
+    sign_in(member)
+    get "/boards/#{share_token}", as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = JSON.parse(response.body)
+
+    expect(payload.fetch("board")).to include("title" => "Canvas Board", "shareToken" => share_token)
+    expect(payload.fetch("membership").dig("role", "code")).to eq("editor")
+    expect(payload.fetch("objectTypes").map { |entry| entry.fetch("code") }).to include("frame")
+    expect(payload.fetch("colorPalettes").map { |entry| entry.fetch("hex") }).to include(color.hex)
+    expect(payload.fetch("objects")).to include(
+      include(
+        "objectTypeCode" => "frame",
+        "colorId" => color.id,
+        "geometry" => include("x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0),
+        "locked" => false
+      )
+    )
+  end
+
   it "joins a board through the share token with the selected invite role" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
