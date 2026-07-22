@@ -26,6 +26,7 @@ export interface FeedbackEffectMaster {
 
 export interface FeedbackDecision {
   trigger: FeedbackTrigger;
+  /** The canonical event kind this trigger routes through for effect selection; see FEEDBACK_EVENT_ALIAS for triggers (e.g. quest_completed) that borrow another event's effect. */
   eventKind: FeedbackEventKind;
   effectCode: string;
   intensity: FeedbackIntensityCode;
@@ -86,6 +87,10 @@ const FEEDBACK_EVENT_EFFECT_CODES: Record<FeedbackEventKind, string> = {
   camera_zoomed: 'zoom_wave',
 };
 
+// effect_masters (db/seeds.rb) has no dedicated celebration effect, and event_defs has no
+// "quest_completed" row, so quest completion is routed onto the radial-menu bloom effect
+// instead of a 13th canonical event kind. If a dedicated celebration effect is ever added
+// to the seeded master data, update this alias (and event_defs) to point at it instead.
 const FEEDBACK_EVENT_ALIAS: Record<'quest_completed', FeedbackEventKind> = {
   quest_completed: 'radial_opened',
 };

@@ -119,3 +119,59 @@ test('feedback source avoids direct burst/dissolve trigger strings outside the d
 
   assert.equal(/spawnBurst\s*\(|\bqb(Pop|Dissolve|Burst)\b/.test(joined), false);
 });
+
+test('effect durations and event-to-effect routing stay in sync with the seeded master data', async () => {
+  const seedsSource = await readFile(path.join(root, 'src/backend/db/seeds.rb'), 'utf8');
+
+  const effectMastersBlock = seedsSource.match(/"effect_masters",\s*\[([\s\S]*?)\],\s*unique_by: :index_effect_masters_on_code/)[1];
+  const seededEffects = [...effectMastersBlock.matchAll(/code:\s*"([^"]+)",\s*duration_ms:\s*(\d+)/g)].map(
+    ([, code, durationMs]) => ({code, durationMs: Number(durationMs)})
+  );
+  assert.ok(seededEffects.length > 0, 'expected to parse at least one effect_masters row from seeds.rb');
+
+  for (const seeded of seededEffects) {
+    const tsEffect = FEEDBACK_EFFECT_MASTERS.find((effect) => effect.code === seeded.code);
+    assert.ok(tsEffect, `FEEDBACK_EFFECT_MASTERS is missing effect_masters seed row "${seeded.code}"`);
+    assert.equal(
+      tsEffect.durationMs,
+      seeded.durationMs,
+      `FEEDBACK_EFFECT_MASTERS["${seeded.code}"].durationMs has drifted from db/seeds.rb`
+    );
+  }
+
+  const eventDefsBlock = seedsSource.match(/"event_defs",\s*\[([\s\S]*?)\],\s*unique_by: :index_event_defs_on_code/)[1];
+  const seededEventDefs = [...eventDefsBlock.matchAll(/code:\s*"([^"]+)",\s*effect_id:\s*effect_ids\.fetch\("([^"]+)"\)/g)].map(
+    ([, code, effectCode]) => ({code, effectCode})
+  );
+  assert.ok(seededEventDefs.length > 0, 'expected to parse at least one event_defs row from seeds.rb');
+
+  // object_created_{sticky,shape,text,image} all collapse onto the single "object_created"
+  // FeedbackEventKind because they share the same creation_pop effect (object_created_frame
+  // stays distinct since it uses frame_materialize instead).
+  const toFeedbackEventKind = (code) =>
+    code.startsWith('object_created_') && code !== 'object_created_frame' ? 'object_created' : code;
+
+  for (const seeded of seededEventDefs) {
+    const eventKind = toFeedbackEventKind(seeded.code);
+    assert.equal(
+      FEEDBACK_EVENT_KINDS.includes(eventKind),
+      true,
+      `FEEDBACK_EVENT_KINDS is missing event_defs seed row "${seeded.code}" (expected kind "${eventKind}")`
+    );
+    assert.equal(
+      resolveFeedbackEffect(eventKind).code,
+      seeded.effectCode,
+      `FEEDBACK_EVENT_EFFECT_CODES["${eventKind}"] has drifted from db/seeds.rb event_defs`
+    );
+  }
+
+  // db/seeds.rb has no "quest_completed" event_defs row (adding one would break the
+  // documented 72-row master data total), so FEEDBACK_EVENT_ALIAS intentionally borrows
+  // radial_opened's effect instead of reading a seeded mapping. If this ever changes,
+  // FEEDBACK_EVENT_ALIAS should be replaced with a real seeded lookup.
+  assert.equal(
+    seededEventDefs.some((seeded) => seeded.code === 'quest_completed'),
+    false,
+    'db/seeds.rb now seeds a quest_completed event_defs row — update FEEDBACK_EVENT_ALIAS to read it instead of hardcoding the alias'
+  );
+});
