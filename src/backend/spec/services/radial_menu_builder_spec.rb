@@ -126,4 +126,21 @@ RSpec.describe RadialMenuBuilder do
     expect(locked[:items].map { |item| item[:code] }).to include(:unlock)
     expect(locked[:items].map { |item| item[:code] }).not_to include(:lock)
   end
+
+  it "returns empty menu and visible false for unknown target kinds" do
+    unknown_kind = builder.build(target_kind: :unknown, selection_count: 1, role: :editor)
+    nil_kind = builder.build(target_kind: nil, selection_count: 1, role: :editor)
+
+    expect(unknown_kind[:visible]).to be(false)
+    expect(unknown_kind[:items]).to be_empty
+    expect(nil_kind[:visible]).to be(false)
+    expect(nil_kind[:items]).to be_empty
+  end
+
+  it "omits comment action from blank canvas menu" do
+    result = builder.build(target_kind: :blank, selection_count: 0, role: :commenter)
+
+    expect(result[:visible]).to be(false)
+    expect(result[:items].map { |item| item[:code] }).not_to include(:comment)
+  end
 end

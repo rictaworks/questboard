@@ -18,7 +18,8 @@ end
 
 class RadialMenuBuilder
   COMMON_ACTION_CODES = %i[align group duplicate delete].freeze
-  BLANK_ACTION_CODES = %i[create_sticky create_shape create_text create_frame comment share].freeze
+  BLANK_ACTION_CODES = %i[create_sticky create_shape create_text create_frame share].freeze
+  EMPTY_ACTION_CODES = [].freeze
   TARGET_ACTION_CODES = {
     sticky: %i[duplicate delete comment recolor share],
     shape: %i[duplicate delete comment recolor share],
@@ -99,7 +100,7 @@ class RadialMenuBuilder
       return BLANK_ACTION_CODES
     end
 
-    TARGET_ACTION_CODES.fetch(target_kind, TARGET_ACTION_CODES[:shape])
+    TARGET_ACTION_CODES.fetch(target_kind, EMPTY_ACTION_CODES)
   end
 
   def filter_executable_codes(codes, role, target_state)
