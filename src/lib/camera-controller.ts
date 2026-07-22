@@ -100,8 +100,8 @@ export function startInertia(
   return normalizeCameraState(
     {
       ...state,
-      velocityX,
-      velocityY,
+      velocityX: -velocityX / state.zoom,
+      velocityY: -velocityY / state.zoom,
       focus: null,
     },
     options
@@ -413,11 +413,14 @@ function resolveCameraRange(
   const minY = bounds.top - (expandedHeight - height) / 2 + halfViewportHeight;
   const maxY = bounds.bottom + (expandedHeight - height) / 2 - halfViewportHeight;
 
+  const centerX = (bounds.left + bounds.right) / 2;
+  const centerY = (bounds.top + bounds.bottom) / 2;
+
   return {
-    minX: Math.min(minX, maxX),
-    maxX: Math.max(minX, maxX),
-    minY: Math.min(minY, maxY),
-    maxY: Math.max(minY, maxY),
+    minX: minX > maxX ? centerX : minX,
+    maxX: minX > maxX ? centerX : maxX,
+    minY: minY > maxY ? centerY : minY,
+    maxY: minY > maxY ? centerY : maxY,
   };
 }
 

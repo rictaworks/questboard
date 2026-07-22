@@ -250,6 +250,46 @@ function tickWithoutBounds(state, deltaTimeMs) {
   return controller.tick(deltaTimeMs, {contentBounds: null, viewport});
 }
 
+test('pan to inertia maintains directional continuity across zoom levels', () => {
+  const controller = new CameraController({
+    x: 0,
+    y: 0,
+    zoom: 2,
+    velocityX: 0,
+    velocityY: 0,
+    focus: null,
+  });
+
+  // Dragging right on screen (+20px) moves camera left in world space (-10px)
+  const afterPan = controller.panBy(20, 0);
+  assert.equal(afterPan.x, -10);
+
+  // Inertia with positive gesture velocity (+20px/frame) should continue moving camera left in world space
+  const afterInertiaStart = controller.startInertia(20, 0);
+  assert.equal(afterInertiaStart.velocityX, -10);
+
+  const afterTick = controller.tick(16, {contentBounds: null, viewport});
+  assert.ok(afterTick.x < afterPan.x, 'Camera should continue moving in the same direction during inertia');
+});
+
+test('resolveCameraRange locks camera position to content center when viewport exceeds expanded bounds', () => {
+  const smallBounds = {left: 0, top: 0, right: 1000, bottom: 1000};
+  const lowZoom = 0.02;
+  const controller = new CameraController({
+    x: 4000,
+    y: 4000,
+    zoom: lowZoom,
+    velocityX: 0,
+    velocityY: 0,
+    focus: null,
+  });
+
+  const ticked = controller.tick(16, {contentBounds: smallBounds, viewport: {width: 200, height: 200}});
+  // Camera should be softened towards center (500), not allowed at x = 4000
+  assert.ok(ticked.x < 4000, 'Camera x position should be constrained towards content center');
+  assert.ok(ticked.y < 4000, 'Camera y position should be constrained towards content center');
+});
+
 function activeRange(zoom) {
   const width = 1000;
   const height = 1000;
@@ -262,7 +302,15 @@ function activeRange(zoom) {
   const minY = 0 - (marginHeight / 2) + halfViewportHeight;
   const maxY = 1000 + (marginHeight / 2) - halfViewportHeight;
 
-  return {minX, maxX, minY, maxY};
+  const centerX = 500;
+  const centerY = 500;
+
+  return {
+    minX: minX > maxX ? centerX : minX,
+    maxX: minX > maxX ? centerX : maxX,
+    minY: minY > maxY ? centerY : minY,
+    maxY: minY > maxY ? centerY : maxY,
+  };
 }
 
 function outsideDistance(state, range) {
