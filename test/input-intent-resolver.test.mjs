@@ -242,10 +242,53 @@ test('CanvasInputController routes gestures, wheel, keyboard, and cancellation',
   intents.length = 0;
   canvas.nextHitTarget = null;
   canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 8, pointerType: 'mouse', buttons: 1, button: 0, clientX: 50, clientY: 50, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
-  await wait(550);
-  assert.deepEqual(intents.at(-1), {kind: 'radial-menu', source: 'longpress'});
-
   followUpController.detach();
+});
+
+test('attach during detach cancels initialization and prevents leaking event listeners', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  const pendingAttach = controller.attach(canvas);
+  controller.detach();
+  await pendingAttach;
+
+  canvas.dispatchEvent(new FakeWheelEvent('wheel', {deltaX: 0, deltaY: -120, ctrlKey: true}));
+  assert.equal(intents.length, 0);
+});
+
+test('longpress remains active on subsequent pointer moves and prevents resuming normal drag', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 10, pointerType: 'mouse', buttons: 1, button: 0, clientX: 50, clientY: 50}));
+  await wait(550);
+
+  assert.deepEqual(intents, [{kind: 'radial-menu', source: 'longpress'}]);
+
+  // First move after longpress
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 10, pointerType: 'mouse', buttons: 1, button: 0, clientX: 80, clientY: 50}));
+  // Second move after longpress (should not trigger marquee/drag)
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 10, pointerType: 'mouse', buttons: 1, button: 0, clientX: 100, clientY: 50}));
+  // Pointer release
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 10, pointerType: 'mouse', buttons: 0, button: 0, clientX: 100, clientY: 50}));
+
+  // No additional intents should be fired after the radial menu
+  assert.equal(intents.length, 1);
+
+  controller.detach();
 });
 
 function modifiers(overrides = {}) {

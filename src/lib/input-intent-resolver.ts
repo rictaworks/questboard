@@ -316,7 +316,7 @@ export class CanvasInputController {
 
     const pointerInput = this.buildPointerInput(state, event, state.last ? 'end' : state.first ? 'start' : 'change');
     if (state.first) {
-      this.longPressTriggered = false;
+      this.resetLongPress();
       this.armLongPress(pointerInput, event);
     }
 
@@ -326,12 +326,14 @@ export class CanvasInputController {
     }
 
     if (this.longPressTriggered) {
-      this.resetLongPress();
+      if (state.last) {
+        this.resetLongPress();
+      }
       return;
     }
 
     if (state.last) {
-      this.resetLongPress();
+      this.clearLongPressTimer();
       if (event.button === 0 && Math.hypot(pointerInput.movementX, pointerInput.movementY) <= this.resolverOptions.clickThresholdPx) {
         const intent = this.resolver.resolve(pointerInput);
         this.emitIntent(intent, event);
@@ -341,7 +343,7 @@ export class CanvasInputController {
     }
 
     if (Math.hypot(pointerInput.movementX, pointerInput.movementY) > this.resolverOptions.clickThresholdPx) {
-      this.resetLongPress();
+      this.clearLongPressTimer();
       const intent = this.resolver.resolve(pointerInput);
       this.emitIntent(intent, event);
     }
@@ -388,6 +390,7 @@ export class CanvasInputController {
     }
   };
   private readonly resolverOptions = DEFAULT_INPUT_INTENT_RESOLVER_OPTIONS;
+  private attachSession = 0;
   private longPressTimeout: ReturnType<typeof setTimeout> | null = null;
   private longPressArmed: PointerInput | null = null;
   private longPressTriggered = false;
@@ -403,9 +406,14 @@ export class CanvasInputController {
 
   async attach(target: EventTarget): Promise<void> {
     this.detach();
+    const sessionId = ++this.attachSession;
     this.ensureGestureEnvironment();
 
     const {DragGesture, PinchGesture} = await loadGestureModule();
+    if (this.attachSession !== sessionId) {
+      return;
+    }
+
     this.target = target;
     this.dragRecognizer = new DragGesture(target, this.handleDragState, {pointer: {buttons: -1, capture: true, keys: false}});
     this.pinchRecognizer = new PinchGesture(target, this.handlePinchState, {});
@@ -418,6 +426,7 @@ export class CanvasInputController {
   }
 
   detach(): void {
+    this.attachSession++;
     this.dragRecognizer?.destroy();
     this.pinchRecognizer?.destroy();
     this.dragRecognizer = null;
@@ -479,22 +488,21 @@ export class CanvasInputController {
         elapsedTimeMs: this.resolverOptions.longPressDelayMs,
       });
       this.longPressTriggered = true;
-      if (this.longPressTimeout) {
-        clearTimeout(this.longPressTimeout);
-      }
-      this.longPressTimeout = null;
-      this.longPressArmed = null;
+      this.clearLongPressTimer();
       this.emitIntent(intent, event);
     }, this.resolverOptions.longPressDelayMs);
   }
 
-  private resetLongPress(): void {
+  private clearLongPressTimer(): void {
     if (this.longPressTimeout) {
       clearTimeout(this.longPressTimeout);
     }
-
     this.longPressTimeout = null;
     this.longPressArmed = null;
+  }
+
+  private resetLongPress(): void {
+    this.clearLongPressTimer();
     this.longPressTriggered = false;
   }
 
