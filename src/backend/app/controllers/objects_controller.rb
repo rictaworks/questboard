@@ -1,4 +1,24 @@
 class ObjectsController < ApplicationController
+  class UnsupportedOpPropertyError < StandardError; end
+  class StaleOpError < StandardError; end
+  class ConflictingOpError < StandardError; end
+  class InvalidOpValueError < StandardError; end
+  class ImplausibleLamportJumpError < StandardError; end
+
+  OP_PROPERTY_ACTIONS = {
+    "geometry" => :edit_object,
+    "color" => :recolor_object,
+    "deleted_at" => :delete_object
+  }.freeze
+
+  # lamport_ts is a client-generated Lamport logical counter (not a wall-clock timestamp),
+  # normally advancing by roughly 1 per local causal edit. A single op is never expected to
+  # legitimately jump this far ahead of the last recorded value for the same object and
+  # property, so rejecting larger jumps blocks a malicious/buggy client from stranding the
+  # property forever with an extreme value (e.g. the bigint max) that no future op could
+  # ever exceed.
+  MAX_LAMPORT_JUMP = 100_000
+
   before_action :require_current_user!
 
   def create
@@ -116,6 +136,78 @@ class ObjectsController < ApplicationController
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
+  # Applies a Lamport-ordered operation coming from the sync-server. Unlike move/resize/
+  # rotate/color/destroy (which trust whichever request lands last), this endpoint records
+  # each op in object_ops and rejects anything not newer than what is already recorded for
+  # the object, so a delayed or duplicate op can never overwrite a more recent confirmed
+  # value. object_ops' unique index on (object_id, client_id, lamport_ts) makes retries of
+  # the exact same op idempotent.
+  def apply_op
+    property = params.require(:property)
+    action = op_action_for(property)
+    object = find_authorized_op_object!(action:, property:)
+    return if performed?
+
+    lamport_ts = Integer(params.require(:lamport_ts))
+    client_id = params.require(:client_id).to_s
+    incoming_value = op_value_for_storage(property)
+
+    confirmed_op = nil
+
+    object.with_lock do
+      existing = ObjectOp.find_by(object_id: object.id, client_id:, lamport_ts:)
+      if existing
+        if existing.property != property || existing.value != incoming_value
+          raise ConflictingOpError, "an operation with the same client_id/lamport_ts but a different property or value was already recorded"
+        end
+
+        confirmed_op = existing
+      else
+        latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc).first
+        if latest && lamport_ts <= latest.lamport_ts
+          raise StaleOpError, "lamport_ts #{lamport_ts} is not newer than recorded #{latest.lamport_ts} for property #{property}"
+        end
+
+        baseline = latest&.lamport_ts || 0
+        if lamport_ts - baseline > MAX_LAMPORT_JUMP
+          raise ImplausibleLamportJumpError, "lamport_ts #{lamport_ts} jumps #{lamport_ts - baseline} ahead of #{baseline} for property #{property}, exceeding the max allowed jump of #{MAX_LAMPORT_JUMP}"
+        end
+
+        confirmed_op = ObjectOp.create!(
+          board: object.board,
+          board_object: object,
+          user: current_user,
+          property:,
+          value: incoming_value,
+          lamport_ts:,
+          client_id:
+        )
+
+        apply_op_mutation!(object, property)
+      end
+    end
+
+    render json: serialize_op(confirmed_op)
+  rescue ActionController::ParameterMissing => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError => e
+    render json: { error: e.message }, status: :unprocessable_entity
+  rescue ArgumentError, TypeError
+    render json: { error: "lamport_ts must be an integer" }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board or object not found" }, status: :not_found
+  rescue ActiveRecord::RecordInvalid => e
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  rescue ActiveRecord::RecordNotUnique
+    # A concurrent request won the insert race for this exact (object_id, client_id,
+    # lamport_ts). Echo back that record's own value/lamport_ts/client_id, same as the
+    # ordinary idempotent-duplicate path above — never the object's current aggregate
+    # state, which may already reflect a different, newer op.
+    render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:))
+  rescue StaleOpError, ConflictingOpError => e
+    render json: { error: e.message }, status: :conflict
+  end
+
   private
 
   def require_current_user!
@@ -219,6 +311,19 @@ class ObjectsController < ApplicationController
     }
   end
 
+  # Mirrors the sync-server's confirmed-op payload shape (property/value/lamport_ts/
+  # client_id), built from the op that was actually recorded — never from the object's
+  # current aggregate state, which can already reflect a different, newer op by the time
+  # this renders (e.g. for a retried/duplicate op).
+  def serialize_op(object_op)
+    {
+      property: object_op.property,
+      value: object_op.value,
+      lamportTs: object_op.lamport_ts,
+      clientId: object_op.client_id
+    }
+  end
+
   def create_params
     params.permit(:object_type_code, :parent_frame_id, :color_id, geometry: %i[x y w h rotation])
   end
@@ -237,5 +342,75 @@ class ObjectsController < ApplicationController
 
   def object_type_code_param
     create_params.require(:object_type_code)
+  end
+
+  def op_action_for(property)
+    OP_PROPERTY_ACTIONS.fetch(property) { raise UnsupportedOpPropertyError, "unsupported op property #{property}" }
+  end
+
+  # Like find_authorized_object!, but a "deleted_at" op is allowed to target an object
+  # that is already soft-deleted, so a retried delete op can still be recognized as an
+  # idempotent duplicate instead of 404ing (the object_ops row is what dedups it, not
+  # object visibility).
+  def find_authorized_op_object!(action:, property:)
+    board = find_board!
+    object = find_op_target_object!(board, property)
+    return unless authorize_member!(board:, action:, object:)
+
+    object
+  end
+
+  def find_op_target_object!(board, property)
+    object = board.board_objects.active.find_by(id: params.require(:id))
+    return object if object
+    return board.board_objects.find(params.require(:id)) if property == "deleted_at"
+
+    raise ActiveRecord::RecordNotFound
+  end
+
+  def op_value_params
+    params[:value].is_a?(ActionController::Parameters) ? params[:value] : ActionController::Parameters.new
+  end
+
+  def op_geometry_params
+    op_value_params.permit(:x, :y, :w, :h, :rotation)
+  end
+
+  def op_color_id
+    permitted = op_value_params.permit(:color_id, :id, :colorId)
+    permitted[:color_id] || permitted[:id] || permitted[:colorId]
+  end
+
+  def op_value_for_storage(property)
+    case property
+    when "geometry" then validated_geometry_value
+    when "color" then { "color_id" => op_color_id }
+    when "deleted_at" then {}
+    end
+  end
+
+  # ActionController::Parameters#permit only allowlists keys, not value types — a
+  # geometry op submitting {"x": true, "rotation": "bogus"} would otherwise pass straight
+  # through and get merged into the objects.geometry jsonb column as literal non-numeric
+  # values, corrupting persisted state for every future reader of that object.
+  def validated_geometry_value
+    geometry = op_geometry_params.to_h
+    geometry.each do |field, value|
+      next if value.is_a?(Numeric)
+
+      raise InvalidOpValueError, "geometry.#{field} must be numeric, got #{value.class}"
+    end
+    geometry
+  end
+
+  def apply_op_mutation!(object, property)
+    case property
+    when "geometry"
+      object.update!(geometry: object.geometry.merge(op_geometry_params.to_h))
+    when "color"
+      object.update!(color_palette: ColorPalette.find(op_color_id))
+    when "deleted_at"
+      object.update!(deleted_at: Time.current)
+    end
   end
 end

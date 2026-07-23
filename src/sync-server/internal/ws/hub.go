@@ -1,20 +1,40 @@
 package ws
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/gorilla/websocket"
+)
+
+type closeRequest struct {
+	code int
+	text string
+}
 
 type client struct {
-	send chan []byte
-	done chan struct{}
+	send      chan []byte
+	done      chan struct{}
+	closeCh   chan closeRequest
+	closeOnce sync.Once
+}
+
+func (c *client) requestClose(code int, text string) {
+	c.closeOnce.Do(func() {
+		c.closeCh <- closeRequest{code: code, text: text}
+		close(c.closeCh)
+	})
 }
 
 type Hub struct {
-	mu    sync.RWMutex
-	rooms map[string]map[*client]struct{}
+	mu      sync.RWMutex
+	rooms   map[string]map[*client]struct{}
+	metrics *Metrics
 }
 
-func NewHub() *Hub {
+func NewHub(metrics *Metrics) *Hub {
 	return &Hub{
-		rooms: make(map[string]map[*client]struct{}),
+		rooms:   make(map[string]map[*client]struct{}),
+		metrics: metrics,
 	}
 }
 
@@ -45,6 +65,12 @@ func (h *Hub) Unregister(boardID string, c *client) {
 	}
 }
 
+func (h *Hub) RoomSize(boardID string) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.rooms[boardID])
+}
+
 func (h *Hub) Broadcast(boardID string, payload []byte) {
 	h.mu.RLock()
 	room := h.rooms[boardID]
@@ -55,7 +81,14 @@ func (h *Hub) Broadcast(boardID string, payload []byte) {
 	h.mu.RUnlock()
 
 	for _, recipient := range recipients {
-		recipient.send <- cloneBytes(payload)
+		select {
+		case recipient.send <- cloneBytes(payload):
+		default:
+			if h.metrics != nil {
+				h.metrics.IncSlowClientDrops()
+			}
+			recipient.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+		}
 	}
 }
 

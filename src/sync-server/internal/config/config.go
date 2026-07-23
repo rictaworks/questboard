@@ -14,10 +14,26 @@ type Config struct {
 	NodeID             string
 	RedisURL           string
 	RedisChannelPrefix string
+	Env                string
+	BackendURL         string
+}
+
+// validEnvironments enumerates the only values SYNC_SERVER_ENV may take. Unknown values
+// must fail startup rather than silently falling back to the permissive development
+// authenticator/authorizer/store (see cmd/sync-server/main.go), which would let
+// unauthenticated clients broadcast arbitrary operations in a misconfigured deployment.
+var validEnvironments = map[string]struct{}{
+	"development": {},
+	"production":  {},
 }
 
 func FromEnv() (Config, error) {
 	shardCount, err := parseShardCount(os.Getenv("SYNC_SERVER_SHARD_COUNT"))
+	if err != nil {
+		return Config{}, err
+	}
+
+	env, err := parseEnv(strings.TrimSpace(os.Getenv("SYNC_SERVER_ENV")))
 	if err != nil {
 		return Config{}, err
 	}
@@ -29,7 +45,20 @@ func FromEnv() (Config, error) {
 		NodeID:             envOrDefault("SYNC_SERVER_NODE_ID", defaultNodeID()),
 		RedisURL:           strings.TrimSpace(os.Getenv("SYNC_SERVER_REDIS_URL")),
 		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
+		Env:                env,
+		BackendURL:         envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3000"),
 	}, nil
+}
+
+func parseEnv(env string) (string, error) {
+	if env == "" {
+		return "", fmt.Errorf("SYNC_SERVER_ENV is required and must be %q or %q", "development", "production")
+	}
+	if _, ok := validEnvironments[env]; !ok {
+		return "", fmt.Errorf("SYNC_SERVER_ENV must be %q or %q, got %q", "development", "production", env)
+	}
+
+	return env, nil
 }
 
 func listenAddress() string {
