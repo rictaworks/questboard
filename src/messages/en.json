@@ -72,6 +72,18 @@
     "lockedByYou": "Locked by you",
     "lockedByOther": "Locked",
     "permissionDenied": "You cannot edit this object.",
-    "actionFailed": "Board action failed"
+    "actionFailed": "Board action failed",
+    "commentsHeading": "Comments",
+    "commentsEmpty": "No comments yet",
+    "commentsHidden": "Comments are hidden for your role.",
+    "commentBodyLabel": "Comment body",
+    "commentEditLabel": "Edit comment body",
+    "commentPlaceholder": "Write a comment",
+    "postComment": "Post comment",
+    "editComment": "Edit",
+    "deleteComment": "Delete",
+    "saveComment": "Save comment",
+    "cancelEdit": "Cancel",
+    "commentBodyRequired": "Enter a comment before posting"
   }
 }

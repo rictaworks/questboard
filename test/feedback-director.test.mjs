@@ -112,6 +112,13 @@ test('quest completion routes through the director alias instead of a separate a
   assert.equal(decision.effectCode, 'radial_bloom');
 });
 
+test('comment_added routes through the existing comment feedback effect', () => {
+  const decision = decideFeedback('comment_added', 'subtle', false);
+  assert.equal(decision.trigger, 'comment_added');
+  assert.equal(decision.eventKind, 'comment_created');
+  assert.equal(decision.effectCode, 'comment_ping');
+});
+
 test('feedback source avoids direct burst/dissolve trigger strings outside the director', async () => {
   const sourceFiles = (await walkFiles('src')).filter((file) => /\.[cm]?[jt]sx?$/.test(file));
   const contents = await Promise.all(sourceFiles.map((file) => readFile(path.join(root, file), 'utf8')));

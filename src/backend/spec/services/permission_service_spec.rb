@@ -92,11 +92,9 @@ RSpec.describe PermissionService do
         viewer: {
           unlocked: %i[
             view_board
-            view_comments
           ],
           locked_by_self: %i[
             view_board
-            view_comments
           ]
         }
       }
@@ -132,7 +130,7 @@ RSpec.describe PermissionService do
         end
       end
 
-      expect(results.count(true)).to eq(52)
+      expect(results.count(true)).to eq(50)
     end
 
     it "allows board administration only for owner" do

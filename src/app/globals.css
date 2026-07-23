@@ -371,6 +371,7 @@ a {
 }
 
 .lock-badge,
+.comment-badge,
 .board-object-action,
 .board-color-swatch,
 .board-minimap-surface {
@@ -385,6 +386,15 @@ a {
   padding: 0.25rem 0.5rem;
   border-radius: 999px;
   background: rgba(250, 204, 21, 0.2);
+  font-size: 0.75rem;
+}
+
+.comment-badge {
+  gap: var(--space-1);
+  width: fit-content;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.2);
   font-size: 0.75rem;
 }
 
@@ -462,6 +472,65 @@ a {
 }
 
 .board-color-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.board-comments {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.board-comments h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.board-comments-empty,
+.board-comment-body,
+.board-comment-meta {
+  margin: 0;
+}
+
+.board-comment-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-comment {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.board-comment-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.board-comment-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.board-comment-form textarea {
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.board-comment-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
