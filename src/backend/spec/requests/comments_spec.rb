@@ -226,4 +226,118 @@ RSpec.describe "Comments", type: :request do
     post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "Nope" }, as: :json
     expect(response).to have_http_status(:forbidden)
   end
+
+  it "allows owners to edit and delete comments authored by other members" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: commenter, role_code: "commenter")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    sign_in(commenter)
+    commenter_comment = create_comment(share_token:, object_id:, body: "Commenter body")
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", params: { body: "Updated by owner" }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("body")).to eq("Updated by owner")
+
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", as: :json
+    expect(response).to have_http_status(:no_content)
+    expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_nil
+  end
+
+  it "rejects blank comment bodies with an unprocessable_entity response" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(Comment.count).to eq(0)
+  end
+
+  it "returns not_found for comment operations against a nonexistent object or comment" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+    missing_object_id = object_id + 1_000
+    missing_comment_id = 1_000
+
+    get "/boards/#{share_token}/objects/#{missing_object_id}/comments", as: :json
+    expect(response).to have_http_status(:not_found)
+
+    post "/boards/#{share_token}/objects/#{missing_object_id}/comments", params: { body: "Nope" }, as: :json
+    expect(response).to have_http_status(:not_found)
+
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{missing_comment_id}", params: { body: "Nope" }, as: :json
+    expect(response).to have_http_status(:not_found)
+
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{missing_comment_id}", as: :json
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "returns a server error instead of a misleading not_found when the KPI event definition is missing" do
+    EventDef.find_by!(code: "comment_created").destroy!
+
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "Nope" }, as: :json
+    expect(response).to have_http_status(:internal_server_error)
+    expect(Comment.count).to eq(0)
+  end
+
+  it "excludes comments on soft-deleted objects from the board payload" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+    create_comment(share_token:, object_id:, body: "Comment on soon-to-be-deleted object")
+
+    delete "/boards/#{share_token}/objects/#{object_id}", as: :json
+    expect(response).to have_http_status(:ok)
+
+    board = Board.find_by!(share_token:)
+    expect(board.comments).to be_empty
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("comments")).to eq([])
+  end
 end

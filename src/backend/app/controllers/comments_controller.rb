@@ -1,4 +1,6 @@
 class CommentsController < ApplicationController
+  class KpiEventConfigurationError < StandardError; end
+
   before_action :require_current_user!
 
   def index
@@ -32,6 +34,9 @@ class CommentsController < ApplicationController
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  rescue KpiEventConfigurationError => e
+    logger.error("[CommentsController#create] #{e.message}")
+    render json: { error: "Comment could not be recorded" }, status: :internal_server_error
   end
 
   def update
@@ -122,7 +127,9 @@ class CommentsController < ApplicationController
   end
 
   def record_comment_kpi_event!(board:, comment:)
-    event_def = EventDef.find_by!(code: "comment_created")
+    event_def = EventDef.find_by(code: "comment_created")
+    raise KpiEventConfigurationError, "EventDef with code 'comment_created' is not seeded" unless event_def
+
     KpiEvent.create!(
       event_def:,
       user: current_user,
