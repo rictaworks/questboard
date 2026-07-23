@@ -14,7 +14,7 @@ export type FeedbackEventKind =
   | 'camera_panned'
   | 'camera_zoomed';
 
-export type FeedbackTrigger = FeedbackEventKind | 'quest_completed';
+export type FeedbackTrigger = FeedbackEventKind | 'quest_completed' | 'comment_added';
 
 export type FeedbackMotionMode = 'motion' | 'color-only';
 
@@ -91,8 +91,9 @@ const FEEDBACK_EVENT_EFFECT_CODES: Record<FeedbackEventKind, string> = {
 // "quest_completed" row, so quest completion is routed onto the radial-menu bloom effect
 // instead of a 13th canonical event kind. If a dedicated celebration effect is ever added
 // to the seeded master data, update this alias (and event_defs) to point at it instead.
-const FEEDBACK_EVENT_ALIAS: Record<'quest_completed', FeedbackEventKind> = {
+const FEEDBACK_EVENT_ALIAS: Record<'quest_completed' | 'comment_added', FeedbackEventKind> = {
   quest_completed: 'radial_opened',
+  comment_added: 'comment_created',
 };
 
 const FEEDBACK_EFFECT_LOOKUP = new Map(FEEDBACK_EFFECT_MASTERS.map((effect) => [effect.code, effect]));
@@ -108,6 +109,10 @@ export function detectPrefersReducedMotion(): boolean {
 export function normalizeFeedbackTrigger(trigger: FeedbackTrigger): FeedbackEventKind {
   if (trigger === 'quest_completed') {
     return FEEDBACK_EVENT_ALIAS.quest_completed;
+  }
+
+  if (trigger === 'comment_added') {
+    return FEEDBACK_EVENT_ALIAS.comment_added;
   }
 
   return trigger;

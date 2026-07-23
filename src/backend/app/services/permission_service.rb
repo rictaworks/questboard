@@ -1,6 +1,9 @@
 class PermissionService
   READ_ACTIONS = %i[
     view_board
+  ].freeze
+
+  COMMENT_VIEW_ACTIONS = %i[
     view_comments
   ].freeze
 
@@ -117,6 +120,10 @@ class PermissionService
     READ_ACTIONS.include?(action)
   end
 
+  def comment_view_action?(action)
+    COMMENT_VIEW_ACTIONS.include?(action)
+  end
+
   def comment_create_action?(action)
     COMMENT_CREATE_ACTIONS.include?(action)
   end
@@ -147,6 +154,7 @@ class PermissionService
 
   def commenter_allowed?(action, state)
     return true if read_action?(action)
+    return true if comment_view_action?(action)
     return true if comment_create_action?(action)
     return true if comment_self_mutation_action?(action) && self_comment?(state)
 
@@ -155,6 +163,7 @@ class PermissionService
 
   def editor_allowed?(action, state)
     return true if read_action?(action)
+    return true if comment_view_action?(action)
     return true if comment_create_action?(action)
     return true if comment_self_mutation_action?(action)
     return true if share_action?(action)

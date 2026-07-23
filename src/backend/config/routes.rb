@@ -22,6 +22,10 @@ Rails.application.routes.draw do
   post "/boards/:share_token/objects/:id/lock", to: "objects#lock"
   delete "/boards/:share_token/objects/:id/lock", to: "objects#unlock"
   delete "/boards/:share_token/objects/:id", to: "objects#destroy"
+  get "/boards/:share_token/objects/:object_id/comments", to: "comments#index"
+  post "/boards/:share_token/objects/:object_id/comments", to: "comments#create"
+  patch "/boards/:share_token/objects/:object_id/comments/:id", to: "comments#update"
+  delete "/boards/:share_token/objects/:object_id/comments/:id", to: "comments#destroy"
 
   resource :session, controller: "session", only: %i[show destroy]
 end

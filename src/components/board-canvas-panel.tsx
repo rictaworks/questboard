@@ -1,6 +1,6 @@
 "use client";
 
-import {faClone, faLock, faPenToSquare, faPalette, faRotateRight, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
+import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
@@ -21,6 +21,16 @@ export interface BoardCanvasObject {
   lockedByUserId?: number | null;
   lockedAt?: string | null;
   lockOriginObjectId?: number | null;
+  commentCount?: number | null;
+}
+
+export interface BoardCanvasComment {
+  id: number;
+  objectId: number;
+  userId: number;
+  userDisplayName: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface BoardCanvasData {
@@ -29,6 +39,7 @@ export interface BoardCanvasData {
   objectTypes: Array<{id: number; code: string}>;
   colorPalettes: Array<{id: number; hex: string}>;
   objects: BoardCanvasObject[];
+  comments: BoardCanvasComment[];
 }
 
 type BoardCanvasPanelProps = {
@@ -60,6 +71,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   const [interaction, setInteraction] = useState<Interaction>(null);
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
+  const [editingCommentDraft, setEditingCommentDraft] = useState('');
   const cameraStateRef = useRef<CameraState>(cameraState);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
@@ -72,7 +86,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     () => objects.filter((object) => selection.includes(object.id)),
     [objects, selection]
   );
+  const selectedObject = selectedObjects[0] ?? null;
+  const canViewComments = roleCode !== 'viewer';
+  const canCreateComments = roleCode !== 'viewer';
   const canCreateObject = canPerformBoardAction(roleCode, 'create', null, currentUserId);
+  const selectedComments = useMemo(
+    () => (selectedObject ? boardData.comments.filter((comment) => comment.objectId === selectedObject.id) : []),
+    [boardData.comments, selectedObject]
+  );
 
   useEffect(() => {
     cameraStateRef.current = cameraState;
@@ -85,6 +106,24 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   useEffect(() => {
     previewGeometryRef.current = previewGeometry;
   }, [previewGeometry]);
+
+  useEffect(() => {
+    setCommentDraft('');
+    setEditingCommentId(null);
+    setEditingCommentDraft('');
+  }, [selectedObject?.id]);
+
+  useEffect(() => {
+    if (editingCommentId == null) {
+      return;
+    }
+
+    const comment = selectedComments.find((entry) => entry.id === editingCommentId);
+    if (!comment) {
+      setEditingCommentId(null);
+      setEditingCommentDraft('');
+    }
+  }, [editingCommentId, selectedComments]);
 
   useEffect(() => {
     if (viewport.width <= 0 || viewport.height <= 0) {
@@ -395,6 +434,72 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     void mutateObject(object.id, 'color', {color_id: colorId});
   }
 
+  async function mutateComment(action: 'create' | 'update' | 'delete', commentId?: number) {
+    if (!selectedObject) {
+      return;
+    }
+
+    if (!canViewComments) {
+      enqueueToast(t('permissionDenied'));
+      return;
+    }
+
+    const {backendUrl} = readGoogleAuthSettings();
+    const prefix = `${backendUrl}/boards/${encodeURIComponent(boardData.board.shareToken)}/objects/${selectedObject.id}/comments`;
+
+    try {
+      let response: Response;
+      if (action === 'create') {
+        const body = commentDraft.trim();
+        if (!body) {
+          enqueueToast(t('commentBodyRequired'));
+          return;
+        }
+
+        response = await fetch(prefix, {
+          body: JSON.stringify({body}),
+          credentials: 'include',
+          headers: {'Content-Type': 'application/json'},
+          method: 'POST'
+        });
+      } else if (action === 'update') {
+        const body = editingCommentDraft.trim();
+        if (!body || commentId == null) {
+          enqueueToast(t('commentBodyRequired'));
+          return;
+        }
+
+        response = await fetch(`${prefix}/${commentId}`, {
+          body: JSON.stringify({body}),
+          credentials: 'include',
+          headers: {'Content-Type': 'application/json'},
+          method: 'PATCH'
+        });
+      } else {
+        if (commentId == null) {
+          return;
+        }
+
+        response = await fetch(`${prefix}/${commentId}`, {
+          credentials: 'include',
+          method: 'DELETE'
+        });
+      }
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({})) as {error?: string};
+        throw new Error(errorPayload.error ?? t('actionFailed'));
+      }
+
+      setCommentDraft('');
+      setEditingCommentId(null);
+      setEditingCommentDraft('');
+      await onReloadBoard();
+    } catch (error) {
+      enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
+    }
+  }
+
   function duplicateSelection() {
     const active = selectedObjects[0];
     if (!active) {
@@ -411,6 +516,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     }
 
     void mutateObject(active.id, 'delete');
+  }
+
+  function startEditingComment(comment: BoardCanvasComment) {
+    setEditingCommentId(comment.id);
+    setEditingCommentDraft(comment.body);
+  }
+
+  function canEditComment(comment: BoardCanvasComment) {
+    return roleCode === 'owner' || roleCode === 'editor' || (roleCode === 'commenter' && comment.userId === currentUserId);
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -490,6 +604,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
               >
                 {object.objectTypeCode === 'connector' ? <svg className="connector-line" viewBox="0 0 100 100"><line x1="10" y1="50" x2="90" y2="50" /></svg> : null}
                 <div className="board-object-label">{object.objectTypeCode}</div>
+                {canViewComments && (object.commentCount ?? 0) > 0 ? (
+                  <span className="comment-badge">
+                    <FontAwesomeIcon icon={faComment} />
+                    <span>{object.commentCount}</span>
+                  </span>
+                ) : null}
                 {object.locked ? (
                   <span className="lock-badge">
                     <FontAwesomeIcon icon={faLock} />
@@ -562,21 +682,118 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
             </button>
           </section>
 
-          {selectedObjects[0] ? (
+          {selectedObject ? (
             <section className="board-details">
               <h2>{t('selectionHeading')}</h2>
-              <p>{selectedObjects[0].objectTypeCode}</p>
+              <p>{selectedObject.objectTypeCode}</p>
               <div className="board-color-grid">
                 {boardData.colorPalettes.map((color) => (
                   <button
-                    className={`board-color-swatch ${selectedObjects[0].colorId === color.id ? 'is-active' : ''}`}
+                    className={`board-color-swatch ${selectedObject.colorId === color.id ? 'is-active' : ''}`}
                     key={color.id}
-                    onClick={() => changeColor(selectedObjects[0], color.id)}
+                    onClick={() => changeColor(selectedObject, color.id)}
                     style={{backgroundColor: color.hex}}
                     type="button"
                   />
                 ))}
               </div>
+              {canViewComments ? (
+                <section className="board-comments">
+                  <h3>{t('commentsHeading')}</h3>
+                  {selectedComments.length === 0 ? (
+                    <p className="board-comments-empty">{t('commentsEmpty')}</p>
+                  ) : (
+                    <ul className="board-comment-list">
+                      {selectedComments.map((comment) => (
+                        <li className="board-comment" key={comment.id}>
+                          {editingCommentId === comment.id ? (
+                            <form
+                              className="board-comment-form"
+                              onSubmit={(event) => {
+                                event.preventDefault();
+                                void mutateComment('update', comment.id);
+                              }}
+                            >
+                              <textarea
+                                id={`comment-edit-${comment.id}`}
+                                aria-label={t('commentEditLabel')}
+                                value={editingCommentDraft}
+                                onChange={(event) => setEditingCommentDraft(event.target.value)}
+                                rows={3}
+                              />
+                              <div className="board-comment-actions">
+                                <button className="button button-primary" type="submit">
+                                  {t('saveComment')}
+                                </button>
+                                <button
+                                  className="button button-secondary"
+                                  onClick={() => {
+                                    setEditingCommentId(null);
+                                    setEditingCommentDraft('');
+                                  }}
+                                  type="button"
+                                >
+                                  {t('cancelEdit')}
+                                </button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              <p className="board-comment-meta">
+                                <strong>{comment.userDisplayName}</strong>
+                                <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                              </p>
+                              <p className="board-comment-body">{comment.body}</p>
+                              {canEditComment(comment) ? (
+                                <div className="board-comment-actions">
+                                  <button
+                                    className="button button-secondary"
+                                    onClick={() => startEditingComment(comment)}
+                                    type="button"
+                                  >
+                                    {t('editComment')}
+                                  </button>
+                                  <button
+                                    className="button button-secondary"
+                                    onClick={() => void mutateComment('delete', comment.id)}
+                                    type="button"
+                                  >
+                                    {t('deleteComment')}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <form
+                    className="board-comment-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void mutateComment('create');
+                    }}
+                  >
+                    <textarea
+                      id="comment-body"
+                      aria-label={t('commentBodyLabel')}
+                      disabled={!canCreateComments}
+                      onChange={(event) => setCommentDraft(event.target.value)}
+                      placeholder={t('commentPlaceholder')}
+                      value={commentDraft}
+                      rows={4}
+                    />
+                    <div className="board-comment-actions">
+                      <button className="button button-primary" disabled={!canCreateComments} type="submit">
+                        {t('postComment')}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              ) : (
+                <p className="board-comments-empty">{t('commentsHidden')}</p>
+              )}
             </section>
           ) : null}
         </aside>

@@ -6,6 +6,7 @@ class BoardObject < ApplicationRecord
   belongs_to :color_palette, foreign_key: :color_id
   belongs_to :parent_frame, class_name: "BoardObject", optional: true
   has_one :frame_lock, foreign_key: :object_id, dependent: :destroy
+  has_many :comments, foreign_key: :object_id, dependent: :destroy, inverse_of: :board_object
 
   scope :active, -> { where(deleted_at: nil) }
 

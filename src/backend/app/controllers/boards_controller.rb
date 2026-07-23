@@ -109,17 +109,27 @@ class BoardsController < ApplicationController
   def serialize_canvas_board(board, membership)
     active_objects = board.board_objects.active.includes(:object_type, :frame_lock).order(:id).to_a
     resolver = BoardLockResolver.new(active_objects)
+    can_view_comments = PermissionService.new.authorize(membership.role.code, :view_comments, {})
+    comments = if can_view_comments
+      board.comments.includes(:user).where(object_id: active_objects.map(&:id)).order(:created_at, :id).to_a
+    else
+      []
+    end
+    comment_counts = comments.each_with_object(Hash.new(0)) do |comment, memo|
+      memo[comment.object_id] += 1
+    end
 
     {
       board: serialize_board_attributes(board),
       membership: serialize_membership(membership),
       objectTypes: ObjectType.order(:id).map { |type| { id: type.id, code: type.code } },
       colorPalettes: ColorPalette.order(:id).map { |color| { id: color.id, hex: color.hex } },
-      objects: active_objects.map { |object| serialize_board_object(object, resolver) }
+      comments: comments.map { |comment| serialize_comment(comment) },
+      objects: active_objects.map { |object| serialize_board_object(object, resolver, comment_counts, can_view_comments) }
     }
   end
 
-  def serialize_board_object(object, resolver)
+  def serialize_board_object(object, resolver, comment_counts, can_view_comments)
     lock = resolver.effective_lock(object, current_user_id: current_user&.id)
 
     {
@@ -133,7 +143,8 @@ class BoardsController < ApplicationController
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,
       lockedAt: lock&.locked_at&.iso8601,
-      lockOriginObjectId: lock&.object_id
+      lockOriginObjectId: lock&.object_id,
+      commentCount: can_view_comments ? comment_counts.fetch(object.id, 0) : nil
     }
   end
 
@@ -164,5 +175,16 @@ class BoardsController < ApplicationController
 
     head :forbidden
     false
+  end
+
+  def serialize_comment(comment)
+    {
+      id: comment.id,
+      objectId: comment.object_id,
+      userId: comment.user_id,
+      userDisplayName: comment.user.display_name,
+      body: comment.body,
+      createdAt: comment.created_at.iso8601
+    }
   end
 end

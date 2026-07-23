@@ -72,6 +72,18 @@
     "lockedByYou": "あなたがロック中",
     "lockedByOther": "ロック中",
     "permissionDenied": "このオブジェクトは編集できません。",
-    "actionFailed": "ボード操作に失敗しました"
+    "actionFailed": "ボード操作に失敗しました",
+    "commentsHeading": "コメント",
+    "commentsEmpty": "まだコメントはありません",
+    "commentsHidden": "あなたのロールではコメントを閲覧できません。",
+    "commentBodyLabel": "コメント本文",
+    "commentEditLabel": "コメント本文を編集",
+    "commentPlaceholder": "コメントを入力",
+    "postComment": "コメントを投稿",
+    "editComment": "編集",
+    "deleteComment": "削除",
+    "saveComment": "保存",
+    "cancelEdit": "キャンセル",
+    "commentBodyRequired": "投稿前にコメントを入力してください"
   }
 }
