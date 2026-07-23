@@ -26,14 +26,21 @@ const (
 )
 
 type Handler struct {
-	router    *sharding.Router
-	upgrader  websocket.Upgrader
-	readLimit int64
+	router     *sharding.Router
+	upgrader   websocket.Upgrader
+	readLimit  int64
+	hub        *Hub
+	metrics    *Metrics
+	authorizer Authorizer
+	store      Store
+	relay      Relay
+	nodeID     string
 
-	mu      sync.Mutex
-	closing bool
-	closeCh chan struct{}
-	conns   sync.WaitGroup
+	mu            sync.Mutex
+	closing       bool
+	closeCh       chan struct{}
+	conns         sync.WaitGroup
+	subscriptions map[string]context.CancelFunc
 }
 
 func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
@@ -42,9 +49,61 @@ func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: newOriginChecker(allowedOrigins),
 		},
-		readLimit: MaxMessageSize,
-		closeCh:   make(chan struct{}),
+		readLimit:     MaxMessageSize,
+		hub:           NewHub(),
+		metrics:       NewMetrics(),
+		authorizer:    allowAllAuthorizer{},
+		store:         noopStore{},
+		closeCh:       make(chan struct{}),
+		subscriptions: make(map[string]context.CancelFunc),
+		nodeID:        "sync-server-local",
 	}
+}
+
+type Authorizer interface {
+	Allow(ctx context.Context, op Op) (bool, error)
+}
+
+type Store interface {
+	SaveConfirmedOp(ctx context.Context, op Op) error
+}
+
+type allowAllAuthorizer struct{}
+
+func (allowAllAuthorizer) Allow(context.Context, Op) (bool, error) {
+	return true, nil
+}
+
+type noopStore struct{}
+
+func (noopStore) SaveConfirmedOp(context.Context, Op) error {
+	return nil
+}
+
+func (h *Handler) SetAuthorizer(authorizer Authorizer) {
+	if authorizer != nil {
+		h.authorizer = authorizer
+	}
+}
+
+func (h *Handler) SetStore(store Store) {
+	if store != nil {
+		h.store = store
+	}
+}
+
+func (h *Handler) SetRelay(relay Relay) {
+	h.relay = relay
+}
+
+func (h *Handler) SetNodeID(nodeID string) {
+	if strings.TrimSpace(nodeID) != "" {
+		h.nodeID = strings.TrimSpace(nodeID)
+	}
+}
+
+func (h *Handler) MetricsSnapshot() map[string]int64 {
+	return h.metrics.Snapshot()
 }
 
 // Shutdown stops the handler from accepting new connections and signals every
@@ -59,6 +118,13 @@ func (h *Handler) Shutdown() {
 	}
 
 	h.closing = true
+	for boardID, cancel := range h.subscriptions {
+		cancel()
+		delete(h.subscriptions, boardID)
+	}
+	if h.relay != nil {
+		_ = h.relay.Close()
+	}
 	close(h.closeCh)
 }
 
@@ -106,7 +172,8 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 
 	boardID := ctx.Query("boardId")
 
-	if _, err := h.router.Resolve(boardID); err != nil {
+	target, err := h.router.Resolve(boardID)
+	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -127,6 +194,42 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 	}
 	defer conn.Close()
 
+	client := &client{send: make(chan []byte, 32), done: make(chan struct{})}
+	h.hub.Register(boardID, client)
+	h.metrics.IncWebSocketConnections()
+	defer func() {
+		close(client.done)
+		h.metrics.DecWebSocketConnections()
+		h.hub.Unregister(boardID, client)
+	}()
+
+	if err := h.ensureRelaySubscription(ctx.Request.Context(), boardID); err != nil {
+		_ = writeClose(conn, websocket.CloseInternalServerErr, err.Error())
+		return
+	}
+
+	writerDone := make(chan struct{})
+	go h.writePump(conn, client, writerDone)
+
+	incoming := make(chan []byte, 1)
+	readErr := make(chan error, 1)
+	go func() {
+		defer close(incoming)
+		for {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				readErr <- err
+				return
+			}
+
+			select {
+			case incoming <- raw:
+			case <-h.closeCh:
+				return
+			}
+		}
+	}()
+
 	conn.SetReadLimit(h.readLimit)
 	_ = conn.SetReadDeadline(time.Now().Add(PongWait))
 	conn.SetPongHandler(func(string) error {
@@ -134,29 +237,85 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 		return nil
 	})
 
+	for {
+		select {
+		case <-h.closeCh:
+			_ = writeClose(conn, websocket.CloseGoingAway, "server shutting down")
+			return
+		case err := <-readErr:
+			if err != nil {
+				return
+			}
+		case raw, ok := <-incoming:
+			if !ok {
+				return
+			}
+
+			op, err := ParseOp(raw)
+			if err != nil {
+				_ = writeClose(conn, websocket.CloseUnsupportedData, err.Error())
+				return
+			}
+
+			if err := op.Validate(target.BoardID); err != nil {
+				_ = writeClose(conn, websocket.ClosePolicyViolation, err.Error())
+				return
+			}
+
+			allowed, err := h.authorizer.Allow(ctx.Request.Context(), op)
+			if err != nil {
+				_ = writeClose(conn, websocket.CloseInternalServerErr, err.Error())
+				return
+			}
+			if !allowed {
+				_ = writeClose(conn, websocket.ClosePolicyViolation, "op rejected by permission check")
+				return
+			}
+
+			if err := h.store.SaveConfirmedOp(ctx.Request.Context(), op); err != nil {
+				_ = writeClose(conn, websocket.CloseInternalServerErr, err.Error())
+				return
+			}
+
+			payload, err := op.MarshalJSON()
+			if err != nil {
+				_ = writeClose(conn, websocket.CloseInternalServerErr, err.Error())
+				return
+			}
+
+			h.hub.Broadcast(boardID, payload)
+
+			if h.relay != nil {
+				if err := h.relay.Publish(ctx.Request.Context(), op); err != nil {
+					_ = writeClose(conn, websocket.CloseInternalServerErr, err.Error())
+					return
+				}
+			}
+		}
+	}
+}
+
+func (h *Handler) writePump(conn *websocket.Conn, client *client, done chan<- struct{}) {
+	defer close(done)
+
 	ticker := time.NewTicker(PingPeriod)
 	defer ticker.Stop()
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-			_ = conn.SetReadDeadline(time.Now().Add(PongWait))
-		}
-	}()
-
 	for {
 		select {
-		case <-done:
+		case <-client.done:
+			_ = writeClose(conn, websocket.CloseNormalClosure, "connection closed")
 			return
-		case <-h.closeCh:
+		case payload, ok := <-client.send:
+			if !ok {
+				_ = writeClose(conn, websocket.CloseNormalClosure, "connection closed")
+				return
+			}
+
 			_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
-			closeMessage := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
-			_ = conn.WriteMessage(websocket.CloseMessage, closeMessage)
-			return
+			if err := conn.WriteMessage(websocket.TextMessage, payload); err != nil {
+				return
+			}
 		case <-ticker.C:
 			_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
 			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
@@ -164,6 +323,64 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 			}
 		}
 	}
+}
+
+func (h *Handler) ensureRelaySubscription(ctx context.Context, boardID string) error {
+	if h.relay == nil {
+		return nil
+	}
+
+	h.mu.Lock()
+	if _, ok := h.subscriptions[boardID]; ok {
+		h.mu.Unlock()
+		return nil
+	}
+
+	subCtx, cancel := context.WithCancel(context.Background())
+	h.subscriptions[boardID] = cancel
+	h.mu.Unlock()
+
+	ops, unsubscribe, err := h.relay.Subscribe(subCtx, boardID)
+	if err != nil {
+		cancel()
+		h.mu.Lock()
+		delete(h.subscriptions, boardID)
+		h.mu.Unlock()
+		return err
+	}
+
+	go func() {
+		defer unsubscribe()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case op, ok := <-ops:
+				if !ok {
+					return
+				}
+
+				if op.BoardID != boardID {
+					continue
+				}
+
+				payload, err := op.MarshalJSON()
+				if err != nil {
+					continue
+				}
+
+				h.hub.Broadcast(boardID, payload)
+			}
+		}
+	}()
+
+	return nil
+}
+
+func writeClose(conn *websocket.Conn, code int, text string) error {
+	_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
+	message := websocket.FormatCloseMessage(code, text)
+	return conn.WriteMessage(websocket.CloseMessage, message)
 }
 
 func newOriginChecker(allowedOrigins []string) func(*http.Request) bool {

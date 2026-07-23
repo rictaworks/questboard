@@ -68,10 +68,6 @@ func TestHealthAndWebSocketConnection(t *testing.T) {
 		_ = conn.Close()
 	})
 
-	if err := conn.WriteMessage(websocket.TextMessage, []byte("noop")); err != nil {
-		t.Fatalf("websocket write failed: %v", err)
-	}
-
 	if err := conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
 		t.Fatalf("SetReadDeadline() error = %v", err)
 	}
@@ -83,6 +79,71 @@ func TestHealthAndWebSocketConnection(t *testing.T) {
 			t.Fatalf("websocket read error = %v, want timeout or clean close", err)
 		}
 	}
+}
+
+func TestMetricsExposeWebSocketConnections(t *testing.T) {
+	t.Parallel()
+
+	app, err := server.New(config.Config{
+		Address:    ":0",
+		ShardCount: 2,
+	})
+	if err != nil {
+		t.Fatalf("server.New() error = %v", err)
+	}
+
+	httpServer := httptest.NewServer(app.Engine())
+	t.Cleanup(httpServer.Close)
+
+	assertMetric := func(want int64) {
+		t.Helper()
+
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			response, err := http.Get(httpServer.URL + "/metrics")
+			if err != nil {
+				t.Fatalf("GET /metrics error = %v", err)
+			}
+
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil {
+				t.Fatalf("reading /metrics body failed: %v", readErr)
+			}
+
+			var metrics map[string]int64
+			if err := json.Unmarshal(body, &metrics); err != nil {
+				t.Fatalf("decoding /metrics body failed: %v", err)
+			}
+
+			if metrics["websocket_connections"] == want {
+				return
+			}
+
+			time.Sleep(25 * time.Millisecond)
+		}
+
+		t.Fatalf("GET /metrics websocket_connections did not reach %d", want)
+	}
+
+	assertMetric(0)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = conn.Close()
+	})
+
+	assertMetric(1)
+
+	if err := conn.Close(); err != nil {
+		t.Fatalf("closing websocket connection failed: %v", err)
+	}
+
+	assertMetric(0)
 }
 
 func TestWebSocketMessageSizeLimit(t *testing.T) {

@@ -47,3 +47,26 @@ func TestFromEnvShardCount(t *testing.T) {
 		})
 	}
 }
+
+func TestFromEnvRelaySettings(t *testing.T) {
+	t.Setenv("SYNC_SERVER_NODE_ID", "node-1")
+	t.Setenv("SYNC_SERVER_REDIS_URL", "redis://localhost:6379")
+	t.Setenv("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "  custom:sync  ")
+
+	cfg, err := config.FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v, want nil", err)
+	}
+
+	if cfg.NodeID != "node-1" {
+		t.Fatalf("FromEnv() NodeID = %q, want node-1", cfg.NodeID)
+	}
+
+	if cfg.RedisURL != "redis://localhost:6379" {
+		t.Fatalf("FromEnv() RedisURL = %q, want redis://localhost:6379", cfg.RedisURL)
+	}
+
+	if cfg.RedisChannelPrefix != "custom:sync" {
+		t.Fatalf("FromEnv() RedisChannelPrefix = %q, want custom:sync", cfg.RedisChannelPrefix)
+	}
+}

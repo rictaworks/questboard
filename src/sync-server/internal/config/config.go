@@ -8,9 +8,12 @@ import (
 )
 
 type Config struct {
-	Address        string
-	ShardCount     int
-	AllowedOrigins []string
+	Address            string
+	ShardCount         int
+	AllowedOrigins     []string
+	NodeID             string
+	RedisURL           string
+	RedisChannelPrefix string
 }
 
 func FromEnv() (Config, error) {
@@ -20,9 +23,12 @@ func FromEnv() (Config, error) {
 	}
 
 	return Config{
-		Address:        listenAddress(),
-		ShardCount:     shardCount,
-		AllowedOrigins: splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
+		Address:            listenAddress(),
+		ShardCount:         shardCount,
+		AllowedOrigins:     splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
+		NodeID:             envOrDefault("SYNC_SERVER_NODE_ID", defaultNodeID()),
+		RedisURL:           strings.TrimSpace(os.Getenv("SYNC_SERVER_REDIS_URL")),
+		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
 	}, nil
 }
 
@@ -71,4 +77,20 @@ func splitList(raw string) []string {
 	}
 
 	return allowed
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+func defaultNodeID() string {
+	if hostname, err := os.Hostname(); err == nil && strings.TrimSpace(hostname) != "" {
+		return strings.TrimSpace(hostname)
+	}
+
+	return "sync-server-local"
 }

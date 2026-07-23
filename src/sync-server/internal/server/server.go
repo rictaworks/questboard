@@ -27,10 +27,21 @@ func New(cfg config.Config) (*Server, error) {
 	}
 
 	wsHandler := ws.NewHandler(router, cfg.AllowedOrigins)
+	wsHandler.SetNodeID(cfg.NodeID)
+	if cfg.RedisURL != "" {
+		relay, err := ws.NewRedisRelay(cfg.RedisURL, cfg.RedisChannelPrefix, cfg.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		wsHandler.SetRelay(relay)
+	}
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.GET("/healthz", healthHandler)
+	engine.GET("/metrics", func(ctx *gin.Context) {
+		ctx.JSON(http.StatusOK, wsHandler.MetricsSnapshot())
+	})
 	engine.GET("/ws", wsHandler.ServeHTTP)
 
 	httpServer := &http.Server{
