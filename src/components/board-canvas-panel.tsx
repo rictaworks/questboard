@@ -496,14 +496,25 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                     <span>{object.lockedByUserId === currentUserId ? t('lockedByYou') : t('lockedByOther')}</span>
                   </span>
                 ) : null}
-                <button className="board-object-action board-object-action-rotate" onPointerDown={(event) => handleRotatePointerDown(object, event)} type="button">
+                <button
+                  className="board-object-action board-object-action-rotate"
+                  disabled={!canPerformBoardAction(roleCode, 'rotate', objectToLockState(object), currentUserId)}
+                  onPointerDown={(event) => handleRotatePointerDown(object, event)}
+                  type="button"
+                >
                   <FontAwesomeIcon icon={faRotateRight} />
                 </button>
-                <button className="board-object-action board-object-action-resize" onPointerDown={(event) => handleResizePointerDown(object, event)} type="button">
+                <button
+                  className="board-object-action board-object-action-resize"
+                  disabled={!canPerformBoardAction(roleCode, 'resize', objectToLockState(object), currentUserId)}
+                  onPointerDown={(event) => handleResizePointerDown(object, event)}
+                  type="button"
+                >
                   <FontAwesomeIcon icon={faPenToSquare} />
                 </button>
                 <button
                   className="board-object-action board-object-action-color"
+                  disabled={!canPerformBoardAction(roleCode, 'recolor', objectToLockState(object), currentUserId)}
                   onClick={(event) => {
                     event.stopPropagation();
                     changeColor(object, nextColorId(object, boardData.colorPalettes));

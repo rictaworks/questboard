@@ -119,8 +119,7 @@ class BoardsController < ApplicationController
     }
   end
 
-  def serialize_board_object(object, resolver = nil)
-    resolver ||= BoardLockResolver.new(object.board)
+  def serialize_board_object(object, resolver)
     lock = resolver.effective_lock(object, current_user_id: current_user&.id)
 
     {

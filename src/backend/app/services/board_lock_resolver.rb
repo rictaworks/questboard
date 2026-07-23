@@ -16,7 +16,7 @@ class BoardLockResolver
 
       objects << current
 
-      parent = current.association(:parent_frame).loaded? ? current.parent_frame : current.parent_frame
+      parent = current.parent_frame
       break if parent.nil? || parent.deleted_at.present?
 
       current = parent
@@ -66,6 +66,11 @@ class BoardLockResolver
     locks = active_locks_in_chain(object)
     return nil if locks.empty?
 
+    # 祖先チェーン内に自分以外が保持するロックがあれば、それを優先して返す。
+    # これにより、祖先frameが他人にロックされている間は、自分が直接ロックした
+    # 子オブジェクトであっても effective_lock 上は「他人にロックされている」
+    # 扱いになり、unlockアクションの認可(direct_lock?はtrueでもlock_holder?がfalse)
+    # まで拒否される。祖先ロック中はサブツリー全体を凍結する仕様として意図的。
     if current_user_id
       other_lock = locks.find { |l| l.locked_by.to_s != current_user_id.to_s }
       return other_lock if other_lock

@@ -62,16 +62,16 @@
     "errorMessage": "[TODO] translate"
   },
   "BoardCanvas": {
-    "heading": "Board canvas",
-    "canvasLabel": "Board canvas",
-    "minimapHeading": "Minimap",
-    "selectionHeading": "Selected object",
-    "refresh": "Refresh",
-    "duplicate": "Duplicate",
-    "delete": "Delete",
-    "lockedByYou": "Locked by you",
-    "lockedByOther": "Locked",
-    "permissionDenied": "You cannot edit this object.",
-    "actionFailed": "Board action failed"
+    "heading": "[TODO] translate",
+    "canvasLabel": "[TODO] translate",
+    "minimapHeading": "[TODO] translate",
+    "selectionHeading": "[TODO] translate",
+    "refresh": "[TODO] translate",
+    "duplicate": "[TODO] translate",
+    "delete": "[TODO] translate",
+    "lockedByYou": "[TODO] translate",
+    "lockedByOther": "[TODO] translate",
+    "permissionDenied": "[TODO] translate",
+    "actionFailed": "[TODO] translate"
   }
 }

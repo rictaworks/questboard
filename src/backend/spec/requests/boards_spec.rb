@@ -259,10 +259,13 @@ RSpec.describe "Boards", type: :request do
     end
 
     sign_in(owner)
-    get "/boards/#{share_token}", as: :json
+    query_count = count_queries { get "/boards/#{share_token}", as: :json }
     expect(response).to have_http_status(:ok)
     payload = JSON.parse(response.body)
 
     expect(payload.fetch("objects").length).to eq(40)
+    # Query count must stay flat regardless of tree depth/size; a per-object
+    # lock lookup would scale with the 40 objects created above.
+    expect(query_count).to be < 20
   end
 end

@@ -326,6 +326,58 @@ RSpec.describe "Objects", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "freezes a user's own direct lock release while an ancestor frame is locked by someone else" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+    join_board(share_token:, user: another_editor, role_code: "editor")
+
+    sign_in(editor)
+    frame_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 0, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+    frame_id = frame_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      parent_frame_id: frame_id,
+      geometry: { x: 10, y: 10, w: 50, h: 50, rotation: 0 }
+    }, as: :json
+    child_id = JSON.parse(response.body).fetch("id")
+
+    # Editor A (editor) locks the child sticky directly
+    post "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Editor B (another_editor) locks the parent frame afterwards
+    sign_in(another_editor)
+    post "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    # Editor A still holds a direct lock on the child, but cannot release it
+    # while the ancestor frame is locked by someone else. This is the current,
+    # intentional behavior (see comment on BoardLockResolver#effective_lock):
+    # an ancestor lock by another user freezes the whole subtree, including
+    # releasing locks the actor already held before the ancestor was locked.
+    sign_in(editor)
+    delete "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(FrameLock.find_by(object_id: child_id)).to be_present
+
+    # Once B releases the frame lock, A can release their own child lock again.
+    sign_in(another_editor)
+    delete "/boards/#{share_token}/objects/#{frame_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+
+    sign_in(editor)
+    delete "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
+    expect(response).to have_http_status(:ok)
+    expect(FrameLock.find_by(object_id: child_id)).to be_nil
+  end
+
   it "serializes lockOriginObjectId to distinguish direct vs inherited locks" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -481,11 +533,16 @@ RSpec.describe "Objects", type: :request do
     target_object = objects.first
 
     sign_in(owner)
-    patch "/boards/#{share_token}/objects/#{target_object.id}/move", params: {
-      geometry: { x: 999, y: 999 }
-    }, as: :json
+    query_count = count_queries do
+      patch "/boards/#{share_token}/objects/#{target_object.id}/move", params: {
+        geometry: { x: 999, y: 999 }
+      }, as: :json
+    end
 
     expect(response).to have_http_status(:ok)
     expect(target_object.reload.geometry.fetch("x")).to eq(999)
+    # Must stay flat regardless of the board having 50 other objects; loading
+    # the whole board per mutation would scale with that count instead.
+    expect(query_count).to be < 15
   end
 end

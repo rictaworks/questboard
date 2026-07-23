@@ -50,9 +50,5 @@ export function canPerformBoardAction(
     return locked && lockHeldByCurrentUser;
   }
 
-  if (action === 'create') {
-    return !locked || lockHeldByCurrentUser;
-  }
-
   return !locked || lockHeldByCurrentUser;
 }
