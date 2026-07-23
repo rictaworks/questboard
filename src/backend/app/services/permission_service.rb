@@ -74,6 +74,10 @@ class PermissionService
 
     state = normalize_target_state(target_state)
 
+    if lock_release_action?(normalized_action) && !direct_lock?(state)
+      return false
+    end
+
     return true if normalized_role == :owner
     return false if board_admin_action?(normalized_action)
 
@@ -155,10 +159,20 @@ class PermissionService
     return true if comment_self_mutation_action?(action)
     return true if share_action?(action)
     return true if lock_set_action?(action) && unlocked?(state)
-    return true if lock_release_action?(action) && locked?(state) && lock_holder?(state)
+    return true if lock_release_action?(action) && locked?(state) && lock_holder?(state) && direct_lock?(state)
     return true if object_mutation_action?(action) && object_editable?(state)
 
     false
+  end
+
+  def direct_lock?(state)
+    return true if truthy?(state[:direct_lock])
+
+    origin_id = state[:lock_origin_object_id]
+    obj_id = state[:object_id] || state[:id]
+    return true if origin_id.present? && obj_id.present? && origin_id.to_s == obj_id.to_s
+
+    origin_id.blank?
   end
 
   def unlocked?(state)

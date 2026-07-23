@@ -31,12 +31,15 @@ API surface grows. Current endpoints:
 | DELETE | `/session` | Logout            | cookie      |
 | POST   | `/auth/google_sessions` | Google login callback | none |
 | POST   | `/boards` | Create a board | cookie |
+| GET    | `/boards/:share_token` | Load board canvas state | cookie |
 | POST   | `/boards/:share_token/join` | Join a board by share token | cookie |
 | PATCH  | `/boards/:share_token/members/:user_id` | Update a board member role | cookie |
 | POST   | `/boards/:share_token/objects` | Create an object (sticky/shape/text/connector/image/frame) | cookie |
 | PATCH  | `/boards/:share_token/objects/:id/move` | Move an object | cookie |
 | PATCH  | `/boards/:share_token/objects/:id/resize` | Resize an object | cookie |
 | PATCH  | `/boards/:share_token/objects/:id/rotate` | Rotate an object | cookie |
+| POST   | `/boards/:share_token/objects/:id/duplicate` | Duplicate an object | cookie |
+| PATCH  | `/boards/:share_token/objects/:id/color` | Change an object's color | cookie |
 | POST   | `/boards/:share_token/objects/:id/lock` | Lock an object | cookie |
 | DELETE | `/boards/:share_token/objects/:id/lock` | Unlock an object | cookie |
 | DELETE | `/boards/:share_token/objects/:id` | Tombstone-delete an object | cookie |

@@ -58,6 +58,46 @@ RSpec.describe "Boards", type: :request do
     expect(membership.role.code).to eq("owner")
   end
 
+  it "shows the persisted board canvas state to members" do
+    seed_object_support
+    board_payload = create_board(title: "Canvas Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    color = ColorPalette.first!
+    object_type = ObjectType.find_by!(code: "frame")
+
+    BoardObject.create!(
+      board: Board.find_by!(share_token:),
+      object_type:,
+      color_palette: color,
+      geometry: { "x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0 },
+      deleted_at: nil
+    )
+
+    sign_in(member)
+    get "/boards/#{share_token}", as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = JSON.parse(response.body)
+
+    expect(payload.fetch("board")).to include("title" => "Canvas Board", "shareToken" => share_token)
+    expect(payload.fetch("membership").dig("role", "code")).to eq("editor")
+    expect(payload.fetch("objectTypes").map { |entry| entry.fetch("code") }).to include("frame")
+    expect(payload.fetch("colorPalettes").map { |entry| entry.fetch("hex") }).to include(color.hex)
+    expect(payload.fetch("objects")).to include(
+      include(
+        "objectTypeCode" => "frame",
+        "colorId" => color.id,
+        "geometry" => include("x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0),
+        "locked" => false
+      )
+    )
+  end
+
   it "joins a board through the share token with the selected invite role" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -169,5 +209,63 @@ RSpec.describe "Boards", type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.headers["Access-Control-Allow-Origin"]).to eq("http://localhost:3000")
     expect(response.headers["Access-Control-Allow-Methods"]).to include("PATCH")
+  end
+
+  def seed_object_support
+    ObjectType.upsert_all(
+      [
+        { code: "sticky" },
+        { code: "shape" },
+        { code: "text" },
+        { code: "connector" },
+        { code: "image" },
+        { code: "frame" }
+      ],
+      unique_by: :index_object_types_on_code
+    )
+
+    ColorPalette.upsert_all(
+      [
+        { hex: "#FDE68A" }
+      ],
+      unique_by: :index_color_palettes_on_hex
+    )
+  end
+
+  it "resolves ancestor locks without N+1 queries regardless of object tree size" do
+    seed_object_support
+    board_payload = create_board(title: "Deep Hierarchy Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    board = Board.find_by!(share_token:)
+
+    color = ColorPalette.first!
+    frame_type = ObjectType.find_by!(code: "frame")
+    sticky_type = ObjectType.find_by!(code: "sticky")
+
+    parent = nil
+    20.times do |i|
+      frame = BoardObject.create!(
+        board:, object_type: frame_type, color_palette: color, parent_frame: parent,
+        geometry: { "x" => i * 10, "y" => i * 10, "w" => 200, "h" => 200, "rotation" => 0 }
+      )
+      BoardObject.create!(
+        board:, object_type: sticky_type, color_palette: color, parent_frame: frame,
+        geometry: { "x" => i * 10 + 5, "y" => i * 10 + 5, "w" => 50, "h" => 50, "rotation" => 0 }
+      )
+      if i == 5
+        FrameLock.create!(object_id: frame.id, locked_by: owner.id, locked_at: Time.current)
+      end
+      parent = frame
+    end
+
+    sign_in(owner)
+    query_count = count_queries { get "/boards/#{share_token}", as: :json }
+    expect(response).to have_http_status(:ok)
+    payload = JSON.parse(response.body)
+
+    expect(payload.fetch("objects").length).to eq(40)
+    # Query count must stay flat regardless of tree depth/size; a per-object
+    # lock lookup would scale with the 40 objects created above.
+    expect(query_count).to be < 20
   end
 end

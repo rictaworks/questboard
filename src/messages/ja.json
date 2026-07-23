@@ -60,5 +60,18 @@
     "successHeading": "ボードに参加しました",
     "successDescription": "「{title}」に {role} として参加済みです。",
     "errorMessage": "ボードへの参加に失敗しました"
+  },
+  "BoardCanvas": {
+    "heading": "ボードキャンバス",
+    "canvasLabel": "ボードキャンバス",
+    "minimapHeading": "ミニマップ",
+    "selectionHeading": "選択中のオブジェクト",
+    "refresh": "更新",
+    "duplicate": "複製",
+    "delete": "削除",
+    "lockedByYou": "あなたがロック中",
+    "lockedByOther": "ロック中",
+    "permissionDenied": "このオブジェクトは編集できません。",
+    "actionFailed": "ボード操作に失敗しました"
   }
 }

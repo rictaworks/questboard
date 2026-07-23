@@ -69,4 +69,16 @@ RSpec.configure do |config|
   config.filter_rails_from_backtrace!
   # arbitrary gems may also be filtered via:
   # config.filter_gems_from_backtrace("gem name")
+
+  config.include(Module.new do
+    def count_queries(&block)
+      count = 0
+      counter = lambda do |*, payload|
+        count += 1 unless payload[:sql].match?(/\A\s*(SCHEMA|TRANSACTION)\b/i)
+      end
+
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record", &block)
+      count
+    end
+  end)
 end

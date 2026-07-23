@@ -60,5 +60,18 @@
     "successHeading": "[TODO] translate",
     "successDescription": "[TODO] translate",
     "errorMessage": "[TODO] translate"
+  },
+  "BoardCanvas": {
+    "heading": "[TODO] translate",
+    "canvasLabel": "[TODO] translate",
+    "minimapHeading": "[TODO] translate",
+    "selectionHeading": "[TODO] translate",
+    "refresh": "[TODO] translate",
+    "duplicate": "[TODO] translate",
+    "delete": "[TODO] translate",
+    "lockedByYou": "[TODO] translate",
+    "lockedByOther": "[TODO] translate",
+    "permissionDenied": "[TODO] translate",
+    "actionFailed": "[TODO] translate"
   }
 }
