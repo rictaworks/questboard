@@ -17,10 +17,10 @@ RSpec.describe "Comments", type: :request do
   def seed_roles
     Role.upsert_all(
       [
-        {code: "owner"},
-        {code: "editor"},
-        {code: "commenter"},
-        {code: "viewer"}
+        { code: "owner" },
+        { code: "editor" },
+        { code: "commenter" },
+        { code: "viewer" }
       ],
       unique_by: :index_roles_on_code
     )
@@ -29,19 +29,19 @@ RSpec.describe "Comments", type: :request do
   def seed_object_support
     ObjectType.upsert_all(
       [
-        {code: "sticky"},
-        {code: "shape"},
-        {code: "text"},
-        {code: "connector"},
-        {code: "image"},
-        {code: "frame"}
+        { code: "sticky" },
+        { code: "shape" },
+        { code: "text" },
+        { code: "connector" },
+        { code: "image" },
+        { code: "frame" }
       ],
       unique_by: :index_object_types_on_code
     )
 
     ColorPalette.upsert_all(
       [
-        {hex: "#FDE68A"}
+        { hex: "#FDE68A" }
       ],
       unique_by: :index_color_palettes_on_hex
     )
@@ -50,7 +50,7 @@ RSpec.describe "Comments", type: :request do
   def seed_comment_support
     EffectMaster.upsert_all(
       [
-        {code: "comment_ping", duration_ms: 200}
+        { code: "comment_ping", duration_ms: 200 }
       ],
       unique_by: :index_effect_masters_on_code
     )
@@ -80,7 +80,7 @@ RSpec.describe "Comments", type: :request do
 
   def create_board(title: "Strategy Board")
     sign_in(owner)
-    post "/boards", params: {title:}, as: :json
+    post "/boards", params: { title: }, as: :json
 
     expect(response).to have_http_status(:created)
     JSON.parse(response.body)
@@ -88,7 +88,7 @@ RSpec.describe "Comments", type: :request do
 
   def join_board(share_token:, user:, role_code:)
     sign_in(user)
-    post "/boards/#{share_token}/join", params: {role_code:}, as: :json
+    post "/boards/#{share_token}/join", params: { role_code: }, as: :json
 
     expect(response).to have_http_status(:created)
   end
@@ -104,7 +104,7 @@ RSpec.describe "Comments", type: :request do
   end
 
   def create_comment(share_token:, object_id:, body:)
-    post "/boards/#{share_token}/objects/#{object_id}/comments", params: {body:}, as: :json
+    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: }, as: :json
 
     expect(response).to have_http_status(:created)
     JSON.parse(response.body)
@@ -121,7 +121,7 @@ RSpec.describe "Comments", type: :request do
     object_payload = create_object(
       share_token:,
       object_type_code: "sticky",
-      geometry: {x: 10, y: 20, w: 30, h: 40, rotation: 0}
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
     )
     object_id = object_payload.fetch("id")
 
@@ -165,7 +165,7 @@ RSpec.describe "Comments", type: :request do
     object_payload = create_object(
       share_token:,
       object_type_code: "sticky",
-      geometry: {x: 10, y: 20, w: 30, h: 40, rotation: 0}
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
     )
     object_id = object_payload.fetch("id")
 
@@ -175,12 +175,12 @@ RSpec.describe "Comments", type: :request do
     sign_in(editor)
     editor_comment = create_comment(share_token:, object_id:, body: "Editor body")
 
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", params: {body: "Updated own body"}, as: :json
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", params: { body: "Updated own body" }, as: :json
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).fetch("body")).to eq("Updated own body")
 
     sign_in(commenter)
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: {body: "Blocked update"}, as: :json
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: { body: "Blocked update" }, as: :json
     expect(response).to have_http_status(:forbidden)
 
     sign_in(editor)
@@ -205,7 +205,7 @@ RSpec.describe "Comments", type: :request do
     object_payload = create_object(
       share_token:,
       object_type_code: "sticky",
-      geometry: {x: 10, y: 20, w: 30, h: 40, rotation: 0}
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
     )
     object_id = object_payload.fetch("id")
 
@@ -223,7 +223,7 @@ RSpec.describe "Comments", type: :request do
     get "/boards/#{share_token}/objects/#{object_id}/comments", as: :json
     expect(response).to have_http_status(:forbidden)
 
-    post "/boards/#{share_token}/objects/#{object_id}/comments", params: {body: "Nope"}, as: :json
+    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "Nope" }, as: :json
     expect(response).to have_http_status(:forbidden)
   end
 end

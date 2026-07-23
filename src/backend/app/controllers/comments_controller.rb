@@ -6,9 +6,9 @@ class CommentsController < ApplicationController
     comments = find_authorized_comments!(board:, action: :view_comments)
     return if performed?
 
-    render json: {comments: comments.map { |comment| serialize_comment(comment) }}
+    render json: { comments: comments.map { |comment| serialize_comment(comment) } }
   rescue ActiveRecord::RecordNotFound
-    render json: {error: "Board or object not found"}, status: :not_found
+    render json: { error: "Board or object not found" }, status: :not_found
   end
 
   def create
@@ -27,11 +27,11 @@ class CommentsController < ApplicationController
 
     render json: serialize_comment(comment), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: {error: e.message}, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordNotFound
-    render json: {error: "Board or object not found"}, status: :not_found
+    render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: {error: e.record.errors.full_messages.to_sentence}, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
   def update
@@ -41,11 +41,11 @@ class CommentsController < ApplicationController
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
   rescue ActionController::ParameterMissing => e
-    render json: {error: e.message}, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordNotFound
-    render json: {error: "Board or object not found"}, status: :not_found
+    render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: {error: e.record.errors.full_messages.to_sentence}, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
   end
 
   def destroy
@@ -55,7 +55,7 @@ class CommentsController < ApplicationController
     comment.destroy!
     head :no_content
   rescue ActiveRecord::RecordNotFound
-    render json: {error: "Board or object not found"}, status: :not_found
+    render json: { error: "Board or object not found" }, status: :not_found
   end
 
   private
@@ -103,7 +103,7 @@ class CommentsController < ApplicationController
       return false
     end
 
-    state = comment ? {comment_author_id: comment.user_id, actor_id: current_user.id} : {}
+    state = comment ? { comment_author_id: comment.user_id, actor_id: current_user.id } : {}
     return true if PermissionService.new.authorize(membership.role.code, action, state)
 
     head :forbidden
