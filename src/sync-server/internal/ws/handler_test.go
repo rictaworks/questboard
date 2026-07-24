@@ -467,7 +467,7 @@ func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 		"boardId":    "board-presence",
 		"objectId":   "object-1",
 		"property":   "presence",
-		"value":      map[string]any{"cursor": map[string]any{"x": 10, "y": 20}},
+		"value":      map[string]any{"cursor": map[string]any{"x": 10, "y": 20}, "displayName": "Editor User"},
 		"lamport_ts": 1,
 		"clientId":   "client-a",
 	}
@@ -476,6 +476,13 @@ func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 	got := mustReadJSONMessage(t, connB)
 	assertJSONField(t, got, "property", "presence")
 	assertJSONField(t, got, "clientId", "client-a")
+	value, ok := got["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("got value = %T, want map[string]any", got["value"])
+	}
+	if value["displayName"] != "Editor User" {
+		t.Fatalf("presence displayName = %v, want Editor User", value["displayName"])
+	}
 
 	mustWriteJSON(t, connA, presence)
 

@@ -197,6 +197,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return (
       <BoardCanvasPanel
         boardData={boardData}
+        currentUserDisplayName={sessionState.displayName ?? authT('unknownUser')}
         onReloadBoard={async () => {
           const {backendUrl} = readGoogleAuthSettings();
           const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
