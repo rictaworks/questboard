@@ -474,6 +474,87 @@ func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 	}
 }
 
+func TestPresenceOpsRejectOversizedOrMalformedPayloads(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		payload string
+	}{
+		{
+			name: "rejects oversized raw payloads",
+			payload: `{"boardId":"board-presence","objectId":"object-1","property":"presence","value":{` +
+				strings.Repeat(" ", ws.MaxPresenceValueBytes+64) +
+				`"cursor":{` +
+				strings.Repeat(" ", ws.MaxPresenceValueBytes+64) +
+				`"x":10,` +
+				strings.Repeat(" ", ws.MaxPresenceValueBytes+64) +
+				`"y":20` +
+				strings.Repeat(" ", ws.MaxPresenceValueBytes+64) +
+				`}` +
+				strings.Repeat(" ", ws.MaxPresenceValueBytes+64) +
+				`},"lamport_ts":1,"clientId":"client-a"}`,
+		},
+		{
+			name:    "rejects unsupported presence shape",
+			payload: `{"boardId":"board-presence","objectId":"object-1","property":"presence","value":{"cursor":{"x":10,"y":20,"z":30}},"lamport_ts":1,"clientId":"client-a"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			router, err := sharding.NewRouter(2)
+			if err != nil {
+				t.Fatalf("NewRouter() error = %v", err)
+			}
+
+			store := &presenceTrapStore{}
+			handler := ws.NewHandler(router, nil)
+			handler.SetAuthenticator(allowAllAuthenticator{})
+			handler.SetAuthorizer(allowAllAuthorizer{})
+			handler.SetStore(store)
+
+			engine := gin.New()
+			engine.GET("/ws", handler.ServeHTTP)
+			httpServer := httptest.NewServer(engine)
+			t.Cleanup(httpServer.Close)
+
+			wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-presence"
+			connA := mustDialWebSocket(t, wsURL)
+			defer connA.Close()
+			connB := mustDialWebSocket(t, wsURL)
+			defer connB.Close()
+
+			mustWriteRawMessage(t, connA, tt.payload)
+
+			if err := connB.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+				t.Fatalf("SetReadDeadline() error = %v", err)
+			}
+			if _, _, err := connB.ReadMessage(); err == nil {
+				t.Fatal("connB received a broadcast for invalid presence, want no broadcast")
+			} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+				t.Fatalf("connB read error = %v, want a read timeout", err)
+			}
+
+			if err := connA.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				t.Fatalf("SetReadDeadline() error = %v", err)
+			}
+			_, _, err = connA.ReadMessage()
+			var closeErr *websocket.CloseError
+			if !errors.As(err, &closeErr) || closeErr.Code != websocket.ClosePolicyViolation {
+				t.Fatalf("connA read error = %v, want CloseError code %d (ClosePolicyViolation)", err, websocket.ClosePolicyViolation)
+			}
+
+			if calls := atomic.LoadInt32(&store.calls); calls != 0 {
+				t.Fatalf("invalid presence op was persisted %d times, want 0", calls)
+			}
+		})
+	}
+}
+
 func mustDialWebSocket(t *testing.T, wsURL string) *websocket.Conn {
 	t.Helper()
 
@@ -500,6 +581,14 @@ func mustWriteJSON(t *testing.T, conn *websocket.Conn, payload any) {
 
 	if err := conn.WriteJSON(payload); err != nil {
 		t.Fatalf("websocket write failed: %v", err)
+	}
+}
+
+func mustWriteRawMessage(t *testing.T, conn *websocket.Conn, payload string) {
+	t.Helper()
+
+	if err := conn.WriteMessage(websocket.TextMessage, []byte(payload)); err != nil {
+		t.Fatalf("websocket raw write failed: %v", err)
 	}
 }
 
@@ -597,7 +686,7 @@ func TestDeletedObjectEditSendsRecoveryNotification(t *testing.T) {
 	got := mustReadJSONMessage(t, conn)
 	assertJSONField(t, got, "objectId", "object-1")
 	assertJSONField(t, got, "error", "Object has been deleted; restore it before editing")
-	
+
 	// restoreSuggested が boolean の true であることを検証
 	val, ok := got["restoreSuggested"].(bool)
 	if !ok || !val {

@@ -29,6 +29,9 @@ const (
 	WriteWait = 10 * time.Second
 	// PresenceBroadcastInterval caps cursor broadcasts at 30Hz.
 	PresenceBroadcastInterval = time.Second / 30
+	// MaxPresenceValueBytes keeps transient cursor payloads tiny so they cannot be used
+	// as a broadcast/relay amplification vector.
+	MaxPresenceValueBytes = 512
 
 	// railsSessionCookieName must match config.session_store's `key:` in the Rails
 	// backend (src/backend/config/application.rb). Rails authenticates solely via this
@@ -591,6 +594,11 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 			}
 
 			if op.Property == "presence" {
+				if err := validatePresenceValue(op.Value); err != nil {
+					client.requestClose(websocket.ClosePolicyViolation, err.Error())
+					return
+				}
+
 				now := time.Now()
 				if !lastPresenceBroadcast.IsZero() && now.Sub(lastPresenceBroadcast) < PresenceBroadcastInterval {
 					continue
@@ -777,6 +785,53 @@ func writeClose(conn *websocket.Conn, code int, text string) error {
 	_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
 	message := websocket.FormatCloseMessage(code, text)
 	return conn.WriteMessage(websocket.CloseMessage, message)
+}
+
+func validatePresenceValue(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return fmt.Errorf("presence value is required")
+	}
+	if len(raw) > MaxPresenceValueBytes {
+		return fmt.Errorf("presence value must not exceed %d bytes", MaxPresenceValueBytes)
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return fmt.Errorf("presence value must be an object: %w", err)
+	}
+	if len(payload) != 1 {
+		return fmt.Errorf("presence value must contain only cursor")
+	}
+
+	cursorRaw, ok := payload["cursor"]
+	if !ok {
+		return fmt.Errorf("presence value must include cursor")
+	}
+
+	var cursor map[string]json.RawMessage
+	if err := json.Unmarshal(cursorRaw, &cursor); err != nil {
+		return fmt.Errorf("presence cursor must be an object: %w", err)
+	}
+	if len(cursor) != 2 {
+		return fmt.Errorf("presence cursor must contain only x and y")
+	}
+
+	if _, ok := cursor["x"]; !ok {
+		return fmt.Errorf("presence cursor must include x")
+	}
+	if _, ok := cursor["y"]; !ok {
+		return fmt.Errorf("presence cursor must include y")
+	}
+
+	var x, y float64
+	if err := json.Unmarshal(cursor["x"], &x); err != nil {
+		return fmt.Errorf("presence cursor.x must be numeric: %w", err)
+	}
+	if err := json.Unmarshal(cursor["y"], &y); err != nil {
+		return fmt.Errorf("presence cursor.y must be numeric: %w", err)
+	}
+
+	return nil
 }
 
 func newOriginChecker(allowedOrigins []string) func(*http.Request) bool {
