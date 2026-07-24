@@ -70,13 +70,30 @@ func (r *RedisRelay) Subscribe(ctx context.Context, boardID string) (<-chan Op, 
 				continue
 			}
 
-			out <- envelope.Op
+			if !trySend(ctx, out, envelope.Op) {
+				return
+			}
 		}
 	}()
 
 	return out, func() {
 		_ = pubSub.Close()
 	}, nil
+}
+
+// trySend delivers op to out, but gives up as soon as ctx is done instead of blocking
+// forever. Without this, a plain "out <- op" could block permanently if the reader
+// (handler.go's ensureRelaySubscription goroutine) has already returned via ctx.Done() —
+// it stops draining out as soon as ctx is cancelled, but pubSub.Close() (called by that
+// same goroutine's deferred unsubscribe) only unblocks a pending Channel() read, not a
+// pending send here, leaking this goroutine and its subscription (see PR #53 review).
+func trySend(ctx context.Context, out chan<- Op, op Op) bool {
+	select {
+	case out <- op:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (r *RedisRelay) Publish(ctx context.Context, op Op) error {
