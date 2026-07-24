@@ -21,6 +21,11 @@ class ObjectsController < ApplicationController
   # property forever with an extreme value (e.g. the bigint max) that no future op could
   # ever exceed.
   MAX_LAMPORT_JUMP = 100_000
+  MAX_TEXT_CRDT_OPS = 100
+  MAX_TEXT_CRDT_INSERT_BYTES = 16 * 1024
+  MAX_TEXT_CRDT_TEXT_BYTES = 64 * 1024
+  MAX_TEXT_CRDT_ATTRIBUTES_BYTES = 2 * 1024
+  MAX_TEXT_CRDT_ATTRIBUTES_DEPTH = 4
 
   # The move/resize/rotate/recolor/destroy endpoints predate object_ops and have no
   # client-generated Lamport counter of their own. Recording them under this fixed
@@ -472,19 +477,17 @@ class ObjectsController < ApplicationController
         raise InvalidOpValueError, "text_crdt must be an object"
       end
 
+    if normalized_value.key?("text") || normalized_value.key?(:text)
+      raise InvalidOpValueError, "text_crdt snapshots must not include text"
+    end
+
     ops = normalized_value.fetch("ops") { normalized_value[:ops] }
-    text = normalized_value["text"] || normalized_value[:text]
-    if ops.blank? && text.blank?
-      raise InvalidOpValueError, "text_crdt must include ops or text"
-    end
+    raise InvalidOpValueError, "text_crdt must include ops" unless ops.is_a?(Array) && ops.present?
+    raise InvalidOpValueError, "text_crdt ops must not exceed #{MAX_TEXT_CRDT_OPS}" if ops.length > MAX_TEXT_CRDT_OPS
 
-    if ops.present?
-      normalized_ops = ops.map { |op| validate_text_crdt_op!(op) }
-      normalized_value = normalized_value.stringify_keys
-      normalized_value["ops"] = normalized_ops
-    end
-
-    normalized_value.stringify_keys
+    normalized_value = normalized_value.stringify_keys
+    normalized_value["ops"] = ops.map { |op| validate_text_crdt_op!(op) }
+    normalized_value
   end
 
   def validate_text_crdt_op!(op)
@@ -517,6 +520,10 @@ class ObjectsController < ApplicationController
     if normalized_op["attributes"].present? && !normalized_op["attributes"].is_a?(Hash)
       raise InvalidOpValueError, "text_crdt attributes must be an object"
     end
+    if normalized_op["insert"].is_a?(String) && normalized_op["insert"].bytesize > MAX_TEXT_CRDT_INSERT_BYTES
+      raise InvalidOpValueError, "text_crdt insert must not exceed #{MAX_TEXT_CRDT_INSERT_BYTES} bytes"
+    end
+    validate_text_crdt_attributes!(normalized_op["attributes"]) if normalized_op["attributes"].present?
 
     normalized_op
   end
@@ -524,30 +531,10 @@ class ObjectsController < ApplicationController
   def merge_text_crdt_state(existing_state, incoming_value)
     existing_state = existing_state.is_a?(Hash) ? existing_state : {}
     existing_text = existing_state["text"].to_s
-    incoming_ops = crdt_ops_from_value(incoming_value)
-    incoming_text = incoming_text_crdt(existing_text, incoming_ops, incoming_value)
-    existing_ops = existing_state["ops"].is_a?(Array) ? existing_state["ops"] : []
+    incoming_text = apply_text_crdt_delta(existing_text.dup, incoming_value.fetch("ops"))
+    raise InvalidOpValueError, "text_crdt text must not exceed #{MAX_TEXT_CRDT_TEXT_BYTES} bytes" if incoming_text.bytesize > MAX_TEXT_CRDT_TEXT_BYTES
 
-    merged_state = existing_state.merge("text" => incoming_text)
-    merged_state["ops"] = existing_ops + incoming_ops if incoming_ops.any?
-    merged_state
-  end
-
-  def incoming_text_crdt(existing_text, incoming_ops, incoming_value)
-    if incoming_value.is_a?(Hash) && incoming_value.key?("text")
-      return incoming_value["text"].to_s
-    end
-
-    apply_text_crdt_delta(existing_text.dup, incoming_ops)
-  end
-
-  def crdt_ops_from_value(value)
-    return [] unless value.is_a?(Hash)
-
-    ops = value["ops"]
-    return [] unless ops.is_a?(Array)
-
-    ops.map { |op| validate_text_crdt_op!(op) }
+    { "text" => incoming_text }
   end
 
   def apply_text_crdt_delta(text, ops)
@@ -574,6 +561,24 @@ class ObjectsController < ApplicationController
 
     result << text.slice(cursor..).to_s
     result
+  end
+
+  def validate_text_crdt_attributes!(attributes, depth = 1)
+    return unless attributes.is_a?(Hash)
+
+    raise InvalidOpValueError, "text_crdt attributes must not exceed #{MAX_TEXT_CRDT_ATTRIBUTES_BYTES} bytes" if attributes.to_json.bytesize > MAX_TEXT_CRDT_ATTRIBUTES_BYTES
+    raise InvalidOpValueError, "text_crdt attributes must not exceed depth #{MAX_TEXT_CRDT_ATTRIBUTES_DEPTH}" if depth > MAX_TEXT_CRDT_ATTRIBUTES_DEPTH
+
+    attributes.each_value do |value|
+      case value
+      when Hash
+        validate_text_crdt_attributes!(value, depth + 1)
+      when Array
+        value.each do |entry|
+          validate_text_crdt_attributes!(entry, depth + 1)
+        end
+      end
+    end
   end
 
   # Records value as the next ObjectOp for object/property and applies the corresponding

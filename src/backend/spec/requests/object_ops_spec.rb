@@ -221,7 +221,60 @@ RSpec.describe "Object ops", type: :request do
 
     object = BoardObject.find(object_id)
     expect(object.text_crdt.fetch("text")).to eq("Hello world")
+    expect(object.text_crdt).to eq({ "text" => "Hello world" })
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
+  end
+
+  it "rejects stale text snapshots and keeps the current text_crdt state" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { text: "old" }, lamport_ts: 1, client_id: "client-b")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
+    expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(1)
+  end
+
+  it "rejects text_crdt documents that exceed the stored text limit" do
+    controller = ObjectsController.new
+    existing_state = { "text" => "a" * (ObjectsController::MAX_TEXT_CRDT_TEXT_BYTES - 1) }
+    incoming_value = { "ops" => [ { "insert" => "ab" } ] }
+
+    expect do
+      controller.send(:merge_text_crdt_state, existing_state, incoming_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /text_crdt text must not exceed/)
+  end
+
+  it "rejects text_crdt snapshots and oversized payloads in validation" do
+    controller = ObjectsController.new
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "text" => "old" }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /snapshots must not include text/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => Array.new(ObjectsController::MAX_TEXT_CRDT_OPS + 1) { { "retain" => 1 } } }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /must not exceed/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "insert" => "x" * (ObjectsController::MAX_TEXT_CRDT_INSERT_BYTES + 1) } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /must not exceed/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "insert" => "x", "attributes" => { "a" => { "b" => { "c" => { "d" => { "e" => true } } } } } } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /must not exceed depth/)
   end
 
   it "breaks same-timestamp conflicts by client_id ascending" do
