@@ -21,6 +21,7 @@ Rails.application.routes.draw do
   patch "/boards/:share_token/objects/:id/color", to: "objects#recolor"
   post "/boards/:share_token/objects/:id/lock", to: "objects#lock"
   delete "/boards/:share_token/objects/:id/lock", to: "objects#unlock"
+  post "/boards/:share_token/objects/:id/ops", to: "objects#apply_op"
   delete "/boards/:share_token/objects/:id", to: "objects#destroy"
   get "/boards/:share_token/objects/:object_id/comments", to: "comments#index"
   post "/boards/:share_token/objects/:object_id/comments", to: "comments#create"

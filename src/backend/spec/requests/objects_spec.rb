@@ -542,7 +542,10 @@ RSpec.describe "Objects", type: :request do
     expect(response).to have_http_status(:ok)
     expect(target_object.reload.geometry.fetch("x")).to eq(999)
     # Must stay flat regardless of the board having 50 other objects; loading
-    # the whole board per mutation would scale with that count instead.
-    expect(query_count).to be < 15
+    # the whole board per mutation would scale with that count instead. The
+    # threshold has headroom above the object_ops bookkeeping this endpoint now
+    # does (one lookup per baseline plus the insert), all scoped by object_id/
+    # client_id so none of it scales with board size either.
+    expect(query_count).to be < 20
   end
 end

@@ -8,10 +8,32 @@ import (
 )
 
 type Config struct {
-	Address        string
-	ShardCount     int
-	AllowedOrigins []string
+	Address            string
+	ShardCount         int
+	AllowedOrigins     []string
+	NodeID             string
+	RedisURL           string
+	RedisChannelPrefix string
+	Env                string
+	BackendURL         string
 }
+
+// validEnvironments enumerates the only values SYNC_SERVER_ENV may take. Unknown values
+// must fail startup rather than silently falling back to the permissive development
+// authenticator/authorizer/store (see cmd/sync-server/main.go), which would let
+// unauthenticated clients broadcast arbitrary operations in a misconfigured deployment.
+var validEnvironments = map[string]struct{}{
+	"development": {},
+	"production":  {},
+}
+
+// reservedNodeID is the origin the Rails backend stamps on ops it relays through Redis for
+// legacy (non-WebSocket) writes (see src/backend/app/services/sync_op_relay.rb). RedisRelay
+// drops any envelope whose Origin matches its own nodeID (self-echo suppression), so a node
+// configured with this ID would silently discard every legacy-origin op instead of
+// rebroadcasting it to its connected clients. Reject it at startup rather than let that
+// happen quietly (see PR #53 review).
+const reservedNodeID = "questboard-rails-backend"
 
 func FromEnv() (Config, error) {
 	shardCount, err := parseShardCount(os.Getenv("SYNC_SERVER_SHARD_COUNT"))
@@ -19,11 +41,45 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	env, err := parseEnv(strings.TrimSpace(os.Getenv("SYNC_SERVER_ENV")))
+	if err != nil {
+		return Config{}, err
+	}
+
+	nodeID, err := parseNodeID(envOrDefault("SYNC_SERVER_NODE_ID", defaultNodeID()))
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
-		Address:        listenAddress(),
-		ShardCount:     shardCount,
-		AllowedOrigins: splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
+		Address:            listenAddress(),
+		ShardCount:         shardCount,
+		AllowedOrigins:     splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
+		NodeID:             nodeID,
+		RedisURL:           strings.TrimSpace(os.Getenv("SYNC_SERVER_REDIS_URL")),
+		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
+		Env:                env,
+		BackendURL:         envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3000"),
 	}, nil
+}
+
+func parseEnv(env string) (string, error) {
+	if env == "" {
+		return "", fmt.Errorf("SYNC_SERVER_ENV is required and must be %q or %q", "development", "production")
+	}
+	if _, ok := validEnvironments[env]; !ok {
+		return "", fmt.Errorf("SYNC_SERVER_ENV must be %q or %q, got %q", "development", "production", env)
+	}
+
+	return env, nil
+}
+
+func parseNodeID(nodeID string) (string, error) {
+	if nodeID == reservedNodeID {
+		return "", fmt.Errorf("SYNC_SERVER_NODE_ID must not be %q: it is reserved for the Rails backend's relay origin", reservedNodeID)
+	}
+
+	return nodeID, nil
 }
 
 func listenAddress() string {
@@ -71,4 +127,20 @@ func splitList(raw string) []string {
 	}
 
 	return allowed
+}
+
+func envOrDefault(name, fallback string) string {
+	if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		return value
+	}
+
+	return fallback
+}
+
+func defaultNodeID() string {
+	if hostname, err := os.Hostname(); err == nil && strings.TrimSpace(hostname) != "" {
+		return strings.TrimSpace(hostname)
+	}
+
+	return "sync-server-local"
 }

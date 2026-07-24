@@ -188,7 +188,7 @@ test('sync server scaffold is workspace-enabled and board-shard aware', async ()
   assert.match(goWork, /use \([\s\S]*\.\/src\/sync-server[\s\S]*\)/);
   assert.match(goMod, /module github\.com\/rictaworks\/questboard\/src\/sync-server/);
   assert.match(main, /config\.FromEnv\(\)/);
-  assert.match(main, /server\.New\(cfg\)/);
+  assert.match(main, /server\.New\(cfg, wsHandler\)/);
   assert.match(router, /type Router struct/);
   assert.match(router, /Resolve\(boardID string\)/);
   assert.match(handler, /Query\("boardId"\)/);

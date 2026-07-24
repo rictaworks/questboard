@@ -10,7 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/rictaworks/questboard/src/sync-server/internal/config"
-	"github.com/rictaworks/questboard/src/sync-server/internal/sharding"
 	"github.com/rictaworks/questboard/src/sync-server/internal/ws"
 )
 
@@ -20,17 +19,26 @@ type Server struct {
 	wsHandler  *ws.Handler
 }
 
-func New(cfg config.Config) (*Server, error) {
-	router, err := sharding.NewRouter(cfg.ShardCount)
-	if err != nil {
-		return nil, err
+func New(cfg config.Config, wsHandler *ws.Handler) (*Server, error) {
+	if cfg.Env == "production" {
+		if err := wsHandler.ValidateConfigForProduction(); err != nil {
+			return nil, fmt.Errorf("production config validation: %w", err)
+		}
 	}
 
-	wsHandler := ws.NewHandler(router, cfg.AllowedOrigins)
+	wsHandler.SetNodeID(cfg.NodeID)
+	if cfg.RedisURL != "" {
+		relay, err := ws.NewRedisRelay(cfg.RedisURL, cfg.RedisChannelPrefix, cfg.NodeID)
+		if err != nil {
+			return nil, err
+		}
+		wsHandler.SetRelay(relay)
+	}
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.GET("/healthz", healthHandler)
+	engine.GET("/metrics", gin.WrapH(wsHandler.MetricsHandler()))
 	engine.GET("/ws", wsHandler.ServeHTTP)
 
 	httpServer := &http.Server{
@@ -52,6 +60,10 @@ func New(cfg config.Config) (*Server, error) {
 
 func (s *Server) Engine() *gin.Engine {
 	return s.engine
+}
+
+func (s *Server) WSHandler() *ws.Handler {
+	return s.wsHandler
 }
 
 func (s *Server) Run() error {

@@ -197,6 +197,10 @@ GEM
       prism (>= 1.6.0)
       rbs (>= 4.0.0)
       tsort
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.30.1)
+      connection_pool
     regexp_parser (2.12.0)
     reline (0.6.3)
       io-console (~> 0.5)
@@ -271,11 +275,13 @@ PLATFORMS
 DEPENDENCIES
   bootsnap
   brakeman
+  connection_pool (>= 2.2.5)
   debug
   pg (>= 1.6)
   puma (>= 5.0)
   rack-cors
   rails (~> 8.0.2)
+  redis (>= 5.0)
   rspec-rails (~> 8.0)
   rubocop-rails-omakase
   sqlite3 (>= 2.1)
