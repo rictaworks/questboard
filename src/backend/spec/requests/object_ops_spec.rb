@@ -223,6 +223,21 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
   end
 
+  it "rejects an external op whose client_id is the reserved legacy client id" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 10, y: 20 }, lamport_ts: 1, client_id: "legacy")
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(ObjectOp.where(object_id:, client_id: "legacy").count).to eq(0)
+  end
+
   it "rejects a retried client_id/lamport_ts pair whose property or value differs from what was recorded" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -337,5 +352,142 @@ RSpec.describe "Object ops", type: :request do
 
     apply_op(share_token:, object_id:, property: "deleted_at", value: true, lamport_ts: 1, client_id: "client-a")
     expect(response).to have_http_status(:ok)
+  end
+
+  it "records the legacy move endpoint in the same object_ops log as apply_op, keeping ordering consistent" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 10, y: 20 }, lamport_ts: 5, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    # The legacy endpoint (no lamport_ts concept of its own) must still land in the same
+    # object_ops ordering timeline as apply_op — otherwise the op log's "latest" pointer
+    # would go stale the moment a legacy write changes the object underneath it.
+    patch "/boards/#{share_token}/objects/#{object_id}/move", params: { geometry: { x: 20, y: 20 } }, as: :json
+    expect(response).to have_http_status(:ok)
+
+    latest_op = ObjectOp.where(object_id:, property: "geometry").order(lamport_ts: :desc).first
+    expect(latest_op.lamport_ts).to be > 5
+    expect(latest_op.value).to include("x" => 20, "y" => 20)
+
+    # A client whose local counter is still behind the legacy write (e.g. it never saw
+    # the legacy move) must be told it's stale, not have its outdated value silently
+    # accepted as confirmed — this is exactly the divergence the unification closes.
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 999, y: 999 }, lamport_ts: 6, client_id: "client-a")
+    expect(response).to have_http_status(:conflict)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 20, "y" => 20)
+
+    # A client that resyncs and submits a genuinely newer lamport_ts still succeeds on
+    # top of the legacy write.
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 30, y: 30 }, lamport_ts: latest_op.lamport_ts + 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 30, "y" => 30)
+  end
+
+  it "rejects a legacy geometry mutation whose numeric fields are not actually numeric" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    patch "/boards/#{share_token}/objects/#{object_id}/move", params: { geometry: { x: true } }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 1)
+    expect(ObjectOp.where(object_id:).count).to eq(0)
+  end
+
+  it "records the legacy recolor and destroy endpoints in the same object_ops log" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    color = ColorPalette.find_by!(hex: "#111111")
+
+    patch "/boards/#{share_token}/objects/#{object_id}/color", params: { color_id: color.id }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(ObjectOp.where(object_id:, property: "color").count).to eq(1)
+    expect(ObjectOp.where(object_id:, property: "color").first.value).to eq({ "color_id" => color.id })
+
+    delete "/boards/#{share_token}/objects/#{object_id}", as: :json
+    expect(response).to have_http_status(:ok)
+    expect(ObjectOp.where(object_id:, property: "deleted_at").count).to eq(1)
+  end
+
+  it "records a legacy recolor's color_id as the palette's Integer id, not a raw String param" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    color = ColorPalette.find_by!(hex: "#111111")
+
+    # application/x-www-form-urlencoded and multipart/form-data are rejected outright by
+    # verify_content_type! (see application_controller.rb), so the realistic vector for a
+    # String color_id is a JSON body whose value was never parsed to an Integer client-side
+    # (e.g. a <select> element's .value) rather than an actual form-encoded request.
+    patch "/boards/#{share_token}/objects/#{object_id}/color", params: { color_id: color.id.to_s }, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).color_id).to eq(color.id)
+    recorded_value = ObjectOp.where(object_id:, property: "color").first.value
+    expect(recorded_value).to eq({ "color_id" => color.id })
+    expect(recorded_value.fetch("color_id")).to be_an(Integer)
+  end
+
+  it "broadcasts the legacy op via SyncOpRelay so connected clients learn of it" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    fake_relay = instance_double(SyncOpRelay)
+    allow(SyncOpRelay).to receive(:new).and_return(fake_relay)
+    expect(fake_relay).to receive(:publish) do |board_share_token:, object_op:|
+      expect(board_share_token).to eq(share_token)
+      expect(object_op.property).to eq("geometry")
+      expect(object_op.value).to include("x" => 20, "y" => 20)
+    end
+
+    patch "/boards/#{share_token}/objects/#{object_id}/move", params: { geometry: { x: 20, y: 20 } }, as: :json
+    expect(response).to have_http_status(:ok)
+  end
+
+  it "does not fail the request when SyncOpRelay publishing raises" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    fake_relay = instance_double(SyncOpRelay)
+    allow(SyncOpRelay).to receive(:new).and_return(fake_relay)
+    allow(fake_relay).to receive(:publish).and_raise(SyncOpRelay::PublishError, "redis unreachable")
+
+    patch "/boards/#{share_token}/objects/#{object_id}/move", params: { geometry: { x: 20, y: 20 } }, as: :json
+
+    # Publishing is best-effort real-time notification; object_ops remains the source of
+    # truth, so a broken relay must not block the underlying mutation from succeeding.
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 20, "y" => 20)
   end
 end

@@ -4,6 +4,7 @@ class ObjectsController < ApplicationController
   class ConflictingOpError < StandardError; end
   class InvalidOpValueError < StandardError; end
   class ImplausibleLamportJumpError < StandardError; end
+  class ReservedClientIdError < StandardError; end
 
   OP_PROPERTY_ACTIONS = {
     "geometry" => :edit_object,
@@ -18,6 +19,13 @@ class ObjectsController < ApplicationController
   # property forever with an extreme value (e.g. the bigint max) that no future op could
   # ever exceed.
   MAX_LAMPORT_JUMP = 100_000
+
+  # The move/resize/rotate/recolor/destroy endpoints predate object_ops and have no
+  # client-generated Lamport counter of their own. Recording them under this fixed
+  # client_id (rather than skipping object_ops entirely) keeps every write to a
+  # Lamport-ordered property in the same log apply_op reads from, so the "latest" pointer
+  # never goes stale relative to the object's actual state — see PR #53 review.
+  LEGACY_OP_CLIENT_ID = "legacy"
 
   before_action :require_current_user!
 
@@ -83,8 +91,16 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:recolor_object)
     return if performed?
 
-    object.update!(color_palette: ColorPalette.find(params.require(:color_id)))
-    render json: serialize_object(object)
+    # Resolve to the palette's own id (always an Integer) before recording it, rather than
+    # passing params[:color_id] through as-is — a form-encoded request sends it as a String
+    # ("1"), and ObjectOp.value/the Redis broadcast would otherwise carry that String while
+    # the object's persisted color_palette_id is the coerced Integer, leaving connected
+    # clients unable to resolve the color from the type they expect (see PR #53 review).
+    palette = ColorPalette.find(params.require(:color_id))
+    record_and_apply_legacy_op!(object, "color", { "color_id" => palette.id })
+    render json: serialize_object(object.reload)
+  rescue ActionController::ParameterMissing => e
+    render json: { error: e.message }, status: :unprocessable_entity
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -95,8 +111,8 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:delete_object)
     return if performed?
 
-    object.update!(deleted_at: Time.current)
-    render json: serialize_object(object)
+    record_and_apply_legacy_op!(object, "deleted_at", {})
+    render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -150,6 +166,13 @@ class ObjectsController < ApplicationController
 
     lamport_ts = Integer(params.require(:lamport_ts))
     client_id = params.require(:client_id).to_s
+    # LEGACY_OP_CLIENT_ID is reserved for record_and_apply_legacy_op! (see its declaration
+    # above): a real client sending it here would share the (object_id, client_id,
+    # lamport_ts) space with synthetic legacy ops on unrelated properties, so an unrelated
+    # legacy write could consume the lamport_ts this op needs and turn a legitimate op into
+    # a ConflictingOpError (see PR #53 review).
+    raise ReservedClientIdError, "client_id #{LEGACY_OP_CLIENT_ID.inspect} is reserved" if client_id == LEGACY_OP_CLIENT_ID
+
     incoming_value = op_value_for_storage(property)
 
     confirmed_op = nil
@@ -183,14 +206,14 @@ class ObjectsController < ApplicationController
           client_id:
         )
 
-        apply_op_mutation!(object, property)
+        apply_mutation_for!(object, property, incoming_value)
       end
     end
 
     render json: serialize_op(confirmed_op)
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity
-  rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError => e
+  rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue ArgumentError, TypeError
     render json: { error: "lamport_ts must be an integer" }, status: :unprocessable_entity
@@ -269,13 +292,14 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(action)
     return if performed?
 
-    updated_geometry = object.geometry.merge(geometry_params.to_h)
-    object.update!(geometry: updated_geometry)
-    render json: serialize_object(object)
+    record_and_apply_legacy_op!(object, "geometry", validate_numeric_geometry_fields!(geometry_params.to_h))
+    render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  rescue InvalidOpValueError => e
+    render json: { error: e.message }, status: :unprocessable_entity
   end
 
   def lock_resolver_for(object)
@@ -389,12 +413,17 @@ class ObjectsController < ApplicationController
     end
   end
 
-  # ActionController::Parameters#permit only allowlists keys, not value types — a
-  # geometry op submitting {"x": true, "rotation": "bogus"} would otherwise pass straight
-  # through and get merged into the objects.geometry jsonb column as literal non-numeric
-  # values, corrupting persisted state for every future reader of that object.
   def validated_geometry_value
-    geometry = op_geometry_params.to_h
+    validate_numeric_geometry_fields!(op_geometry_params.to_h)
+  end
+
+  # ActionController::Parameters#permit only allowlists keys, not value types — a
+  # geometry write submitting {"x": true, "rotation": "bogus"} would otherwise pass
+  # straight through and get merged into the objects.geometry jsonb column as literal
+  # non-numeric values, corrupting persisted state for every future reader of that object.
+  # Shared by apply_op and the legacy move/resize/rotate endpoints so both write paths
+  # enforce the same shape.
+  def validate_numeric_geometry_fields!(geometry)
     geometry.each do |field, value|
       next if value.is_a?(Numeric)
 
@@ -403,14 +432,68 @@ class ObjectsController < ApplicationController
     geometry
   end
 
-  def apply_op_mutation!(object, property)
+  # Applies property's mutation using an already-built value (as produced by
+  # op_value_for_storage or a legacy endpoint's own params), so this is shared between
+  # apply_op and record_and_apply_legacy_op! without re-reading request params twice.
+  def apply_mutation_for!(object, property, value)
     case property
     when "geometry"
-      object.update!(geometry: object.geometry.merge(op_geometry_params.to_h))
+      object.update!(geometry: object.geometry.merge(value))
     when "color"
-      object.update!(color_palette: ColorPalette.find(op_color_id))
+      object.update!(color_palette: ColorPalette.find(value.fetch("color_id")))
     when "deleted_at"
       object.update!(deleted_at: Time.current)
     end
+  end
+
+  # Records value as the next ObjectOp for object/property and applies the corresponding
+  # mutation, atomically with the same object row lock apply_op uses. This keeps the
+  # legacy write paths and apply_op on a single shared ordering timeline instead of
+  # silently diverging.
+  #
+  # lamport_ts is one past the higher of two independent baselines: the latest recorded
+  # for this specific property (so a real client's future apply_op correctly sees this
+  # write as newer for that property) and the latest recorded for LEGACY_OP_CLIENT_ID
+  # across *any* property on this object (object_ops' unique index is scoped to
+  # object_id+client_id+lamport_ts, not property, so every op sharing this fixed
+  # client_id — regardless of which property it touched — must have a distinct value).
+  def record_and_apply_legacy_op!(object, property, value)
+    confirmed_op = nil
+
+    object.with_lock do
+      latest_for_property = ObjectOp.where(object_id: object.id, property:).maximum(:lamport_ts) || 0
+      latest_for_client = ObjectOp.where(object_id: object.id, client_id: LEGACY_OP_CLIENT_ID).maximum(:lamport_ts) || 0
+      lamport_ts = [ latest_for_property, latest_for_client ].max + 1
+
+      confirmed_op = ObjectOp.create!(
+        board: object.board,
+        board_object: object,
+        user: current_user,
+        property:,
+        value:,
+        lamport_ts:,
+        client_id: LEGACY_OP_CLIENT_ID
+      )
+
+      apply_mutation_for!(object, property, value)
+    end
+
+    # Publish outside the row lock (this is network I/O, not something that should hold a
+    # DB lock) and after the mutation has already committed successfully — object_ops is
+    # the source of truth regardless of whether this notification reaches anyone.
+    broadcast_legacy_op(object.board, confirmed_op)
+  end
+
+  def broadcast_legacy_op(board, object_op)
+    sync_op_relay.publish(board_share_token: board.share_token, object_op:)
+  rescue SyncOpRelay::PublishError => e
+    # e.message is deliberately omitted: it can echo back the raw SYNC_SERVER_REDIS_URL
+    # (including any embedded credentials) verbatim from a URI-parse or connection failure
+    # (see PR #53 review), so only the exception class is safe to log here.
+    Rails.logger.error("SyncOpRelay publish failed for object_op=#{object_op.id}: #{e.cause&.class || e.class}")
+  end
+
+  def sync_op_relay
+    @sync_op_relay ||= SyncOpRelay.new
   end
 end

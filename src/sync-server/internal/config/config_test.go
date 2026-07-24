@@ -91,6 +91,17 @@ func TestFromEnvValidatesEnv(t *testing.T) {
 	}
 }
 
+func TestFromEnvRejectsReservedNodeID(t *testing.T) {
+	t.Setenv("SYNC_SERVER_ENV", "development")
+	t.Setenv("SYNC_SERVER_NODE_ID", "questboard-rails-backend")
+
+	_, err := config.FromEnv()
+
+	if err == nil {
+		t.Fatal("FromEnv() error = nil, want error for SYNC_SERVER_NODE_ID matching the Rails relay origin")
+	}
+}
+
 func TestFromEnvRelaySettings(t *testing.T) {
 	t.Setenv("SYNC_SERVER_ENV", "development")
 	t.Setenv("SYNC_SERVER_NODE_ID", "node-1")

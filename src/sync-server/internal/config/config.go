@@ -27,6 +27,14 @@ var validEnvironments = map[string]struct{}{
 	"production":  {},
 }
 
+// reservedNodeID is the origin the Rails backend stamps on ops it relays through Redis for
+// legacy (non-WebSocket) writes (see src/backend/app/services/sync_op_relay.rb). RedisRelay
+// drops any envelope whose Origin matches its own nodeID (self-echo suppression), so a node
+// configured with this ID would silently discard every legacy-origin op instead of
+// rebroadcasting it to its connected clients. Reject it at startup rather than let that
+// happen quietly (see PR #53 review).
+const reservedNodeID = "questboard-rails-backend"
+
 func FromEnv() (Config, error) {
 	shardCount, err := parseShardCount(os.Getenv("SYNC_SERVER_SHARD_COUNT"))
 	if err != nil {
@@ -38,11 +46,16 @@ func FromEnv() (Config, error) {
 		return Config{}, err
 	}
 
+	nodeID, err := parseNodeID(envOrDefault("SYNC_SERVER_NODE_ID", defaultNodeID()))
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		Address:            listenAddress(),
 		ShardCount:         shardCount,
 		AllowedOrigins:     splitList(os.Getenv("SYNC_SERVER_ALLOWED_ORIGINS")),
-		NodeID:             envOrDefault("SYNC_SERVER_NODE_ID", defaultNodeID()),
+		NodeID:             nodeID,
 		RedisURL:           strings.TrimSpace(os.Getenv("SYNC_SERVER_REDIS_URL")),
 		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
 		Env:                env,
@@ -59,6 +72,14 @@ func parseEnv(env string) (string, error) {
 	}
 
 	return env, nil
+}
+
+func parseNodeID(nodeID string) (string, error) {
+	if nodeID == reservedNodeID {
+		return "", fmt.Errorf("SYNC_SERVER_NODE_ID must not be %q: it is reserved for the Rails backend's relay origin", reservedNodeID)
+	}
+
+	return nodeID, nil
 }
 
 func listenAddress() string {
