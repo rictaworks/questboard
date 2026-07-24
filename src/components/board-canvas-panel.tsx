@@ -7,6 +7,19 @@ import {useTranslations} from 'next-intl';
 
 import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
+import {
+  applyRealtimeOp,
+  buildSyncWebSocketUrl,
+  createPresenceValue,
+  isNewerRealtimeOp,
+  parseRealtimeMessage,
+  readRealtimeSettings,
+  type BoardPresenceCursor,
+  type BoardPresenceMessage,
+  type BoardRealtimeOp,
+  type BoardRestoreSuggestion,
+  type BoardResyncRequired
+} from '@/lib/board-realtime';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 
 export interface BoardCanvasObject {
@@ -44,6 +57,7 @@ export interface BoardCanvasData {
 
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
+  currentUserDisplayName: string;
   onReloadBoard: () => Promise<void>;
 };
 
@@ -54,30 +68,66 @@ type Interaction =
   | {kind: 'marquee'; startX: number; startY: number; currentX: number; currentY: number}
   | null;
 
-type ToastItem = {id: number; message: string};
+type ToastItem = {
+  id: number;
+  message: string;
+  actionLabel?: string;
+  actionDisabled?: boolean;
+  requiresRestoreGate?: boolean;
+  onAction?: () => void;
+};
+
+type PresenceEntry = {
+  clientId: string;
+  displayName: string;
+  cursor: BoardPresenceCursor;
+  updatedAt: number;
+};
 
 const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
 
-export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvasPanelProps) {
+export default function BoardCanvasPanel({boardData, currentUserDisplayName, onReloadBoard}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
   const interactionRef = useRef<Interaction>(null);
   const toastIdRef = useRef(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const syncSocketRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const presenceThrottleRef = useRef<number | null>(null);
+  const pendingPresenceRef = useRef<BoardPresenceCursor | null>(null);
+  const pendingOpsRef = useRef<BoardRealtimeOp[]>([]);
+  const clientIdRef = useRef<string>(createClientId());
+  const lamportRef = useRef(0);
+  const disposedRef = useRef(false);
   const [viewport, setViewport] = useState({width: 0, height: 0});
   const [cameraState, setCameraState] = useState<CameraState>(createCameraState);
   const [selection, setSelection] = useState<number[]>([]);
   const [interaction, setInteraction] = useState<Interaction>(null);
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [boardState, setBoardState] = useState(boardData);
+  const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
+  const [restoreGateOpen, setRestoreGateOpen] = useState(false);
   const cameraStateRef = useRef<CameraState>(cameraState);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
+  const boardStateRef = useRef(boardState);
 
-  const objects = useMemo(() => boardData.objects.filter((object) => object.deletedAt == null), [boardData.objects]);
-  const currentUserId = boardData.membership.userId;
-  const roleCode = boardData.membership.role.code;
+  useEffect(() => {
+    setBoardState(boardData);
+  }, [boardData]);
+
+  useEffect(() => {
+    boardStateRef.current = boardState;
+  }, [boardState]);
+
+  const objects = useMemo(() => boardState.objects.filter((object) => object.deletedAt == null), [boardState.objects]);
+  const currentUserId = boardState.membership.userId;
+  const roleCode = boardState.membership.role.code;
   const contentBounds = useMemo<CameraBounds | null>(() => resolveContentBounds(objects), [objects]);
   const selectedObjects = useMemo(
     () => objects.filter((object) => selection.includes(object.id)),
@@ -87,6 +137,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   const canViewComments = roleCode !== 'viewer';
   const canCreateComments = roleCode !== 'viewer';
   const canCreateObject = canPerformBoardAction(roleCode, 'create', null, currentUserId);
+  const canRestoreDeletedObject = roleCode === 'owner' || roleCode === 'editor';
 
   useEffect(() => {
     cameraStateRef.current = cameraState;
@@ -133,53 +184,313 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     };
   }, []);
 
-  const enqueueToast = useCallback((message: string) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'F7') {
+        setRestoreGateOpen(true);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'F7') {
+        setRestoreGateOpen(false);
+      }
+    };
+
+    const handleBlur = () => {
+      setRestoreGateOpen(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setPresenceEntries((current) => current.filter((entry) => Date.now() - entry.updatedAt < 5000));
+    }, 1000);
+
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, []);
+
+  const enqueueToast = useCallback((message: string, options: Omit<ToastItem, 'id' | 'message'> = {}) => {
     const id = ++toastIdRef.current;
-    setToasts((current) => [...current, {id, message}]);
+    setToasts((current) => [...current, {id, message, ...options}]);
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 4000);
   }, []);
 
-  const mutateObject = useCallback(
-    async (
-      objectId: number,
-      action: 'move' | 'resize' | 'rotate' | 'duplicate' | 'color' | 'delete' | 'lock' | 'unlock',
-      payload: Record<string, unknown> = {}
-    ) => {
-      const object = objects.find((entry) => entry.id === objectId);
-      if (!object) {
-        return;
-      }
+  const updateSyncStatus = useCallback((status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => {
+   setSyncStatus(status);
+  }, []);
 
-      if (!canPerformBoardAction(roleCode, actionToPermission(action), objectToLockState(object), currentUserId)) {
-        enqueueToast(t('permissionDenied'));
-        return;
-      }
+  const prunePendingOps = useCallback((predicate: (op: BoardRealtimeOp) => boolean) => {
+   pendingOpsRef.current = pendingOpsRef.current.filter((op) => !predicate(op));
+   setPendingSyncCount(pendingOpsRef.current.length);
+  }, []);
 
-      try {
-        const {backendUrl} = readGoogleAuthSettings();
-        const {url, method, headers} = buildMutationRequest(boardData.board.shareToken, objectId, action);
-        const body = headers && Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
-        const response = await fetch(`${backendUrl}${url}`, {
-          body,
-          credentials: 'include',
-          headers: body ? headers : undefined,
-          method,
-        });
+  const recordRealtimeOp = useCallback((op: BoardRealtimeOp) => {
+   lamportRef.current = Math.max(lamportRef.current, op.lamport_ts);
+   const hasNewerPending = pendingOpsRef.current.some((pending) => (
+     pending.boardId === op.boardId
+     && pending.objectId === op.objectId
+     && pending.property === op.property
+     && isNewerRealtimeOp(pending, op)
+   ));
 
-        if (!response.ok) {
-          const errorPayload = (await response.json().catch(() => ({}))) as {error?: string};
-          throw new Error(errorPayload.error ?? t('actionFailed'));
-        }
+   if (!hasNewerPending) {
+     setBoardState((current) => applyRealtimeOp(current, op));
+   }
 
-        await onReloadBoard();
-      } catch (error) {
-        enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
-      }
-    },
-    [boardData.board.shareToken, currentUserId, enqueueToast, objects, onReloadBoard, roleCode, t]
-  );
+   prunePendingOps((pending) => (
+     pending.boardId === op.boardId
+     && pending.objectId === op.objectId
+     && pending.property === op.property
+     && (
+       (pending.lamport_ts === op.lamport_ts && pending.clientId === op.clientId)
+       || isNewerRealtimeOp(op, pending)
+     )
+   ));
+  }, [prunePendingOps]);
+
+  const queueRealtimeOp = useCallback((op: BoardRealtimeOp) => {
+   pendingOpsRef.current = [...pendingOpsRef.current, op];
+   setPendingSyncCount(pendingOpsRef.current.length);
+
+   const socket = syncSocketRef.current;
+   if (socket?.readyState === WebSocket.OPEN) {
+     try {
+       socket.send(JSON.stringify(op));
+     } catch {
+       updateSyncStatus(navigator.onLine ? 'reconnecting' : 'offline');
+     }
+   }
+  }, []);
+
+  const sendPresence = useCallback((cursor: BoardPresenceCursor) => {
+   const socket = syncSocketRef.current;
+   if (socket?.readyState !== WebSocket.OPEN) {
+     return;
+   }
+
+   const payload: BoardRealtimeOp = {
+     boardId: boardStateRef.current.board.shareToken,
+     objectId: String(currentUserId),
+     property: 'presence',
+     value: createPresenceValue(cursor, currentUserDisplayName) as unknown as Record<string, unknown>,
+     lamport_ts: ++lamportRef.current,
+     clientId: clientIdRef.current,
+   };
+
+   socket.send(JSON.stringify(payload));
+  }, [currentUserDisplayName, currentUserId]);
+
+  const schedulePresence = useCallback((cursor: BoardPresenceCursor) => {
+   pendingPresenceRef.current = cursor;
+   if (presenceThrottleRef.current != null) {
+     return;
+   }
+
+   presenceThrottleRef.current = window.setTimeout(() => {
+     presenceThrottleRef.current = null;
+     const pendingPresence = pendingPresenceRef.current;
+     if (!pendingPresence) {
+       return;
+     }
+     if (syncSocketRef.current?.readyState !== WebSocket.OPEN) {
+       return;
+     }
+
+     pendingPresenceRef.current = null;
+     sendPresence(pendingPresence);
+   }, 33);
+  }, [sendPresence]);
+
+  const sendObjectRealtimeOp = useCallback((objectId: number, property: 'geometry' | 'color' | 'deleted_at', value: Record<string, unknown>) => {
+   const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
+   if (!object) {
+     return;
+   }
+
+   if (!canPerformBoardAction(roleCode, actionToPermission(property), objectToLockState(object), currentUserId)) {
+     enqueueToast(t('permissionDenied'));
+     return;
+   }
+
+   const op: BoardRealtimeOp = {
+     boardId: boardStateRef.current.board.shareToken,
+     objectId: String(objectId),
+     property,
+     value,
+     lamport_ts: ++lamportRef.current,
+     clientId: clientIdRef.current,
+   };
+
+   recordRealtimeOp(op);
+   queueRealtimeOp(op);
+  }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
+
+  const sendRestoreOp = useCallback((objectId: number) => {
+   sendObjectRealtimeOp(objectId, 'deleted_at', {restore: true});
+  }, [sendObjectRealtimeOp]);
+
+  useEffect(() => {
+   let reconnectDelay = 800;
+
+   const reconnect = () => {
+     if (disposedRef.current) {
+       return;
+     }
+
+     if (reconnectTimerRef.current != null) {
+       window.clearTimeout(reconnectTimerRef.current);
+     }
+
+     updateSyncStatus(navigator.onLine ? 'reconnecting' : 'offline');
+     reconnectTimerRef.current = window.setTimeout(connectSocket, reconnectDelay);
+     reconnectDelay = Math.min(reconnectDelay * 2, 8000);
+   };
+
+   const connectSocket = () => {
+     if (disposedRef.current) {
+       return;
+     }
+
+     if (reconnectTimerRef.current != null) {
+       window.clearTimeout(reconnectTimerRef.current);
+       reconnectTimerRef.current = null;
+     }
+
+     try {
+       const {syncServerUrl} = readRealtimeSettings();
+       const socket = new WebSocket(buildSyncWebSocketUrl(syncServerUrl, boardStateRef.current.board.shareToken));
+       syncSocketRef.current = socket;
+
+       updateSyncStatus(navigator.onLine ? 'connecting' : 'offline');
+
+       socket.onopen = () => {
+         reconnectDelay = 800;
+         updateSyncStatus('connected');
+         pendingOpsRef.current.forEach((pending) => {
+           try {
+             socket.send(JSON.stringify(pending));
+           } catch {
+             updateSyncStatus(navigator.onLine ? 'reconnecting' : 'offline');
+           }
+         });
+         setPendingSyncCount(pendingOpsRef.current.length);
+         const pendingPresence = pendingPresenceRef.current;
+         if (pendingPresence) {
+           pendingPresenceRef.current = null;
+           sendPresence(pendingPresence);
+         }
+       };
+
+       socket.onmessage = (event) => {
+         const message = parseRealtimeMessage(String(event.data));
+         if (!message) {
+           return;
+         }
+
+         if ('restoreSuggested' in message) {
+           const restoreMessage = message as BoardRestoreSuggestion;
+           prunePendingOps((pending) => pending.objectId === restoreMessage.objectId);
+           enqueueToast(restoreMessage.error, {
+             actionLabel: t('restoreAction'),
+             actionDisabled: !canRestoreDeletedObject,
+             requiresRestoreGate: true,
+             onAction: () => restoreDeletedObject(Number(restoreMessage.objectId))
+           });
+           return;
+         }
+
+         if ('resyncRequired' in message) {
+           const resyncMessage = message as BoardResyncRequired;
+           prunePendingOps((pending) => pending.objectId === resyncMessage.objectId);
+           enqueueToast(resyncMessage.error);
+           return;
+         }
+
+         if (message.property === 'presence') {
+           const presence = message as BoardPresenceMessage;
+           if (presence.clientId === clientIdRef.current) {
+             return;
+           }
+
+           setPresenceEntries((current) => {
+             const nextEntry = {
+               clientId: presence.clientId,
+               displayName: presence.value.displayName ?? t('unknownUser'),
+               cursor: presence.value.cursor,
+               updatedAt: Date.now(),
+             };
+             const next = current.filter((entry) => entry.clientId !== nextEntry.clientId);
+             next.push(nextEntry);
+             return next;
+           });
+           return;
+         }
+
+         recordRealtimeOp(message as BoardRealtimeOp);
+       };
+
+       socket.onerror = () => {
+         updateSyncStatus(navigator.onLine ? 'reconnecting' : 'offline');
+       };
+
+       socket.onclose = () => {
+         if (disposedRef.current) {
+           return;
+         }
+
+         syncSocketRef.current = null;
+         reconnect();
+       };
+     } catch {
+       updateSyncStatus('offline');
+     }
+   };
+
+   disposedRef.current = false;
+   connectSocket();
+
+   const handleOnline = () => {
+     if (!disposedRef.current) {
+       connectSocket();
+     }
+   };
+
+   const handleOffline = () => {
+     updateSyncStatus('offline');
+   };
+
+   window.addEventListener('online', handleOnline);
+   window.addEventListener('offline', handleOffline);
+
+   return () => {
+     disposedRef.current = true;
+     if (reconnectTimerRef.current != null) {
+       window.clearTimeout(reconnectTimerRef.current);
+     }
+     if (presenceThrottleRef.current != null) {
+       window.clearTimeout(presenceThrottleRef.current);
+     }
+     syncSocketRef.current?.close();
+     syncSocketRef.current = null;
+     window.removeEventListener('online', handleOnline);
+     window.removeEventListener('offline', handleOffline);
+   };
+  }, [canRestoreDeletedObject, enqueueToast, prunePendingOps, recordRealtimeOp, sendPresence, sendRestoreOp, t, updateSyncStatus]);
 
   useEffect(() => {
     if (!interaction) {
@@ -283,17 +594,19 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
       if (current.kind === 'move') {
         if (nextGeometry.x !== targetObject.geometry.x || nextGeometry.y !== targetObject.geometry.y) {
-          await mutateObject(targetObject.id, 'move', {
-            geometry: {x: Math.round(nextGeometry.x), y: Math.round(nextGeometry.y)},
+          sendObjectRealtimeOp(targetObject.id, 'geometry', {
+            x: Math.round(nextGeometry.x),
+            y: Math.round(nextGeometry.y)
           });
         }
       } else if (current.kind === 'resize') {
-        await mutateObject(targetObject.id, 'resize', {
-          geometry: {w: Math.round(nextGeometry.w), h: Math.round(nextGeometry.h)},
+        sendObjectRealtimeOp(targetObject.id, 'geometry', {
+          w: Math.round(nextGeometry.w),
+          h: Math.round(nextGeometry.h)
         });
       } else if (current.kind === 'rotate') {
-        await mutateObject(targetObject.id, 'rotate', {
-          geometry: {rotation: Math.round(nextGeometry.rotation)},
+        sendObjectRealtimeOp(targetObject.id, 'geometry', {
+          rotation: Math.round(nextGeometry.rotation)
         });
       }
     };
@@ -305,7 +618,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [interaction, mutateObject, viewport]);
+  }, [interaction, sendObjectRealtimeOp, viewport]);
 
   const visibleObjects = useMemo(() => objects.map((object) => {
     const draft = previewGeometry[object.id];
@@ -371,6 +684,71 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     });
   }
 
+  function handleScenePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const stageRect = canvasRef.current?.getBoundingClientRect();
+    if (!stageRect || viewport.width <= 0 || viewport.height <= 0) {
+      return;
+    }
+
+    const cursor = screenToWorld(
+      event.clientX,
+      event.clientY,
+      stageRect,
+      cameraStateRef.current,
+      viewport
+    );
+    schedulePresence(cursor);
+  }
+
+  function handleScenePointerLeave() {
+    pendingPresenceRef.current = null;
+    if (presenceThrottleRef.current != null) {
+      window.clearTimeout(presenceThrottleRef.current);
+      presenceThrottleRef.current = null;
+    }
+  }
+
+  function restoreDeletedObject(objectId: number) {
+    sendRestoreOp(objectId);
+  }
+
+  async function mutateLegacyObject(
+    objectId: number,
+    action: 'duplicate' | 'lock' | 'unlock',
+    payload: Record<string, unknown> = {}
+  ) {
+    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
+    if (!object) {
+      return;
+    }
+
+    if (!canPerformBoardAction(roleCode, actionToPermission(action), objectToLockState(object), currentUserId)) {
+      enqueueToast(t('permissionDenied'));
+      return;
+    }
+
+    try {
+      const {backendUrl} = readGoogleAuthSettings();
+      const {url, method, headers} = buildMutationRequest(boardStateRef.current.board.shareToken, objectId, action);
+      const body = headers && Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
+      const response = await fetch(`${backendUrl}${url}`, {
+        body,
+        credentials: 'include',
+        headers: body ? headers : undefined,
+        method,
+      });
+
+      if (!response.ok) {
+        const errorPayload = (await response.json().catch(() => ({}))) as {error?: string};
+        throw new Error(errorPayload.error ?? t('actionFailed'));
+      }
+
+      await onReloadBoard();
+    } catch (error) {
+      enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
+    }
+  }
+
   async function createObject(objectTypeCode: string) {
     try {
       if (!canPerformBoardAction(roleCode, 'create', null, currentUserId)) {
@@ -387,7 +765,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
         rotation: 0,
       };
 
-      const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(boardData.board.shareToken)}/objects`, {
+      const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(boardState.board.shareToken)}/objects`, {
         body: JSON.stringify({object_type_code: objectTypeCode, geometry: nextGeometry}),
         credentials: 'include',
         headers: {'Content-Type': 'application/json'},
@@ -406,7 +784,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   }
 
   function changeColor(object: BoardCanvasObject, colorId: number) {
-    void mutateObject(object.id, 'color', {color_id: colorId});
+    sendObjectRealtimeOp(object.id, 'color', {color_id: colorId});
   }
 
   function duplicateSelection() {
@@ -415,7 +793,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       return;
     }
 
-    void mutateObject(active.id, 'duplicate');
+    void mutateLegacyObject(active.id, 'duplicate');
   }
 
   function deleteSelection() {
@@ -424,7 +802,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       return;
     }
 
-    void mutateObject(active.id, 'delete');
+    sendObjectRealtimeOp(active.id, 'deleted_at', {});
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -434,7 +812,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       return;
     }
 
-    void mutateObject(object.id, object.locked ? 'unlock' : 'lock');
+    void mutateLegacyObject(object.id, object.locked ? 'unlock' : 'lock');
   }
 
   function focusMinimap(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -461,10 +839,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       <header className="board-canvas-header">
         <div>
           <p className="board-canvas-kicker">{t('heading')}</p>
-          <h1>{boardData.board.title}</h1>
+          <h1>{boardState.board.title}</h1>
         </div>
         <div className="board-canvas-toolbar">
-          {boardData.objectTypes.map((type) => (
+          {boardState.objectTypes.map((type) => (
             <button className="button button-secondary" disabled={!canCreateObject} key={type.id} onClick={() => void createObject(type.code)} type="button">
               {type.code}
             </button>
@@ -481,6 +859,18 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
               </button>
             </>
           ) : null}
+          <div className={`board-sync-status board-sync-status-${syncStatus}`} role="status">
+            <span>
+            {syncStatus === 'connected'
+              ? t('connectionConnected')
+              : syncStatus === 'offline'
+                ? t('connectionOffline')
+                : syncStatus === 'reconnecting'
+                  ? t('connectionReconnecting')
+                  : t('connectionConnecting')}
+            </span>
+            {pendingSyncCount > 0 ? <span>{t('queuedOps', {count: pendingSyncCount})}</span> : null}
+          </div>
           <button className="button button-secondary" onClick={onReloadBoard} type="button">
             {t('refresh')}
           </button>
@@ -493,6 +883,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
             aria-label={t('canvasLabel')}
             className="board-scene"
             onPointerDown={handleBackgroundPointerDown}
+            onPointerMove={handleScenePointerMove}
+            onPointerLeave={handleScenePointerLeave}
             style={sceneStyle(cameraState, viewport)}
           >
             {visibleObjects.map((object) => (
@@ -537,7 +929,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                   disabled={!canPerformBoardAction(roleCode, 'recolor', objectToLockState(object), currentUserId)}
                   onClick={(event) => {
                     event.stopPropagation();
-                    changeColor(object, nextColorId(object, boardData.colorPalettes));
+                    changeColor(object, nextColorId(object, boardState.colorPalettes));
                   }}
                   onPointerDown={(event) => event.stopPropagation()}
                   type="button"
@@ -558,6 +950,21 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                 </button>
               </article>
             ))}
+            <div className="board-presence-layer" aria-hidden="true">
+              {presenceEntries.map((entry) => (
+                <div
+                  className="board-presence-cursor"
+                  key={entry.clientId}
+                  style={{
+                    left: `${entry.cursor.x}px`,
+                    top: `${entry.cursor.y}px`
+                  }}
+                >
+                  <span className="board-presence-cursor-dot" />
+                  <span className="board-presence-cursor-label">{entry.displayName}</span>
+                </div>
+              ))}
+            </div>
             {interaction?.kind === 'marquee' ? (
               <div className="selection-marquee" style={selectionStyle(interaction, cameraState, viewport)} />
             ) : null}
@@ -587,7 +994,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
               <h2>{t('selectionHeading')}</h2>
               <p>{selectedObject.objectTypeCode}</p>
               <div className="board-color-grid">
-                {boardData.colorPalettes.map((color) => (
+                {boardState.colorPalettes.map((color) => (
                   <button
                     className={`board-color-swatch ${selectedObject.colorId === color.id ? 'is-active' : ''}`}
                     key={color.id}
@@ -601,7 +1008,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                 <BoardComments
                   key={selectedObject.id}
                   selectedObject={selectedObject}
-                  boardData={boardData}
+                  boardData={boardState}
                   currentUserId={currentUserId}
                   roleCode={roleCode}
                   onReloadBoard={onReloadBoard}
@@ -619,9 +1026,25 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
       <div className="board-toasts" aria-live="polite">
         {toasts.map((toast) => (
-          <p className="board-toast" key={toast.id} role="status">
-            {toast.message}
-          </p>
+          <div className="board-toast" key={toast.id} role="status">
+            <p>{toast.message}</p>
+            {toast.onAction && toast.actionLabel ? (
+              <div className="board-toast-actions">
+                <button
+                  className="button button-secondary"
+                  disabled={toast.actionDisabled || (toast.requiresRestoreGate === true && !restoreGateOpen)}
+                  onClick={() => {
+                    toast.onAction?.();
+                    setToasts((current) => current.filter((entry) => entry.id !== toast.id));
+                  }}
+                  type="button"
+                >
+                  {toast.actionLabel}
+                </button>
+                {toast.requiresRestoreGate ? <span className="board-toast-hint">{t('restoreGateHint')}</span> : null}
+              </div>
+            ) : null}
+          </div>
         ))}
       </div>
     </section>
@@ -630,8 +1053,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
 function actionToPermission(action: string): 'move' | 'resize' | 'rotate' | 'duplicate' | 'recolor' | 'delete' | 'lock' | 'unlock' {
   switch (action) {
+    case 'geometry':
+      return 'move';
     case 'color':
       return 'recolor';
+    case 'deleted_at':
+      return 'delete';
     case 'duplicate':
       return 'duplicate';
     case 'delete':
@@ -822,6 +1249,25 @@ function nextColorId(object: BoardCanvasObject, colors: Array<{id: number}>) {
 
   const currentIndex = colors.findIndex((color) => color.id === object.colorId);
   return colors[(currentIndex + 1) % colors.length]?.id ?? object.colorId;
+}
+
+function screenToWorld(
+  clientX: number,
+  clientY: number,
+  stageRect: DOMRect,
+  camera: CameraState,
+  viewport: {width: number; height: number}
+) {
+  return {
+    x: (clientX - stageRect.left - viewport.width / 2) / Math.max(camera.zoom, 0.01) + camera.x,
+    y: (clientY - stageRect.top - viewport.height / 2) / Math.max(camera.zoom, 0.01) + camera.y,
+  };
+}
+
+function createClientId() {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `client-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 interface BoardCommentsProps {

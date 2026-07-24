@@ -39,7 +39,7 @@
 | POST | `/boards/:share_token/objects/:id/duplicate` | 複製 |
 | POST | `/boards/:share_token/objects/:id/lock` | フレームロックを取得 |
 | DELETE | `/boards/:share_token/objects/:id/lock` | フレームロックを解除 |
-| POST | `/boards/:share_token/objects/:id/ops` | Lamport順序付きop（`property`/`value`/`lamport_ts`/`client_id`）を適用。同時編集は`property`単位・同一tsは`client_id`昇順でタイブレーク。競合時 409、削除済みオブジェクトへの編集は `409 { restoreSuggested: true }` |
+| POST | `/boards/:share_token/objects/:id/ops` | Lamport順序付きop（`property`/`value`/`lamport_ts`/`client_id`）を適用。同時編集は`property`単位・同一tsは`client_id`昇順でタイブレーク。競合時 409、削除済みオブジェクトへの編集は `409 { restoreSuggested: true }`。`deleted_at` op は `value.restore: true` で復元できる |
 | DELETE | `/boards/:share_token/objects/:id` | 論理削除（30日間tombstoneとして保持後、パージ対象） |
 
 ## コメント

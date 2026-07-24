@@ -251,8 +251,13 @@ func (op Op) validatePresenceValue() error {
 	if err := json.Unmarshal(op.Value, &payload); err != nil {
 		return fmt.Errorf("presence value must be an object: %w", err)
 	}
-	if len(payload) != 1 {
-		return fmt.Errorf("presence value must contain only cursor")
+	if len(payload) < 1 || len(payload) > 2 {
+		return fmt.Errorf("presence value must contain cursor and optional displayName")
+	}
+	for key := range payload {
+		if key != "cursor" && key != "displayName" {
+			return fmt.Errorf("presence value must contain only cursor and optional displayName")
+		}
 	}
 
 	cursorRaw, ok := payload["cursor"]
@@ -281,6 +286,13 @@ func (op Op) validatePresenceValue() error {
 	}
 	if err := json.Unmarshal(cursor["y"], &y); err != nil {
 		return fmt.Errorf("presence cursor.y must be numeric: %w", err)
+	}
+
+	if displayNameRaw, ok := payload["displayName"]; ok {
+		var displayName string
+		if err := json.Unmarshal(displayNameRaw, &displayName); err != nil {
+			return fmt.Errorf("presence displayName must be a string: %w", err)
+		}
 	}
 
 	return nil
