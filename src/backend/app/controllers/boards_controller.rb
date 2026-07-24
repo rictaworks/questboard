@@ -139,6 +139,7 @@ class BoardsController < ApplicationController
       colorId: object.color_id,
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
+      textCrdt: object.text_crdt,
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,

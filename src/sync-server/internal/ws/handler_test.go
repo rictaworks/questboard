@@ -83,6 +83,15 @@ func (noopStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
 	return op, nil
 }
 
+type presenceTrapStore struct {
+	calls int32
+}
+
+func (s *presenceTrapStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
+	atomic.AddInt32(&s.calls, 1)
+	return op, nil
+}
+
 type staleOpStore struct{}
 
 func (staleOpStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
@@ -410,6 +419,61 @@ func TestRedisRelayBroadcastsRemoteOps(t *testing.T) {
 	assertJSONField(t, got, "clientId", "remote-node")
 }
 
+func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	store := &presenceTrapStore{}
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(store)
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-presence"
+	connA := mustDialWebSocket(t, wsURL)
+	defer connA.Close()
+	connB := mustDialWebSocket(t, wsURL)
+	defer connB.Close()
+
+	presence := map[string]any{
+		"boardId":    "board-presence",
+		"objectId":   "object-1",
+		"property":   "presence",
+		"value":      map[string]any{"cursor": map[string]any{"x": 10, "y": 20}},
+		"lamport_ts": 1,
+		"clientId":   "client-a",
+	}
+	mustWriteJSON(t, connA, presence)
+
+	got := mustReadJSONMessage(t, connB)
+	assertJSONField(t, got, "property", "presence")
+	assertJSONField(t, got, "clientId", "client-a")
+
+	mustWriteJSON(t, connA, presence)
+
+	if err := connB.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+	if _, _, err := connB.ReadMessage(); err == nil {
+		t.Fatal("connB received a throttled presence update, want no second broadcast")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("connB read error = %v, want a read timeout", err)
+	}
+
+	if calls := atomic.LoadInt32(&store.calls); calls != 0 {
+		t.Fatalf("presence op was persisted %d times, want 0", calls)
+	}
+}
+
 func mustDialWebSocket(t *testing.T, wsURL string) *websocket.Conn {
 	t.Helper()
 
@@ -540,4 +604,3 @@ func TestDeletedObjectEditSendsRecoveryNotification(t *testing.T) {
 		t.Fatalf("expected restoreSuggested to be true, got %v", got["restoreSuggested"])
 	}
 }
-

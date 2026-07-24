@@ -10,7 +10,8 @@ class ObjectsController < ApplicationController
   OP_PROPERTY_ACTIONS = {
     "geometry" => :edit_object,
     "color" => :recolor_object,
-    "deleted_at" => :delete_object
+    "deleted_at" => :delete_object,
+    "text_crdt" => :edit_object
   }.freeze
 
   # lamport_ts is a client-generated Lamport logical counter (not a wall-clock timestamp),
@@ -191,14 +192,16 @@ class ObjectsController < ApplicationController
 
         confirmed_op = existing
       else
-        latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc, client_id: :asc).first
-        if latest && (lamport_ts < latest.lamport_ts || (lamport_ts == latest.lamport_ts && client_id > latest.client_id))
-          raise StaleOpError, "op #{lamport_ts}/#{client_id} is not newer than recorded #{latest.lamport_ts}/#{latest.client_id} for property #{property}"
-        end
+        if property != "text_crdt"
+          latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc, client_id: :asc).first
+          if latest && (lamport_ts < latest.lamport_ts || (lamport_ts == latest.lamport_ts && client_id > latest.client_id))
+            raise StaleOpError, "op #{lamport_ts}/#{client_id} is not newer than recorded #{latest.lamport_ts}/#{latest.client_id} for property #{property}"
+          end
 
-        baseline = latest&.lamport_ts || 0
-        if lamport_ts - baseline > MAX_LAMPORT_JUMP
-          raise ImplausibleLamportJumpError, "lamport_ts #{lamport_ts} jumps #{lamport_ts - baseline} ahead of #{baseline} for property #{property}, exceeding the max allowed jump of #{MAX_LAMPORT_JUMP}"
+          baseline = latest&.lamport_ts || 0
+          if lamport_ts - baseline > MAX_LAMPORT_JUMP
+            raise ImplausibleLamportJumpError, "lamport_ts #{lamport_ts} jumps #{lamport_ts - baseline} ahead of #{baseline} for property #{property}, exceeding the max allowed jump of #{MAX_LAMPORT_JUMP}"
+          end
         end
 
         confirmed_op = ObjectOp.create!(
@@ -334,6 +337,7 @@ class ObjectsController < ApplicationController
       colorId: object.color_id,
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
+      textCrdt: object.text_crdt,
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,
@@ -417,6 +421,7 @@ class ObjectsController < ApplicationController
     when "geometry" then validated_geometry_value
     when "color" then { "color_id" => op_color_id }
     when "deleted_at" then {}
+    when "text_crdt" then validated_text_crdt_value
     end
   end
 
@@ -450,7 +455,125 @@ class ObjectsController < ApplicationController
       object.update!(color_palette: ColorPalette.find(value.fetch("color_id")))
     when "deleted_at"
       object.update!(deleted_at: Time.current)
+    when "text_crdt"
+      object.update!(text_crdt: merge_text_crdt_state(object.text_crdt, value))
     end
+  end
+
+  def validated_text_crdt_value
+    raw_value = params.require(:value)
+    normalized_value =
+      case raw_value
+      when ActionController::Parameters
+        raw_value.to_unsafe_h
+      when Hash
+        raw_value
+      else
+        raise InvalidOpValueError, "text_crdt must be an object"
+      end
+
+    ops = normalized_value.fetch("ops") { normalized_value[:ops] }
+    text = normalized_value["text"] || normalized_value[:text]
+    if ops.blank? && text.blank?
+      raise InvalidOpValueError, "text_crdt must include ops or text"
+    end
+
+    if ops.present?
+      normalized_ops = ops.map { |op| validate_text_crdt_op!(op) }
+      normalized_value = normalized_value.stringify_keys
+      normalized_value["ops"] = normalized_ops
+    end
+
+    normalized_value.stringify_keys
+  end
+
+  def validate_text_crdt_op!(op)
+    normalized_op =
+      case op
+      when ActionController::Parameters
+        op.to_unsafe_h
+      when Hash
+        op
+      else
+        raise InvalidOpValueError, "text_crdt ops must be objects"
+      end.stringify_keys
+
+    allowed_keys = %w[insert delete retain attributes]
+    unknown_keys = normalized_op.keys - allowed_keys
+    raise InvalidOpValueError, "text_crdt op contains unsupported keys: #{unknown_keys.join(', ')}" if unknown_keys.any?
+
+    op_types = %w[insert delete retain].filter { |key| normalized_op.key?(key) }
+    raise InvalidOpValueError, "text_crdt op must include exactly one of insert, delete, or retain" if op_types.length != 1
+
+    if normalized_op.key?("insert") && !normalized_op["insert"].is_a?(String)
+      raise InvalidOpValueError, "text_crdt insert must be a string"
+    end
+    if normalized_op.key?("delete") && !normalized_op["delete"].is_a?(Integer)
+      raise InvalidOpValueError, "text_crdt delete must be an integer"
+    end
+    if normalized_op.key?("retain") && !normalized_op["retain"].is_a?(Integer)
+      raise InvalidOpValueError, "text_crdt retain must be an integer"
+    end
+    if normalized_op["attributes"].present? && !normalized_op["attributes"].is_a?(Hash)
+      raise InvalidOpValueError, "text_crdt attributes must be an object"
+    end
+
+    normalized_op
+  end
+
+  def merge_text_crdt_state(existing_state, incoming_value)
+    existing_state = existing_state.is_a?(Hash) ? existing_state : {}
+    existing_text = existing_state["text"].to_s
+    incoming_ops = crdt_ops_from_value(incoming_value)
+    incoming_text = incoming_text_crdt(existing_text, incoming_ops, incoming_value)
+    existing_ops = existing_state["ops"].is_a?(Array) ? existing_state["ops"] : []
+
+    merged_state = existing_state.merge("text" => incoming_text)
+    merged_state["ops"] = existing_ops + incoming_ops if incoming_ops.any?
+    merged_state
+  end
+
+  def incoming_text_crdt(existing_text, incoming_ops, incoming_value)
+    if incoming_value.is_a?(Hash) && incoming_value.key?("text")
+      return incoming_value["text"].to_s
+    end
+
+    apply_text_crdt_delta(existing_text.dup, incoming_ops)
+  end
+
+  def crdt_ops_from_value(value)
+    return [] unless value.is_a?(Hash)
+
+    ops = value["ops"]
+    return [] unless ops.is_a?(Array)
+
+    ops.map { |op| validate_text_crdt_op!(op) }
+  end
+
+  def apply_text_crdt_delta(text, ops)
+    cursor = 0
+    result = +""
+
+    ops.each do |op|
+      if op["retain"].present?
+        retain = op["retain"].to_i
+        result << text.slice(cursor, retain).to_s
+        cursor += retain
+        next
+      end
+
+      if op["delete"].present?
+        cursor += op["delete"].to_i
+        next
+      end
+
+      if op["insert"].present?
+        result << op["insert"].to_s
+      end
+    end
+
+    result << text.slice(cursor..).to_s
+    result
   end
 
   # Records value as the next ObjectOp for object/property and applies the corresponding

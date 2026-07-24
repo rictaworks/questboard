@@ -75,6 +75,7 @@ RSpec.describe "Boards", type: :request do
       object_type:,
       color_palette: color,
       geometry: { "x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0 },
+      text_crdt: { "text" => "Hello" },
       deleted_at: nil
     )
 
@@ -93,6 +94,7 @@ RSpec.describe "Boards", type: :request do
         "objectTypeCode" => "frame",
         "colorId" => color.id,
         "geometry" => include("x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0),
+        "textCrdt" => include("text" => "Hello"),
         "locked" => false
       )
     )

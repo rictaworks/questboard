@@ -26,7 +26,7 @@ RSpec.describe "Object ops", type: :request do
 
   def seed_object_support
     ObjectType.upsert_all(
-      [ { code: "sticky" } ],
+      [ { code: "sticky" }, { code: "text" } ],
       unique_by: :index_object_types_on_code
     )
 
@@ -63,9 +63,9 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:created)
   end
 
-  def create_object(share_token:, geometry:)
+  def create_object(share_token:, geometry:, object_type_code: "sticky")
     post "/boards/#{share_token}/objects", params: {
-      object_type_code: "sticky",
+      object_type_code:,
       geometry:
     }, as: :json
 
@@ -202,6 +202,26 @@ RSpec.describe "Object ops", type: :request do
     apply_op(share_token:, object_id:, property: "deleted_at", value: true, lamport_ts: 2, client_id: "client-a")
     expect(response).to have_http_status(:ok)
     expect(BoardObject.find(object_id).deleted_at).to be_present
+  end
+
+  it "merges text_crdt ops instead of rejecting stale lamport timestamps" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: 5 }, { insert: " world" } ] }, lamport_ts: 1, client_id: "client-b")
+    expect(response).to have_http_status(:ok)
+
+    object = BoardObject.find(object_id)
+    expect(object.text_crdt.fetch("text")).to eq("Hello world")
+    expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
   end
 
   it "breaks same-timestamp conflicts by client_id ascending" do

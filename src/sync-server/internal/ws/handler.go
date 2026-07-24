@@ -27,6 +27,8 @@ const (
 	PingPeriod = (PongWait * 9) / 10
 	// WriteWait is the maximum time allowed to write a message to the peer.
 	WriteWait = 10 * time.Second
+	// PresenceBroadcastInterval caps cursor broadcasts at 30Hz.
+	PresenceBroadcastInterval = time.Second / 30
 
 	// railsSessionCookieName must match config.session_store's `key:` in the Rails
 	// backend (src/backend/config/application.rb). Rails authenticates solely via this
@@ -45,9 +47,9 @@ var ErrStaleOp = errors.New("stale or duplicate operation rejected")
 var ErrDeletedObjectEdit = errors.New("object has been deleted")
 
 // ErrUnsupportedOpProperty indicates the store has no persistence path for this op's
-// Property (e.g. "text_crdt" ahead of its own sync issue landing). Treating this as
-// success would broadcast a change to every connected client that the backend never
-// actually saved, so it must never be silently swallowed.
+// Property (for example a transient presence update). Treating this as success would
+// broadcast a change to every connected client that the backend never actually saved, so
+// it must never be silently swallowed.
 var ErrUnsupportedOpProperty = errors.New("unsupported op property")
 
 type DeletedObjectEditPayload struct {
@@ -212,7 +214,7 @@ type opResponsePayload struct {
 
 func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 	switch op.Property {
-	case "geometry", "color", "deleted_at":
+	case "geometry", "color", "deleted_at", "text_crdt":
 	default:
 		return Op{}, fmt.Errorf("%w: %q", ErrUnsupportedOpProperty, op.Property)
 	}
@@ -549,6 +551,8 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 		return nil
 	})
 
+	var lastPresenceBroadcast time.Time
+
 	for {
 		select {
 		case <-h.closeCh:
@@ -584,6 +588,29 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 			if !allowed {
 				client.requestClose(websocket.ClosePolicyViolation, "op rejected by permission check")
 				return
+			}
+
+			if op.Property == "presence" {
+				now := time.Now()
+				if !lastPresenceBroadcast.IsZero() && now.Sub(lastPresenceBroadcast) < PresenceBroadcastInterval {
+					continue
+				}
+
+				lastPresenceBroadcast = now
+				payload, err := op.MarshalJSON()
+				if err != nil {
+					client.requestClose(websocket.CloseInternalServerErr, err.Error())
+					return
+				}
+
+				h.hub.Broadcast(boardID, payload)
+				if h.relay != nil {
+					if err := h.relay.Publish(ctx.Request.Context(), op); err != nil {
+						client.requestClose(websocket.CloseInternalServerErr, err.Error())
+						return
+					}
+				}
+				continue
 			}
 
 			confirmedOp, err := h.store.SaveConfirmedOp(reqCtx, op)
