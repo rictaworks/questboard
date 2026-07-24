@@ -1,6 +1,6 @@
 # ER図（実装済みスキーマ）
 
-`src/backend/db/schema.rb`（version 2026_07_20_230735）からのリバースエンジニアリング。
+`src/backend/db/schema.rb`（version 2026_07_24_160000）からのリバースエンジニアリング。
 
 ```mermaid
 erDiagram
@@ -63,9 +63,10 @@ erDiagram
         integer object_type_id FK
         integer color_id FK
         jsonb geometry
-        jsonb text_crdt
+        jsonb text_crdt "Delta形式 {ops:[{insert,attributes}]}"
         bigint parent_frame_id FK
         datetime deleted_at "tombstone、30日後にpurge対象"
+        bigint text_crdt_revision "最新のtext_crdt ObjectOp#id。0=履歴なし"
     }
     FRAME_LOCKS {
         bigint id PK
@@ -85,7 +86,7 @@ erDiagram
         bigint board_id FK
         bigint object_id FK
         bigint user_id FK
-        string property "geometry / color / deleted_at"
+        string property "geometry / color / deleted_at / text_crdt"
         jsonb value
         bigint lamport_ts
         string client_id
@@ -141,4 +142,4 @@ erDiagram
 `RADIAL_MENU_ITEMS` は他テーブルとの外部キー関係を持たない独立したマスタテーブル（UI用ラジアルメニュー項目）。
 
 
-`object_ops` の `(object_id, client_id, lamport_ts)` 一意インデックスが、同一opの再送を冪等にする仕組みの核。詳細は [`SPEC/api/rails-backend.md`](../api/rails-backend.md) の「オブジェクト」節を参照。
+`object_ops` の `(object_id, client_id, lamport_ts)` 一意インデックスが、同一opの再送を冪等にする仕組みの核。`(object_id, property, id)` インデックスは `text_crdt` のOT履歴検索（`id > ref_revision`）を支える。`text_crdt` はクライアント生成の `lamport_ts` ではなく、サーバー採番で単調増加する `id`（＝`objects.text_crdt_revision` の値）を履歴位置の基準にする点が他プロパティと異なる。詳細は [`SPEC/api/rails-backend.md`](../api/rails-backend.md) の「オブジェクト」節を参照。

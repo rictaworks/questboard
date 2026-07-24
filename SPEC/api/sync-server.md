@@ -22,23 +22,54 @@
 {
   "boardId": "string",
   "objectId": "string",
-  "property": "geometry" | "color" | "deleted_at",
+  "property": "geometry" | "color" | "deleted_at" | "text_crdt" | "presence",
   "value": { "...": "..." },
   "lamport_ts": 0,
   "clientId": "string"
 }
 ```
 
+`objectId`・`clientId`にはそれぞれ長さ上限（`MaxObjectIDBytes`/`MaxClientIDBytes`、共に128バイト）があり、超過は`Validate()`エラーとして扱われる（後述の接続クローズを参照）。
+
 ## メッセージ形式（サーバー→クライアント、確定op）
 
-Rails側で実際に永続化された値を配信する（クライアントが送った値そのものではない）。
+Rails側で実際に永続化された値を配信する（クライアントが送った値そのものではない）。`text_crdt`の場合、`value`にはOT変換後の`ops`とサーバー採番の`revision`（次のopの`ref_revision`に使う）が含まれる。
 
 ```json
 {
-  "property": "geometry" | "color" | "deleted_at",
+  "property": "geometry" | "color" | "deleted_at" | "text_crdt",
   "value": { "...": "..." },
   "lamportTs": 0,
   "clientId": "string"
+}
+```
+
+## メッセージ形式（サーバー→送信元、重複op）
+
+Railsが「既に記録済みのop（ack再送など）」と判定した場合、他クライアントへはブロードキャスト・Redis中継のいずれも行わない（`text_crdt`は差分適用のため、二重配信すると受信側で二重適用されてしまう）。送信元へは確定済みの`value`（`text_crdt`ならrevision込み）とともにackのみ返し、接続は維持される。
+
+```json
+{
+  "objectId": "string",
+  "property": "string",
+  "value": { "...": "..." },
+  "lamportTs": 0,
+  "clientId": "string",
+  "duplicate": true
+}
+```
+
+既知の限界: Rails保存成功後・このackのbroadcast/relay実行前にsync-serverプロセスが停止した場合、そのopは元の送信元以外には配信されない（durable outboxのような永続的な再配信保証は現状未実装、早期開発段階のトレードオフとして許容）。
+
+## メッセージ形式（サーバー→送信元、再同期要求）
+
+`text_crdt`のOTに必要な`ref_revision`が省略・不正（存在しない/古すぎる）だった場合、Railsは`409 { resyncRequired: true }`を返す。sync-serverはこれを他クライアントへ配信せず、送信元にのみ再同期を促す通知を返す。接続は維持される。
+
+```json
+{
+  "objectId": "string",
+  "error": "operation rejected: resync required before retrying",
+  "resyncRequired": true
 }
 ```
 
@@ -54,11 +85,20 @@ Rails側で実際に永続化された値を配信する（クライアントが
 }
 ```
 
+## `presence`（カーソル位置などのephemeralな状態）
+
+他のプロパティと異なり、Rails（`object_ops`）へは一切永続化されない。同一board内の接続へ`hub.Broadcast`とRedis中継のみ行う一時的な状態共有。
+
+- `value`は`{ "cursor": { "x": number, "y": number } }`のみを許可し、512バイトを超える値・余分なキーは拒否（接続を`ClosePolicyViolation`でクローズ）
+- 送信元単位で同一board内、30Hz（約33ms間隔）を超えるブロードキャストは間引かれる（黙って破棄、接続は維持）
+- 別途トークンバケット方式のレート制限（`internal/ws/limiter.go`）があり、board+ユーザー単位でイベント数（平均40/秒・バースト60）とバイト数（平均10KB/秒・バースト20KB）を課金する。課金対象は受信メッセージ全体のバイト数（`objectId`/`clientId`を含む）であり、`value`のバイト数だけではない
+
 ## 接続クローズの扱い
 
 - 同一lamport_ts以下の古いop（`ErrStaleOp`）: ブロードキャストせず`continue`。接続は維持
 - 送信キューが溢れている遅いクライアント: 該当クライアントの接続を`ClosePolicyViolation`でクローズ（黙って通知を破棄しない）
 - サポート対象外の`property`のop: `CloseUnsupportedData`でクローズ
+- 必須フィールドの欠落、`boardId`不一致、`objectId`/`clientId`の長さ超過、`presence`値の形式不正: `ClosePolicyViolation`でクローズ
 
 ## Redis中継
 
