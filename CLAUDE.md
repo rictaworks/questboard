@@ -69,6 +69,7 @@
 ## ドキュメント・ディレクトリ運用
 
 - `README.md` に自動ログイン手順・ページ一覧（ページ名・URL）・API一覧（SPEC/apiへのリンク、タイトル・エンドポイントURL）をもれなく記載する
+- `README.md` と `SPEC/` には実装済みの機能・画面・APIのみを記載する。未実装・計画中の内容は書かない（構想段階のものは `TASKS/` に記載する）
 - `TASKS/`：タスク管理
 - `DEBUG/`：バグ報告
 - `CLIENT/`：クライアント要望等
@@ -82,6 +83,18 @@
 ## PR規約
 
 - PRには非エンジニア向けのユーザーテスト手順を丁寧に書くこと
+
+## 開発コマンド
+
+モノレポ構成（フロント `/`、Rails `src/backend/`、Go sync-server `src/sync-server/`）。`.github/workflows/ci.yml` が実行内容の正:
+
+- フロントエンド lint: `npm run lint`
+- フロントエンド build/test: `npm run build && node --test test/*.test.mjs`
+- Backend RSpec: `cd src/backend && bundle exec rspec`（Ruby 3.4.10必須。無い場合はローカル実行できずCI待ちになる）
+- Backend RuboCop: `cd src/backend && bundle exec rubocop`
+- Backend Brakeman: `cd src/backend && bundle exec brakeman --no-pager`
+- Go test: `go test ./tools/... ./src/sync-server/...`（`go.work` がrootモジュールと`src/sync-server`を束ねる別モジュール構成）
+- Go lint: `golangci-lint run ./...`（設定は `.golangci.yml`）
 
 ## コーディング規約
 
