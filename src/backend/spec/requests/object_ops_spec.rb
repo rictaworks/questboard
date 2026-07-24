@@ -204,6 +204,47 @@ RSpec.describe "Object ops", type: :request do
     expect(BoardObject.find(object_id).deleted_at).to be_present
   end
 
+  it "breaks same-timestamp conflicts by client_id ascending" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "color", value: { color_id: ColorPalette.find_by!(hex: "#FDE68A").id }, lamport_ts: 10, client_id: "client-b")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id:, property: "color", value: { color_id: ColorPalette.find_by!(hex: "#111111").id }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id:, property: "color", value: { color_id: ColorPalette.find_by!(hex: "#FDE68A").id }, lamport_ts: 10, client_id: "client-c")
+    expect(response).to have_http_status(:conflict)
+
+    expect(BoardObject.find(object_id).color_id).to eq(ColorPalette.find_by!(hex: "#111111").id)
+  end
+
+  it "rejects edit ops on deleted objects and suggests restore for editors" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "deleted_at", value: true, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 99, y: 99 }, lamport_ts: 2, client_id: "client-b")
+    expect(response).to have_http_status(:conflict)
+    body = JSON.parse(response.body)
+    expect(body.fetch("error")).to match(/deleted/i)
+    expect(body.fetch("restoreSuggested")).to be(true)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 1, "y" => 2)
+  end
+
   it "rejects ops for viewers and unsupported properties" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -376,12 +417,16 @@ RSpec.describe "Object ops", type: :request do
     expect(latest_op.lamport_ts).to be > 5
     expect(latest_op.value).to include("x" => 20, "y" => 20)
 
-    # A client whose local counter is still behind the legacy write (e.g. it never saw
-    # the legacy move) must be told it's stale, not have its outdated value silently
-    # accepted as confirmed — this is exactly the divergence the unification closes.
+    # Same-ts conflicts resolve by client_id ascending, so client-a wins over the legacy
+    # write at lamport_ts 6 and becomes the confirmed geometry.
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 999, y: 999 }, lamport_ts: 6, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 999, "y" => 999)
+
+    # A lexicographically later client id at the same lamport_ts still loses.
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 30, y: 30 }, lamport_ts: 6, client_id: "zz-client")
     expect(response).to have_http_status(:conflict)
-    expect(BoardObject.find(object_id).geometry).to include("x" => 20, "y" => 20)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 999, "y" => 999)
 
     # A client that resyncs and submits a genuinely newer lamport_ts still succeeds on
     # top of the legacy write.

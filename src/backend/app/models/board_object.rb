@@ -1,5 +1,6 @@
 class BoardObject < ApplicationRecord
   self.table_name = "objects"
+  TOMBSTONE_RETENTION = 30.days
 
   belongs_to :board
   belongs_to :object_type
@@ -9,6 +10,8 @@ class BoardObject < ApplicationRecord
   has_many :comments, foreign_key: :object_id, dependent: :destroy, inverse_of: :board_object
 
   scope :active, -> { where(deleted_at: nil) }
+  scope :tombstones, -> { where.not(deleted_at: nil) }
+  scope :purgeable_tombstones, ->(now = Time.current) { tombstones.where(arel_table[:deleted_at].lteq(now - TOMBSTONE_RETENTION)) }
 
   validate :parent_frame_must_belong_to_same_board
 

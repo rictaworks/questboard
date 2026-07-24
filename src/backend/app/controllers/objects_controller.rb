@@ -2,6 +2,7 @@ class ObjectsController < ApplicationController
   class UnsupportedOpPropertyError < StandardError; end
   class StaleOpError < StandardError; end
   class ConflictingOpError < StandardError; end
+  class DeletedObjectEditError < StandardError; end
   class InvalidOpValueError < StandardError; end
   class ImplausibleLamportJumpError < StandardError; end
   class ReservedClientIdError < StandardError; end
@@ -178,6 +179,10 @@ class ObjectsController < ApplicationController
     confirmed_op = nil
 
     object.with_lock do
+      if property != "deleted_at" && object.deleted_at.present?
+        raise DeletedObjectEditError, "Object has been deleted; restore it before editing"
+      end
+
       existing = ObjectOp.find_by(object_id: object.id, client_id:, lamport_ts:)
       if existing
         if existing.property != property || existing.value != incoming_value
@@ -186,9 +191,9 @@ class ObjectsController < ApplicationController
 
         confirmed_op = existing
       else
-        latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc).first
-        if latest && lamport_ts <= latest.lamport_ts
-          raise StaleOpError, "lamport_ts #{lamport_ts} is not newer than recorded #{latest.lamport_ts} for property #{property}"
+        latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc, client_id: :asc).first
+        if latest && (lamport_ts < latest.lamport_ts || (lamport_ts == latest.lamport_ts && client_id > latest.client_id))
+          raise StaleOpError, "op #{lamport_ts}/#{client_id} is not newer than recorded #{latest.lamport_ts}/#{latest.client_id} for property #{property}"
         end
 
         baseline = latest&.lamport_ts || 0
@@ -227,8 +232,10 @@ class ObjectsController < ApplicationController
     # ordinary idempotent-duplicate path above — never the object's current aggregate
     # state, which may already reflect a different, newer op.
     render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:))
-  rescue StaleOpError, ConflictingOpError => e
-    render json: { error: e.message }, status: :conflict
+  rescue StaleOpError, ConflictingOpError, DeletedObjectEditError => e
+    payload = { error: e.message }
+    payload[:restoreSuggested] = true if e.is_a?(DeletedObjectEditError)
+    render json: payload, status: :conflict
   end
 
   private
@@ -378,18 +385,18 @@ class ObjectsController < ApplicationController
   # object visibility).
   def find_authorized_op_object!(action:, property:)
     board = find_board!
-    object = find_op_target_object!(board, property)
+    object = find_op_target_object!(board)
     return unless authorize_member!(board:, action:, object:)
+
+    if property != "deleted_at" && object.deleted_at.present?
+      raise DeletedObjectEditError, "Object has been deleted; restore it before editing"
+    end
 
     object
   end
 
-  def find_op_target_object!(board, property)
-    object = board.board_objects.active.find_by(id: params.require(:id))
-    return object if object
-    return board.board_objects.find(params.require(:id)) if property == "deleted_at"
-
-    raise ActiveRecord::RecordNotFound
+  def find_op_target_object!(board)
+    board.board_objects.find(params.require(:id))
   end
 
   def op_value_params

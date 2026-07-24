@@ -41,11 +41,20 @@ const (
 // clients apply an out-of-date value.
 var ErrStaleOp = errors.New("stale or duplicate operation rejected")
 
+// ErrDeletedObjectEdit indicates the operation was rejected because the object has been soft-deleted.
+var ErrDeletedObjectEdit = errors.New("object has been deleted")
+
 // ErrUnsupportedOpProperty indicates the store has no persistence path for this op's
 // Property (e.g. "text_crdt" ahead of its own sync issue landing). Treating this as
 // success would broadcast a change to every connected client that the backend never
 // actually saved, so it must never be silently swallowed.
 var ErrUnsupportedOpProperty = errors.New("unsupported op property")
+
+type DeletedObjectEditPayload struct {
+	ObjectID         string `json:"objectId"`
+	Error            string `json:"error"`
+	RestoreSuggested bool   `json:"restoreSuggested"`
+}
 
 type AuthContext struct {
 	UserID string
@@ -240,6 +249,15 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusCreated:
 	case http.StatusConflict:
+		var errPayload struct {
+			Error            string `json:"error"`
+			RestoreSuggested bool   `json:"restoreSuggested"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&errPayload); err == nil {
+			if errPayload.RestoreSuggested {
+				return Op{}, ErrDeletedObjectEdit
+			}
+		}
 		return Op{}, ErrStaleOp
 	default:
 		return Op{}, fmt.Errorf("rails save op failed with status %d", resp.StatusCode)
@@ -570,6 +588,22 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 
 			confirmedOp, err := h.store.SaveConfirmedOp(reqCtx, op)
 			if err != nil {
+				if errors.Is(err, ErrDeletedObjectEdit) {
+					errPayload := DeletedObjectEditPayload{
+						ObjectID:         op.ObjectID,
+						Error:            "Object has been deleted; restore it before editing",
+						RestoreSuggested: true,
+					}
+					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
+						select {
+						case client.send <- payload:
+						default:
+							client.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+							return
+						}
+					}
+					continue
+				}
 				if errors.Is(err, ErrStaleOp) {
 					// A newer op already won for this object; skip broadcasting this
 					// one so other clients never see a value regress, but keep the
