@@ -119,6 +119,6 @@ test('isNewerRealtimeOp compares Lamport timestamps then client ids', () => {
   const sameLamport = {...older, clientId: 'b'};
 
   assert.equal(realtime.isNewerRealtimeOp(newer, older), true);
-  assert.equal(realtime.isNewerRealtimeOp(sameLamport, older), true);
-  assert.equal(realtime.isNewerRealtimeOp(older, sameLamport), false);
+  assert.equal(realtime.isNewerRealtimeOp({...older, clientId: 'a'}, sameLamport), true);
+  assert.equal(realtime.isNewerRealtimeOp(sameLamport, older), false);
 });

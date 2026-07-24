@@ -57,7 +57,6 @@ export interface BoardCanvasData {
 
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
-  currentUserDisplayName: string;
   onReloadBoard: () => Promise<void>;
 };
 
@@ -78,7 +77,7 @@ type ToastItem = {
 };
 
 type PresenceEntry = {
-  clientId: string;
+  objectId: string;
   displayName: string;
   cursor: BoardPresenceCursor;
   updatedAt: number;
@@ -86,7 +85,7 @@ type PresenceEntry = {
 
 const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
 
-export default function BoardCanvasPanel({boardData, currentUserDisplayName, onReloadBoard}: BoardCanvasPanelProps) {
+export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
@@ -116,10 +115,6 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
-
-  useEffect(() => {
-    setBoardState(boardData);
-  }, [boardData]);
 
   useEffect(() => {
     boardStateRef.current = boardState;
@@ -275,7 +270,7 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
        updateSyncStatus(navigator.onLine ? 'reconnecting' : 'offline');
      }
    }
-  }, []);
+  }, [updateSyncStatus]);
 
   const sendPresence = useCallback((cursor: BoardPresenceCursor) => {
    const socket = syncSocketRef.current;
@@ -287,13 +282,13 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
      boardId: boardStateRef.current.board.shareToken,
      objectId: String(currentUserId),
      property: 'presence',
-     value: createPresenceValue(cursor, currentUserDisplayName) as unknown as Record<string, unknown>,
+     value: createPresenceValue(cursor) as unknown as Record<string, unknown>,
      lamport_ts: ++lamportRef.current,
      clientId: clientIdRef.current,
    };
 
    socket.send(JSON.stringify(payload));
-  }, [currentUserDisplayName, currentUserId]);
+  }, [currentUserId]);
 
   const schedulePresence = useCallback((cursor: BoardPresenceCursor) => {
    pendingPresenceRef.current = cursor;
@@ -340,7 +335,7 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
    queueRealtimeOp(op);
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
-  const sendRestoreOp = useCallback((objectId: number) => {
+  const restoreDeletedObject = useCallback((objectId: number) => {
    sendObjectRealtimeOp(objectId, 'deleted_at', {restore: true});
   }, [sendObjectRealtimeOp]);
 
@@ -418,23 +413,26 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
            const resyncMessage = message as BoardResyncRequired;
            prunePendingOps((pending) => pending.objectId === resyncMessage.objectId);
            enqueueToast(resyncMessage.error);
+           void onReloadBoard().catch((error) => {
+             enqueueToast(error instanceof Error ? error.message : t('errorMessage'));
+           });
            return;
          }
 
          if (message.property === 'presence') {
            const presence = message as BoardPresenceMessage;
-           if (presence.clientId === clientIdRef.current) {
+           if (presence.objectId === String(currentUserId)) {
              return;
            }
 
            setPresenceEntries((current) => {
              const nextEntry = {
-               clientId: presence.clientId,
+               objectId: presence.objectId,
                displayName: presence.value.displayName ?? t('unknownUser'),
                cursor: presence.value.cursor,
                updatedAt: Date.now(),
              };
-             const next = current.filter((entry) => entry.clientId !== nextEntry.clientId);
+             const next = current.filter((entry) => entry.objectId !== nextEntry.objectId);
              next.push(nextEntry);
              return next;
            });
@@ -490,7 +488,7 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
      window.removeEventListener('online', handleOnline);
      window.removeEventListener('offline', handleOffline);
    };
-  }, [canRestoreDeletedObject, enqueueToast, prunePendingOps, recordRealtimeOp, sendPresence, sendRestoreOp, t, updateSyncStatus]);
+  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus]);
 
   useEffect(() => {
     if (!interaction) {
@@ -706,10 +704,6 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
       window.clearTimeout(presenceThrottleRef.current);
       presenceThrottleRef.current = null;
     }
-  }
-
-  function restoreDeletedObject(objectId: number) {
-    sendRestoreOp(objectId);
   }
 
   async function mutateLegacyObject(
@@ -954,7 +948,7 @@ export default function BoardCanvasPanel({boardData, currentUserDisplayName, onR
               {presenceEntries.map((entry) => (
                 <div
                   className="board-presence-cursor"
-                  key={entry.clientId}
+                  key={entry.objectId}
                   style={{
                     left: `${entry.cursor.x}px`,
                     top: `${entry.cursor.y}px`

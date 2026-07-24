@@ -208,7 +208,7 @@ export function isNewerRealtimeOp(candidate: BoardRealtimeOp, current: BoardReal
     return candidate.lamport_ts > current.lamport_ts;
   }
 
-  return candidate.clientId > current.clientId;
+  return candidate.clientId < current.clientId;
 }
 
 export function opKey(op: BoardRealtimeOp) {
