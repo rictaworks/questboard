@@ -278,6 +278,35 @@ func TestRailsStoreAcceptsTextCRDTOps(t *testing.T) {
 	}
 }
 
+func TestRailsStoreTranslatesResyncRequiredConflictIntoErrResyncRequired(t *testing.T) {
+	t.Parallel()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":"ref_revision is required once text_crdt history exists for this object","resyncRequired":true}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	store := ws.NewRailsStore(backend.URL)
+	op := ws.Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "text_crdt",
+		Value:     json.RawMessage(`{"ops":[{"insert":"hi"}]}`),
+		LamportTS: 1,
+		ClientID:  "client-a",
+	}
+
+	_, err := store.SaveConfirmedOp(context.Background(), op)
+	if !errors.Is(err, ws.ErrResyncRequired) {
+		t.Fatalf("SaveConfirmedOp() error = %v, want ErrResyncRequired", err)
+	}
+	if errors.Is(err, ws.ErrStaleOp) {
+		t.Fatal("SaveConfirmedOp() error wraps ErrStaleOp, want it to be distinguished as ErrResyncRequired")
+	}
+}
+
 func TestRailsStoreTranslatesConflictIntoErrDeletedObjectEdit(t *testing.T) {
 	t.Parallel()
 

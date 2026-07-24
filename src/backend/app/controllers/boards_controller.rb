@@ -140,6 +140,13 @@ class BoardsController < ApplicationController
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
       textCrdt: object.text_crdt,
+      # Read straight off the already-loaded row (no extra query, no N+1) — see
+      # ObjectsController#serialize_object for why this must be the persisted column rather
+      # than a computed ObjectOp.maximum(:id) query. Without this, a client that only ever
+      # loads objects through the board endpoint (rather than a per-object fetch) would have
+      # no way to obtain a valid ref_revision, and its first text_crdt edit would always be
+      # rejected as resync-required with no way to recover (see PR #55 review).
+      textCrdtRevision: object.text_crdt_revision,
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,

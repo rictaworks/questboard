@@ -215,14 +215,70 @@ RSpec.describe "Object ops", type: :request do
 
     apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
     expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
 
-    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: 5 }, { insert: " world" } ] }, lamport_ts: 1, client_id: "client-b")
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: 5 }, { insert: " world" } ], ref_revision: base_revision }, lamport_ts: 1, client_id: "client-b")
     expect(response).to have_http_status(:ok)
 
     object = BoardObject.find(object_id)
     expect(object.text_crdt.fetch("text")).to eq("Hello world")
     expect(object.text_crdt).to eq({ "text" => "Hello world" })
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
+  end
+
+  it "rejects a text_crdt op with no ref_revision once history already exists for the object" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    # client-b never fetched a baseline revision (e.g. a stale in-memory client) — since
+    # text_crdt history already exists for this object, it must resync rather than have its
+    # ops applied blindly on top of whatever the object's current state happens to be.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "oops" } ] }, lamport_ts: 1, client_id: "client-b")
+    expect(response).to have_http_status(:conflict)
+    body = JSON.parse(response.body)
+    expect(body.fetch("resyncRequired")).to be(true)
+
+    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
+  end
+
+  it "rejects a ref_revision that does not belong to this object's text_crdt history" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    other_object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    apply_op(share_token:, object_id: other_object_id, property: "text_crdt", value: { ops: [ { insert: "Other" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    other_object_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # A revision that exists in object_ops but belongs to a *different* object must not be
+    # accepted as a valid baseline for this object's history.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: other_object_revision }, lamport_ts: 11, client_id: "client-a")
+    expect(response).to have_http_status(:conflict)
+    body = JSON.parse(response.body)
+    expect(body.fetch("resyncRequired")).to be(true)
+
+    # A revision number that has never existed at all (far beyond anything recorded) must
+    # likewise be rejected rather than silently treated as "no conflicting history".
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: other_object_revision + 1_000_000 }, lamport_ts: 12, client_id: "client-a")
+    expect(response).to have_http_status(:conflict)
+
+    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
   end
 
   it "rejects stale text snapshots and keeps the current text_crdt state" do
@@ -241,6 +297,163 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
     expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(1)
+  end
+
+  it "converges concurrent text_crdt edits via OT transform correctly" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # Set initial text state to "ab"
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "ab" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-a deletes 'a' at position 0 (referencing the server revision recorded above)
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: base_revision }, lamport_ts: 11, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    # client-b deletes 'b' at position 1 (referencing the same server revision)
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: 1 }, { delete: 1 } ], ref_revision: base_revision }, lamport_ts: 11, client_id: "client-b")
+    expect(response).to have_http_status(:ok)
+
+    # Since both deleted their respective characters, the document should converge to empty ""
+    object = BoardObject.find(object_id)
+    expect(object.text_crdt.fetch("text")).to eq("")
+  end
+
+  it "transforms correctly when a lower-lamport client's op is actually the later persisted one" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # client-a (with a high local lamport counter) creates "ab".
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "ab" } ] }, lamport_ts: 100, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-c (a fresh client with a low local lamport counter) inserts "X" at the start,
+    # persisted after client-a's op above.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "X" }, { retain: 2 } ], ref_revision: base_revision }, lamport_ts: 1, client_id: "client-c")
+    expect(response).to have_http_status(:ok)
+
+    # A client that only ever saw base_revision (i.e. "ab", before client-c's insert) now
+    # deletes 'b' at position 1. Using client-c's lamport_ts (1, lower than base_revision's
+    # producer's 100) as the history cutoff would wrongly skip client-c's op from OT and
+    # delete the wrong character from "Xab". The fix must transform against it regardless
+    # of its lamport_ts, since it was persisted after base_revision.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: 1 }, { delete: 1 } ], ref_revision: base_revision }, lamport_ts: 101, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    object = BoardObject.find(object_id)
+    expect(object.text_crdt.fetch("text")).to eq("Xa")
+  end
+
+  it "rejects a retried text_crdt op whose ref_revision differs from what was recorded" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "ab" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: base_revision }, lamport_ts: 11, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    # Same client_id/lamport_ts/ops as above, but a different ref_revision means the client
+    # is asking to transform against a different base state — must not silently replay the
+    # previously stored result.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: base_revision + 1 }, lamport_ts: 11, client_id: "client-a")
+    expect(response).to have_http_status(:conflict)
+
+    expect(ObjectOp.where(object_id:, property: "text_crdt", client_id: "client-a", lamport_ts: 11).count).to eq(1)
+  end
+
+  it "rejects a ref_revision so far behind it exceeds the OT history limit" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "a" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    current_ref = base_revision
+    (1..(ObjectsController::MAX_OT_HISTORY_LIMIT + 1)).each do |i|
+      apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { retain: i }, { insert: "b" } ], ref_revision: current_ref }, lamport_ts: i + 1, client_id: "client-b")
+      expect(response).to have_http_status(:ok)
+      current_ref = JSON.parse(response.body).fetch("value").fetch("revision")
+    end
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: base_revision }, lamport_ts: 2, client_id: "client-a")
+    expect(response).to have_http_status(:conflict)
+    body = JSON.parse(response.body)
+    expect(body.fetch("error")).to match(/ref_revision/)
+    expect(body.fetch("resyncRequired")).to be(true)
+  end
+
+  it "keeps distinct attributes on adjacent inserts instead of merging them away during OT" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "xy" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-b appends at the very end, persisted after base_revision, so client-a's next
+    # op below must be transformed against it.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 2 }, { insert: "Z" } ], ref_revision: base_revision },
+      lamport_ts: 11, client_id: "client-b"
+    )
+    expect(response).to have_http_status(:ok)
+
+    # client-a inserts a bold 'a' followed by an italic 'b' at the very start, referencing
+    # the same base revision. Transforming this against client-b's trailing append must not
+    # collapse the two adjacent inserts into one merged insert that drops the italic 'b'
+    # attributes.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: {
+        ops: [
+          { insert: "a", attributes: { bold: true } },
+          { insert: "b", attributes: { italic: true } },
+          { retain: 2 }
+        ],
+        ref_revision: base_revision
+      },
+      lamport_ts: 11, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    recorded_ops = ObjectOp.find_by!(object_id:, property: "text_crdt", client_id: "client-a", lamport_ts: 11).value.fetch("ops")
+    inserts = recorded_ops.select { |op| op["insert"].present? }
+    expect(inserts.length).to eq(2)
+    expect(inserts[0]).to include("insert" => "a", "attributes" => { "bold" => true })
+    expect(inserts[1]).to include("insert" => "b", "attributes" => { "italic" => true })
   end
 
   it "rejects text_crdt documents that exceed the stored text limit" do

@@ -2,6 +2,7 @@ package ws
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +38,36 @@ func TestOpMarshalJSONPreservesValuePayload(t *testing.T) {
 
 	if string(raw) != `{"boardId":"board-1","objectId":"object-2","property":"text_crdt","value":{"ops":[{"insert":"hi"}]},"lamport_ts":13,"clientId":"client-a"}` {
 		t.Fatalf("MarshalJSON() = %s", raw)
+	}
+}
+
+func TestValidateRejectsOversizedObjectAndClientIDs(t *testing.T) {
+	base := Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "geometry",
+		Value:     json.RawMessage(`{"x":1}`),
+		LamportTS: 1,
+		ClientID:  "client-1",
+	}
+
+	oversizedObjectID := base
+	oversizedObjectID.ObjectID = strings.Repeat("o", MaxObjectIDBytes+1)
+	if err := oversizedObjectID.Validate(""); err == nil {
+		t.Fatal("Validate() error = nil, want an error for an objectId exceeding MaxObjectIDBytes")
+	}
+
+	oversizedClientID := base
+	oversizedClientID.ClientID = strings.Repeat("c", MaxClientIDBytes+1)
+	if err := oversizedClientID.Validate(""); err == nil {
+		t.Fatal("Validate() error = nil, want an error for a clientId exceeding MaxClientIDBytes")
+	}
+
+	// Values right at the limit must still be accepted.
+	atLimit := base
+	atLimit.ObjectID = strings.Repeat("o", MaxObjectIDBytes)
+	atLimit.ClientID = strings.Repeat("c", MaxClientIDBytes)
+	if err := atLimit.Validate(""); err != nil {
+		t.Fatalf("Validate() error = %v, want nil for objectId/clientId exactly at the limit", err)
 	}
 }

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_24_160000) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
@@ -88,6 +88,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.string "client_id", null: false
     t.index ["board_id"], name: "index_object_ops_on_board_id"
     t.index ["object_id", "client_id", "lamport_ts"], name: "index_object_ops_on_object_id_and_client_id_and_lamport_ts", unique: true
+    t.index ["object_id", "property", "id"], name: "index_object_ops_on_object_id_and_property_and_id"
     t.index ["object_id"], name: "index_object_ops_on_object_id"
     t.index ["user_id"], name: "index_object_ops_on_user_id"
   end
@@ -105,6 +106,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_20_230735) do
     t.jsonb "text_crdt", default: {}, null: false
     t.bigint "parent_frame_id"
     t.datetime "deleted_at"
+    t.bigint "text_crdt_revision", default: 0, null: false
     t.index ["board_id"], name: "index_objects_on_board_id"
     t.index ["color_id"], name: "index_objects_on_color_id"
     t.index ["deleted_at"], name: "index_objects_on_deleted_at"

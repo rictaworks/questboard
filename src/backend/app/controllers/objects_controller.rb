@@ -6,6 +6,7 @@ class ObjectsController < ApplicationController
   class InvalidOpValueError < StandardError; end
   class ImplausibleLamportJumpError < StandardError; end
   class ReservedClientIdError < StandardError; end
+  class OutdatedReferenceError < StandardError; end
 
   OP_PROPERTY_ACTIONS = {
     "geometry" => :edit_object,
@@ -13,6 +14,8 @@ class ObjectsController < ApplicationController
     "deleted_at" => :delete_object,
     "text_crdt" => :edit_object
   }.freeze
+
+  MAX_OT_HISTORY_LIMIT = 100
 
   # lamport_ts is a client-generated Lamport logical counter (not a wall-clock timestamp),
   # normally advancing by roughly 1 per local causal edit. A single op is never expected to
@@ -191,7 +194,24 @@ class ObjectsController < ApplicationController
 
       existing = ObjectOp.find_by(object_id: object.id, client_id:, lamport_ts:)
       if existing
-        if existing.property != property || existing.value != incoming_value
+        is_conflict = false
+        if existing.property != property
+          is_conflict = true
+        elsif property == "text_crdt"
+          stored_orig_ops = existing.value["original_ops"] || existing.value["ops"]
+          incoming_ops = incoming_value["ops"] || incoming_value[:ops]
+          stored_ref_revision = existing.value["ref_revision"]
+          incoming_ref_revision = incoming_value["ref_revision"] || incoming_value[:ref_revision]
+          # Same client_id/lamport_ts/ops but a different ref_revision means the client
+          # transformed against a different base state, so the transform result recorded
+          # under this key is no longer equivalent to what the retry actually asked for —
+          # treat it as a genuine conflict rather than replaying the stale stored result.
+          is_conflict = (stored_orig_ops != incoming_ops) || (stored_ref_revision != incoming_ref_revision)
+        else
+          is_conflict = (existing.value != incoming_value)
+        end
+
+        if is_conflict
           raise ConflictingOpError, "an operation with the same client_id/lamport_ts but a different property or value was already recorded"
         end
 
@@ -209,17 +229,27 @@ class ObjectsController < ApplicationController
           end
         end
 
+        actual_value = incoming_value
+        if property == "text_crdt"
+          transformed_ops = transform_text_crdt_ops(object.id, incoming_value, client_id)
+          actual_value = {
+            "ops" => transformed_ops,
+            "ref_revision" => incoming_value["ref_revision"] || incoming_value[:ref_revision],
+            "original_ops" => incoming_value["ops"] || incoming_value[:ops]
+          }
+        end
+
         confirmed_op = ObjectOp.create!(
           board: object.board,
           board_object: object,
           user: current_user,
           property:,
-          value: incoming_value,
+          value: actual_value,
           lamport_ts:,
           client_id:
         )
 
-        apply_mutation_for!(object, property, incoming_value)
+        apply_mutation_for!(object, property, actual_value, client_id, lamport_ts, revision: confirmed_op.id)
       end
     end
 
@@ -240,9 +270,10 @@ class ObjectsController < ApplicationController
     # ordinary idempotent-duplicate path above — never the object's current aggregate
     # state, which may already reflect a different, newer op.
     render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:))
-  rescue StaleOpError, ConflictingOpError, DeletedObjectEditError => e
+  rescue StaleOpError, ConflictingOpError, DeletedObjectEditError, OutdatedReferenceError => e
     payload = { error: e.message }
     payload[:restoreSuggested] = true if e.is_a?(DeletedObjectEditError)
+    payload[:resyncRequired] = true if e.is_a?(OutdatedReferenceError)
     render json: payload, status: :conflict
   end
 
@@ -343,6 +374,13 @@ class ObjectsController < ApplicationController
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
       textCrdt: object.text_crdt,
+      # The revision a client must echo back as ref_revision on its first text_crdt op
+      # after loading this snapshot — 0 means no text_crdt history exists yet, which
+      # transform_text_crdt_ops treats the same as an absent ref_revision. This reads the
+      # object row's own persisted column (updated atomically with text_crdt in the same
+      # transaction, see apply_mutation_for!) rather than a separate query, so the body and
+      # revision returned here can never be from two different points in time.
+      textCrdtRevision: object.text_crdt_revision,
       deletedAt: object.deleted_at&.iso8601,
       locked: lock.present?,
       lockedByUserId: lock&.locked_by,
@@ -356,9 +394,21 @@ class ObjectsController < ApplicationController
   # current aggregate state, which can already reflect a different, newer op by the time
   # this renders (e.g. for a retried/duplicate op).
   def serialize_op(object_op)
+    val = object_op.value
+    if object_op.property == "text_crdt" && val.is_a?(Hash)
+      # "revision" is this op's own id (the server-assigned, persistence-order position) —
+      # the client stores it and sends it back as ref_revision on its next text_crdt op, so
+      # the server can determine what happened after this client last observed the
+      # document (see transform_text_crdt_ops).
+      val = {
+        "ops" => val["ops"],
+        "ref_revision" => val["ref_revision"],
+        "revision" => object_op.id
+      }.compact
+    end
     {
       property: object_op.property,
-      value: object_op.value,
+      value: val,
       lamportTs: object_op.lamport_ts,
       clientId: object_op.client_id
     }
@@ -452,7 +502,7 @@ class ObjectsController < ApplicationController
   # Applies property's mutation using an already-built value (as produced by
   # op_value_for_storage or a legacy endpoint's own params), so this is shared between
   # apply_op and record_and_apply_legacy_op! without re-reading request params twice.
-  def apply_mutation_for!(object, property, value)
+  def apply_mutation_for!(object, property, value, client_id = nil, lamport_ts = nil, revision: nil)
     case property
     when "geometry"
       object.update!(geometry: object.geometry.merge(value))
@@ -461,7 +511,12 @@ class ObjectsController < ApplicationController
     when "deleted_at"
       object.update!(deleted_at: Time.current)
     when "text_crdt"
-      object.update!(text_crdt: merge_text_crdt_state(object.text_crdt, value))
+      # text_crdt and text_crdt_revision are updated together in this single call (itself
+      # inside object.with_lock's transaction) so a reader can never observe one without
+      # the matching other — computing the revision separately at read time would let a
+      # concurrent writer land in between, pairing a stale body with a newer revision (or
+      # vice versa) and silently corrupting the next OT pass (see PR #55 review).
+      object.update!(text_crdt: merge_text_crdt_state(object.text_crdt, value), text_crdt_revision: revision)
     end
   end
 
@@ -481,12 +536,18 @@ class ObjectsController < ApplicationController
       raise InvalidOpValueError, "text_crdt snapshots must not include text"
     end
 
+    ref_revision = normalized_value["ref_revision"] || normalized_value[:ref_revision]
+    if ref_revision.present? && !ref_revision.is_a?(Integer)
+      raise InvalidOpValueError, "ref_revision must be an integer"
+    end
+
     ops = normalized_value.fetch("ops") { normalized_value[:ops] }
     raise InvalidOpValueError, "text_crdt must include ops" unless ops.is_a?(Array) && ops.present?
     raise InvalidOpValueError, "text_crdt ops must not exceed #{MAX_TEXT_CRDT_OPS}" if ops.length > MAX_TEXT_CRDT_OPS
 
     normalized_value = normalized_value.stringify_keys
     normalized_value["ops"] = ops.map { |op| validate_text_crdt_op!(op) }
+    normalized_value["ref_revision"] = ref_revision if ref_revision.present?
     normalized_value
   end
 
@@ -610,7 +671,7 @@ class ObjectsController < ApplicationController
         client_id: LEGACY_OP_CLIENT_ID
       )
 
-      apply_mutation_for!(object, property, value)
+      apply_mutation_for!(object, property, value, LEGACY_OP_CLIENT_ID, lamport_ts)
     end
 
     # Publish outside the row lock (this is network I/O, not something that should hold a
@@ -630,5 +691,204 @@ class ObjectsController < ApplicationController
 
   def sync_op_relay
     @sync_op_relay ||= SyncOpRelay.new
+  end
+
+  # ref_revision is the server-assigned, persistence-order ObjectOp#id the client last saw
+  # for this object's text_crdt property (returned as "revision" in a prior apply_op
+  # response) — not a client-generated lamport_ts. lamport_ts is a per-client logical
+  # counter, so comparing it across clients cannot establish a global history position: a
+  # low-numbered op from a client that has advanced far ahead locally would be wrongly
+  # treated as "already seen" and skipped from OT, corrupting the merge (see PR #55 review).
+  # id is the table's auto-increment primary key, strictly increasing in insertion/commit
+  # order, so "id > ref_revision" reliably means "everything recorded after what the client
+  # last saw", regardless of which client produced it.
+  def transform_text_crdt_ops(object_id, value, client_id)
+    ops = value["ops"] || value[:ops]
+    ref_revision = value["ref_revision"] || value[:ref_revision]
+    # 0 is the dedicated "no history yet" baseline returned by serialize_object's
+    # textCrdtRevision — treat it the same as an absent ref_revision below.
+    ref_revision = nil if ref_revision == 0
+
+    if ref_revision.nil?
+      # A client may only skip OT entirely when this is genuinely the first text_crdt op
+      # ever recorded for this object — otherwise it has no way to know whether another
+      # client's edit landed first, and applying its ops blindly to whatever the object's
+      # live state has become by now would silently corrupt the document.
+      return ops unless ObjectOp.exists?(object_id: object_id, property: "text_crdt")
+
+      raise OutdatedReferenceError, "ref_revision is required once text_crdt history exists for this object"
+    end
+
+    # ref_revision must actually be one of this object's own text_crdt ObjectOp ids —
+    # otherwise a future/foreign/fabricated value would make the history query below
+    # return an empty or incomplete conflict set, skipping OT against edits that genuinely
+    # need to be transformed against.
+    unless ObjectOp.exists?(id: ref_revision, object_id: object_id, property: "text_crdt")
+      raise OutdatedReferenceError, "ref_revision #{ref_revision} does not refer to this object's text_crdt history"
+    end
+
+    conflicting_ops = ObjectOp.where(object_id: object_id, property: "text_crdt")
+                               .where("id > ?", ref_revision)
+                               .order(id: :asc)
+                               .limit(MAX_OT_HISTORY_LIMIT + 1)
+                               .to_a
+
+    if conflicting_ops.size > MAX_OT_HISTORY_LIMIT
+      raise OutdatedReferenceError, "ref_revision #{ref_revision} is too far behind (exceeds OT history limit of #{MAX_OT_HISTORY_LIMIT} ops)"
+    end
+
+    transformed_ops = ops
+    conflicting_ops.each do |conf_op|
+      conf_ops = conf_op.value.is_a?(Hash) ? (conf_op.value["ops"] || conf_op.value[:ops]) : nil
+      next unless conf_ops.is_a?(Array)
+
+      priority = client_id < conf_op.client_id
+      transformed_ops = TextOT.transform(transformed_ops, conf_ops, priority)
+    end
+
+    transformed_ops
+  end
+end
+
+class TextOT
+  def self.transform(a_ops, b_ops, priority)
+    a_idx = 0
+    b_idx = 0
+
+    a_op = a_ops[a_idx]
+    b_op = b_ops[b_idx]
+
+    a_rem = a_op ? clone_op(a_op) : nil
+    b_rem = b_op ? clone_op(b_op) : nil
+
+    transformed = []
+
+    while a_rem || b_rem
+      if !a_rem
+        break
+      end
+      if !b_rem
+        transformed << a_rem
+        a_idx += 1
+        a_rem = a_ops[a_idx] ? clone_op(a_ops[a_idx]) : nil
+        next
+      end
+
+      a_type = op_type(a_rem)
+      b_type = op_type(b_rem)
+
+      a_len = op_len(a_rem)
+      b_len = op_len(b_rem)
+
+      if a_type == :insert && b_type == :insert
+        if priority
+          transformed << clone_op(a_rem)
+          a_idx += 1
+          a_rem = a_ops[a_idx] ? clone_op(a_ops[a_idx]) : nil
+        else
+          transformed << { "retain" => b_len }
+          b_idx += 1
+          b_rem = b_ops[b_idx] ? clone_op(b_ops[b_idx]) : nil
+        end
+      elsif a_type == :insert
+        transformed << clone_op(a_rem)
+        a_idx += 1
+        a_rem = a_ops[a_idx] ? clone_op(a_ops[a_idx]) : nil
+      elsif b_type == :insert
+        transformed << { "retain" => b_len }
+        b_idx += 1
+        b_rem = b_ops[b_idx] ? clone_op(b_ops[b_idx]) : nil
+      else
+        min_len = [ a_len, b_len ].min
+
+        if a_type == :retain && b_type == :retain
+          transformed << { "retain" => min_len }
+        elsif a_type == :delete && b_type == :delete
+          # no-op
+        elsif a_type == :delete && b_type == :retain
+          transformed << { "delete" => min_len }
+        elsif a_type == :retain && b_type == :delete
+          # no-op
+        end
+
+        consume!(a_rem, min_len)
+        consume!(b_rem, min_len)
+
+        if op_len(a_rem) == 0
+          a_idx += 1
+          a_rem = a_ops[a_idx] ? clone_op(a_ops[a_idx]) : nil
+        end
+        if op_len(b_rem) == 0
+          b_idx += 1
+          b_rem = b_ops[b_idx] ? clone_op(b_ops[b_idx]) : nil
+        end
+      end
+    end
+
+    normalize(transformed)
+  end
+
+  private
+
+  def self.op_type(op)
+    if op.key?("insert") || op.key?(:insert) then :insert
+    elsif op.key?("delete") || op.key?(:delete) then :delete
+    elsif op.key?("retain") || op.key?(:retain) then :retain
+    end
+  end
+
+  def self.op_len(op)
+    if op.key?("insert") || op.key?(:insert) then (op["insert"] || op[:insert]).length
+    elsif op.key?("delete") || op.key?(:delete) then (op["delete"] || op[:delete]).to_i
+    elsif op.key?("retain") || op.key?(:retain) then (op["retain"] || op[:retain]).to_i
+    end
+  end
+
+  def self.op_attributes(op)
+    op["attributes"] || op[:attributes]
+  end
+
+  def self.clone_op(op)
+    op.dup.transform_keys(&:to_s)
+  end
+
+  def self.consume!(op, len)
+    if op.key?("insert")
+      op["insert"] = op["insert"][len..]
+    elsif op.key?("delete")
+      op["delete"] = op["delete"].to_i - len
+    elsif op.key?("retain")
+      op["retain"] = op["retain"].to_i - len
+    end
+  end
+
+  def self.normalize(ops)
+    result = []
+    ops.each do |op|
+      next if op_len(op) == 0
+
+      last = result.last
+      # Only merge adjacent ops of the same type when their attributes are also identical
+      # (including both being absent) — otherwise a later op's formatting (e.g. italic on
+      # one insert vs. bold on the next) is silently discarded by folding it into the prior
+      # op's attributes (see PR #55 review).
+      if last && op_type(last) == op_type(op) && op_attributes(last) == op_attributes(op)
+        if op_type(op) == :insert
+          last["insert"] += op["insert"]
+        elsif op_type(op) == :delete
+          last["delete"] += op["delete"]
+        elsif op_type(op) == :retain
+          last["retain"] += op["retain"]
+        end
+      else
+        result << op
+      end
+    end
+
+    while result.last && op_type(result.last) == :retain
+      result.pop
+    end
+
+    result
   end
 end

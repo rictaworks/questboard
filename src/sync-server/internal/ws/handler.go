@@ -55,10 +55,25 @@ var ErrDeletedObjectEdit = errors.New("object has been deleted")
 // it must never be silently swallowed.
 var ErrUnsupportedOpProperty = errors.New("unsupported op property")
 
+// ErrResyncRequired indicates Rails rejected the operation because its reference revision
+// is missing, stale, or does not belong to the target object's history — the client must
+// refetch the object's current snapshot/revision before retrying. This must be surfaced to
+// the originating client distinctly from ErrStaleOp: a stale/duplicate op is silently
+// dropped because a newer confirmed value already superseded it, but a resync-required
+// rejection means the client's local state may already be diverged and it needs to recover
+// (see PR #55 review).
+var ErrResyncRequired = errors.New("operation rejected: resync required")
+
 type DeletedObjectEditPayload struct {
 	ObjectID         string `json:"objectId"`
 	Error            string `json:"error"`
 	RestoreSuggested bool   `json:"restoreSuggested"`
+}
+
+type ResyncRequiredPayload struct {
+	ObjectID       string `json:"objectId"`
+	Error          string `json:"error"`
+	ResyncRequired bool   `json:"resyncRequired"`
 }
 
 type AuthContext struct {
@@ -257,10 +272,14 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 		var errPayload struct {
 			Error            string `json:"error"`
 			RestoreSuggested bool   `json:"restoreSuggested"`
+			ResyncRequired   bool   `json:"resyncRequired"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&errPayload); err == nil {
 			if errPayload.RestoreSuggested {
 				return Op{}, ErrDeletedObjectEdit
+			}
+			if errPayload.ResyncRequired {
+				return Op{}, ErrResyncRequired
 			}
 		}
 		return Op{}, ErrStaleOp
@@ -302,17 +321,18 @@ func (errorStore) SaveConfirmedOp(context.Context, Op) (Op, error) {
 }
 
 type Handler struct {
-	router        *sharding.Router
-	upgrader      websocket.Upgrader
-	originAllowed func(*http.Request) bool
-	readLimit     int64
-	hub           *Hub
-	metrics       *Metrics
-	authenticator Authenticator
-	authorizer    Authorizer
-	store         Store
-	relay         Relay
-	nodeID        string
+	router          *sharding.Router
+	upgrader        websocket.Upgrader
+	originAllowed   func(*http.Request) bool
+	readLimit       int64
+	hub             *Hub
+	metrics         *Metrics
+	authenticator   Authenticator
+	authorizer      Authorizer
+	store           Store
+	relay           Relay
+	nodeID          string
+	presenceLimiter *RateLimiter
 
 	mu            sync.Mutex
 	closing       bool
@@ -329,16 +349,17 @@ func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: originChecker,
 		},
-		originAllowed: originChecker,
-		readLimit:     MaxMessageSize,
-		hub:           NewHub(metrics),
-		metrics:       metrics,
-		authenticator: denyAllAuthenticator{},
-		authorizer:    denyAllAuthorizer{},
-		store:         errorStore{},
-		closeCh:       make(chan struct{}),
-		subscriptions: make(map[string]context.CancelFunc),
-		nodeID:        "sync-server-local",
+		originAllowed:   originChecker,
+		readLimit:       MaxMessageSize,
+		hub:             NewHub(metrics),
+		metrics:         metrics,
+		authenticator:   denyAllAuthenticator{},
+		authorizer:      denyAllAuthorizer{},
+		store:           errorStore{},
+		presenceLimiter: NewRateLimiter(),
+		closeCh:         make(chan struct{}),
+		subscriptions:   make(map[string]context.CancelFunc),
+		nodeID:          "sync-server-local",
 	}
 }
 
@@ -594,9 +615,13 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 			}
 
 			if op.Property == "presence" {
-				if err := validatePresenceValue(op.Value); err != nil {
-					client.requestClose(websocket.ClosePolicyViolation, err.Error())
-					return
+				// Charge the rate limiter for the full wire message (raw), not just
+				// op.Value — objectId/clientId sit outside Value and are broadcast/relayed
+				// as part of the same envelope, so billing only op.Value would let an
+				// attacker inflate those fields (up to MaxObjectIDBytes/MaxClientIDBytes
+				// each) without it counting against the byte budget (see PR #55 review).
+				if !h.presenceLimiter.Allow(boardID, authCtx.UserID, len(raw)) {
+					continue
 				}
 
 				now := time.Now()
@@ -628,6 +653,27 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 						ObjectID:         op.ObjectID,
 						Error:            "Object has been deleted; restore it before editing",
 						RestoreSuggested: true,
+					}
+					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
+						select {
+						case client.send <- payload:
+						default:
+							client.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+							return
+						}
+					}
+					continue
+				}
+				if errors.Is(err, ErrResyncRequired) {
+					// Unlike ErrStaleOp, this isn't "a newer op already won" — the
+					// client's reference revision was missing, stale, or invalid, so its
+					// local state may already be diverged from the server. Tell the
+					// originating client explicitly instead of silently dropping the op,
+					// so it knows to refetch the object before retrying.
+					errPayload := ResyncRequiredPayload{
+						ObjectID:       op.ObjectID,
+						Error:          "operation rejected: resync required before retrying",
+						ResyncRequired: true,
 					}
 					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
 						select {
@@ -785,53 +831,6 @@ func writeClose(conn *websocket.Conn, code int, text string) error {
 	_ = conn.SetWriteDeadline(time.Now().Add(WriteWait))
 	message := websocket.FormatCloseMessage(code, text)
 	return conn.WriteMessage(websocket.CloseMessage, message)
-}
-
-func validatePresenceValue(raw json.RawMessage) error {
-	if len(raw) == 0 {
-		return fmt.Errorf("presence value is required")
-	}
-	if len(raw) > MaxPresenceValueBytes {
-		return fmt.Errorf("presence value must not exceed %d bytes", MaxPresenceValueBytes)
-	}
-
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return fmt.Errorf("presence value must be an object: %w", err)
-	}
-	if len(payload) != 1 {
-		return fmt.Errorf("presence value must contain only cursor")
-	}
-
-	cursorRaw, ok := payload["cursor"]
-	if !ok {
-		return fmt.Errorf("presence value must include cursor")
-	}
-
-	var cursor map[string]json.RawMessage
-	if err := json.Unmarshal(cursorRaw, &cursor); err != nil {
-		return fmt.Errorf("presence cursor must be an object: %w", err)
-	}
-	if len(cursor) != 2 {
-		return fmt.Errorf("presence cursor must contain only x and y")
-	}
-
-	if _, ok := cursor["x"]; !ok {
-		return fmt.Errorf("presence cursor must include x")
-	}
-	if _, ok := cursor["y"]; !ok {
-		return fmt.Errorf("presence cursor must include y")
-	}
-
-	var x, y float64
-	if err := json.Unmarshal(cursor["x"], &x); err != nil {
-		return fmt.Errorf("presence cursor.x must be numeric: %w", err)
-	}
-	if err := json.Unmarshal(cursor["y"], &y); err != nil {
-		return fmt.Errorf("presence cursor.y must be numeric: %w", err)
-	}
-
-	return nil
 }
 
 func newOriginChecker(allowedOrigins []string) func(*http.Request) bool {

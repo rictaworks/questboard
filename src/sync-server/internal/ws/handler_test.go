@@ -499,6 +499,19 @@ func TestPresenceOpsRejectOversizedOrMalformedPayloads(t *testing.T) {
 			name:    "rejects unsupported presence shape",
 			payload: `{"boardId":"board-presence","objectId":"object-1","property":"presence","value":{"cursor":{"x":10,"y":20,"z":30}},"lamport_ts":1,"clientId":"client-a"}`,
 		},
+		{
+			// objectId sits outside Value, so validatePresenceValue's byte limit never sees
+			// it — without its own cap, a client could inflate objectId to hundreds of KB
+			// while keeping Value tiny, amplifying every broadcast/relay fanout for free.
+			name: "rejects an oversized objectId",
+			payload: `{"boardId":"board-presence","objectId":"` + strings.Repeat("o", ws.MaxObjectIDBytes+1) +
+				`","property":"presence","value":{"cursor":{"x":10,"y":20}},"lamport_ts":1,"clientId":"client-a"}`,
+		},
+		{
+			name: "rejects an oversized clientId",
+			payload: `{"boardId":"board-presence","objectId":"object-1","property":"presence","value":{"cursor":{"x":10,"y":20}},"lamport_ts":1,"clientId":"` +
+				strings.Repeat("c", ws.MaxClientIDBytes+1) + `"}`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -553,6 +566,67 @@ func TestPresenceOpsRejectOversizedOrMalformedPayloads(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPresenceValidationAndRateLimiting(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(&presenceTrapStore{})
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-limiter"
+
+	t.Run("Invalid Structure", func(t *testing.T) {
+		conn := mustDialWebSocket(t, wsURL)
+		defer conn.Close()
+
+		invalidPresence := map[string]any{
+			"boardId":    "board-limiter",
+			"objectId":   "object-1",
+			"property":   "presence",
+			"value":      map[string]any{"garbage": "data"},
+			"lamport_ts": 1,
+			"clientId":   "client-a",
+		}
+
+		_ = conn.WriteJSON(invalidPresence)
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			t.Fatal("expected connection to close due to validation policy violation, but it remained open")
+		}
+	})
+
+	t.Run("Oversized Value", func(t *testing.T) {
+		conn := mustDialWebSocket(t, wsURL)
+		defer conn.Close()
+
+		oversizedPresence := map[string]any{
+			"boardId":    "board-limiter",
+			"objectId":   "object-1",
+			"property":   "presence",
+			"value":      map[string]any{"cursor": map[string]any{"x": 1, "y": 2}, "garbage": strings.Repeat("x", 300)},
+			"lamport_ts": 1,
+			"clientId":   "client-a",
+		}
+
+		_ = conn.WriteJSON(oversizedPresence)
+		_, _, err := conn.ReadMessage()
+		if err == nil {
+			t.Fatal("expected connection to close due to oversized presence payload, but it remained open")
+		}
+	})
 }
 
 func mustDialWebSocket(t *testing.T, wsURL string) *websocket.Conn {
@@ -647,6 +721,72 @@ type deletedObjectEditStore struct{}
 
 func (deletedObjectEditStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
 	return ws.Op{}, ws.ErrDeletedObjectEdit
+}
+
+type resyncRequiredStore struct{}
+
+func (resyncRequiredStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
+	return ws.Op{}, ws.ErrResyncRequired
+}
+
+// TestResyncRequiredSendsNotificationNotBroadcast verifies that a resync-required
+// rejection (distinct from an ordinary stale/duplicate op) is reported back to the
+// originating client instead of being silently dropped — Rails' resyncRequired flag must
+// survive translation into a WebSocket message so the client knows to refetch the object's
+// current snapshot/revision before retrying (see PR #55 review).
+func TestResyncRequiredSendsNotificationNotBroadcast(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(resyncRequiredStore{})
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-resync"
+	connA := mustDialWebSocket(t, wsURL)
+	defer connA.Close()
+	connB := mustDialWebSocket(t, wsURL)
+	defer connB.Close()
+
+	op := map[string]any{
+		"boardId":    "board-resync",
+		"objectId":   "object-1",
+		"property":   "text_crdt",
+		"value":      map[string]any{"ops": []any{map[string]any{"insert": "hi"}}},
+		"lamport_ts": 1,
+		"clientId":   "client-a",
+	}
+	mustWriteJSON(t, connA, op)
+
+	// connB (another connected client) must never see a broadcast for a rejected op.
+	if err := connB.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+	if _, _, err := connB.ReadMessage(); err == nil {
+		t.Fatal("connB received a message for a resync-required op, want no broadcast")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("connB read error = %v, want a read timeout", err)
+	}
+
+	// connA (the sender) must receive a dedicated resync-required notification and stay
+	// connected — this is recoverable client-side state, not a protocol violation.
+	got := mustReadJSONMessage(t, connA)
+	assertJSONField(t, got, "objectId", "object-1")
+
+	val, ok := got["resyncRequired"].(bool)
+	if !ok || !val {
+		t.Fatalf("expected resyncRequired to be true, got %v", got["resyncRequired"])
+	}
 }
 
 func TestDeletedObjectEditSendsRecoveryNotification(t *testing.T) {
