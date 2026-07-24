@@ -42,7 +42,7 @@ func TestRailsStoreForwardsRailsSessionCookieAndOpPayload(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	if _, err := store.SaveConfirmedOp(ctx, op); err != nil {
+	if _, _, err := store.SaveConfirmedOp(ctx, op); err != nil {
 		t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
 	}
 
@@ -130,7 +130,7 @@ func TestRailsStoreReturnsPersistedOpNotClientSubmittedOp(t *testing.T) {
 				ClientID:  tt.clientID,
 			}
 
-			persisted, err := store.SaveConfirmedOp(context.Background(), op)
+			persisted, _, err := store.SaveConfirmedOp(context.Background(), op)
 			if err != nil {
 				t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
 			}
@@ -176,7 +176,7 @@ func TestRailsStoreTranslatesConflictIntoErrStaleOp(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrStaleOp) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrStaleOp", err)
 	}
@@ -200,7 +200,7 @@ func TestRailsStoreReturnsErrorForUnexpectedStatus(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if err == nil {
 		t.Fatal("SaveConfirmedOp() error = nil, want non-nil for a 500 response")
 	}
@@ -230,7 +230,7 @@ func TestRailsStoreRejectsUnsupportedProperties(t *testing.T) {
 	}
 
 	// Transient presence updates are never persisted through Rails.
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrUnsupportedOpProperty) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrUnsupportedOpProperty", err)
 	}
@@ -262,9 +262,12 @@ func TestRailsStoreAcceptsTextCRDTOps(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	persisted, err := store.SaveConfirmedOp(context.Background(), op)
+	persisted, duplicate, err := store.SaveConfirmedOp(context.Background(), op)
 	if err != nil {
 		t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
+	}
+	if duplicate {
+		t.Fatal("SaveConfirmedOp() duplicate = true, want false for a freshly-recorded op")
 	}
 
 	if gotBody["property"] != "text_crdt" {
@@ -298,7 +301,7 @@ func TestRailsStoreTranslatesResyncRequiredConflictIntoErrResyncRequired(t *test
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrResyncRequired) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrResyncRequired", err)
 	}
@@ -327,7 +330,7 @@ func TestRailsStoreTranslatesConflictIntoErrDeletedObjectEdit(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrDeletedObjectEdit) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrDeletedObjectEdit", err)
 	}

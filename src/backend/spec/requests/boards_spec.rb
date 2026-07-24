@@ -75,7 +75,7 @@ RSpec.describe "Boards", type: :request do
       object_type:,
       color_palette: color,
       geometry: { "x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0 },
-      text_crdt: { "text" => "Hello" },
+      text_crdt: { "ops" => [ { "insert" => "Hello" } ] },
       deleted_at: nil
     )
 
@@ -94,7 +94,7 @@ RSpec.describe "Boards", type: :request do
         "objectTypeCode" => "frame",
         "colorId" => color.id,
         "geometry" => include("x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0),
-        "textCrdt" => include("text" => "Hello"),
+        "textCrdt" => include("ops" => [ { "insert" => "Hello" } ]),
         "textCrdtRevision" => 0,
         "locked" => false
       )
@@ -145,7 +145,8 @@ RSpec.describe "Boards", type: :request do
       client_id: "client-a"
     }, as: :json
     expect(response).to have_http_status(:ok)
-    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello world" })
+    text_crdt = BoardObject.find(object_id).text_crdt
+    expect(text_crdt.fetch("ops").sum("") { |op| op.fetch("insert") }).to eq("Hello world")
   end
 
   it "joins a board through the share token with the selected invite role" do

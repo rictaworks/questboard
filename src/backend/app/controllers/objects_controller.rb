@@ -29,6 +29,13 @@ class ObjectsController < ApplicationController
   MAX_TEXT_CRDT_TEXT_BYTES = 64 * 1024
   MAX_TEXT_CRDT_ATTRIBUTES_BYTES = 2 * 1024
   MAX_TEXT_CRDT_ATTRIBUTES_DEPTH = 4
+  # MAX_TEXT_CRDT_TEXT_BYTES only bounds the concatenated insert text, not the persisted
+  # document as a whole — splitting that same text into many single-character runs, each
+  # carrying its own (individually valid) MAX_TEXT_CRDT_ATTRIBUTES_BYTES-sized attributes,
+  # would otherwise let an editor blow the stored document up to tens of MB despite every
+  # individual op passing validation (see PR #55 review). This bounds the composed
+  # document's own serialized size directly, regardless of how the text is split into runs.
+  MAX_TEXT_CRDT_DOCUMENT_BYTES = 256 * 1024
 
   # The move/resize/rotate/recolor/destroy endpoints predate object_ops and have no
   # client-generated Lamport counter of their own. Recording them under this fixed
@@ -186,6 +193,7 @@ class ObjectsController < ApplicationController
     incoming_value = op_value_for_storage(property)
 
     confirmed_op = nil
+    duplicate = false
 
     object.with_lock do
       if property != "deleted_at" && object.deleted_at.present?
@@ -216,6 +224,7 @@ class ObjectsController < ApplicationController
         end
 
         confirmed_op = existing
+        duplicate = true
       else
         if property != "text_crdt"
           latest = ObjectOp.where(object_id: object.id, property:).order(lamport_ts: :desc, client_id: :asc).first
@@ -253,7 +262,7 @@ class ObjectsController < ApplicationController
       end
     end
 
-    render json: serialize_op(confirmed_op)
+    render json: serialize_op(confirmed_op, duplicate:)
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
@@ -269,7 +278,7 @@ class ObjectsController < ApplicationController
     # lamport_ts). Echo back that record's own value/lamport_ts/client_id, same as the
     # ordinary idempotent-duplicate path above — never the object's current aggregate
     # state, which may already reflect a different, newer op.
-    render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:))
+    render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:), duplicate: true)
   rescue StaleOpError, ConflictingOpError, DeletedObjectEditError, OutdatedReferenceError => e
     payload = { error: e.message }
     payload[:restoreSuggested] = true if e.is_a?(DeletedObjectEditError)
@@ -393,7 +402,14 @@ class ObjectsController < ApplicationController
   # client_id), built from the op that was actually recorded — never from the object's
   # current aggregate state, which can already reflect a different, newer op by the time
   # this renders (e.g. for a retried/duplicate op).
-  def serialize_op(object_op)
+  #
+  # duplicate is true when confirmed_op was already recorded before this request (a retried
+  # op, or one that lost an insert race) rather than newly created. text_crdt is a diff, not
+  # an idempotent absolute value — the sync-server Handler must never broadcast/relay a
+  # duplicate text_crdt op, since every other connected client already applied that exact
+  # diff the first time, and re-applying it would double the insert/delete against their
+  # live document and diverge from Rails' persisted state (see PR #55 review).
+  def serialize_op(object_op, duplicate: false)
     val = object_op.value
     if object_op.property == "text_crdt" && val.is_a?(Hash)
       # "revision" is this op's own id (the server-assigned, persistence-order position) —
@@ -410,7 +426,8 @@ class ObjectsController < ApplicationController
       property: object_op.property,
       value: val,
       lamportTs: object_op.lamport_ts,
-      clientId: object_op.client_id
+      clientId: object_op.client_id,
+      duplicate:
     }
   end
 
@@ -572,55 +589,161 @@ class ObjectsController < ApplicationController
     if normalized_op.key?("insert") && !normalized_op["insert"].is_a?(String)
       raise InvalidOpValueError, "text_crdt insert must be a string"
     end
-    if normalized_op.key?("delete") && !normalized_op["delete"].is_a?(Integer)
-      raise InvalidOpValueError, "text_crdt delete must be an integer"
+    if normalized_op.key?("delete")
+      raise InvalidOpValueError, "text_crdt delete must be an integer" unless normalized_op["delete"].is_a?(Integer)
+      # Zero is meaningless (a no-op that should simply be omitted) and negative values
+      # exploit Ruby's negative String#slice semantics to shift the cursor backwards,
+      # deleting characters the client never intended to touch (see PR #55 review).
+      raise InvalidOpValueError, "text_crdt delete must be a positive integer" unless normalized_op["delete"].positive?
     end
-    if normalized_op.key?("retain") && !normalized_op["retain"].is_a?(Integer)
-      raise InvalidOpValueError, "text_crdt retain must be an integer"
+    if normalized_op.key?("retain")
+      raise InvalidOpValueError, "text_crdt retain must be an integer" unless normalized_op["retain"].is_a?(Integer)
+      raise InvalidOpValueError, "text_crdt retain must be a positive integer" unless normalized_op["retain"].positive?
     end
-    if normalized_op["attributes"].present? && !normalized_op["attributes"].is_a?(Hash)
+    # key?/nil? (not present?/blank?) — present? is false for "", [], and false, which would
+    # otherwise let those slip past this check unrejected and later reach
+    # merge_text_crdt_attributes' Hash#merge call, raising a bare TypeError (500) instead of
+    # a clean 422 here (see PR #55 review). nil is still fine: it means "no attributes".
+    if normalized_op.key?("attributes") && !normalized_op["attributes"].nil? && !normalized_op["attributes"].is_a?(Hash)
       raise InvalidOpValueError, "text_crdt attributes must be an object"
     end
     if normalized_op["insert"].is_a?(String) && normalized_op["insert"].bytesize > MAX_TEXT_CRDT_INSERT_BYTES
       raise InvalidOpValueError, "text_crdt insert must not exceed #{MAX_TEXT_CRDT_INSERT_BYTES} bytes"
     end
-    validate_text_crdt_attributes!(normalized_op["attributes"]) if normalized_op["attributes"].present?
+    validate_text_crdt_attributes!(normalized_op["attributes"])
 
     normalized_op
   end
 
   def merge_text_crdt_state(existing_state, incoming_value)
     existing_state = existing_state.is_a?(Hash) ? existing_state : {}
-    existing_text = existing_state["text"].to_s
-    incoming_text = apply_text_crdt_delta(existing_text.dup, incoming_value.fetch("ops"))
-    raise InvalidOpValueError, "text_crdt text must not exceed #{MAX_TEXT_CRDT_TEXT_BYTES} bytes" if incoming_text.bytesize > MAX_TEXT_CRDT_TEXT_BYTES
+    existing_ops = existing_state["ops"].is_a?(Array) ? existing_state["ops"] : []
+    composed_ops = compose_text_crdt_ops(existing_ops, incoming_value.fetch("ops"))
 
-    { "text" => incoming_text }
+    total_bytes = composed_ops.sum { |op| op["insert"].to_s.bytesize }
+    raise InvalidOpValueError, "text_crdt text must not exceed #{MAX_TEXT_CRDT_TEXT_BYTES} bytes" if total_bytes > MAX_TEXT_CRDT_TEXT_BYTES
+
+    # Bounds the *whole* persisted document (text plus every run's attributes combined),
+    # not just the concatenated text above — see MAX_TEXT_CRDT_DOCUMENT_BYTES.
+    document_bytes = composed_ops.to_json.bytesize
+    raise InvalidOpValueError, "text_crdt document must not exceed #{MAX_TEXT_CRDT_DOCUMENT_BYTES} bytes" if document_bytes > MAX_TEXT_CRDT_DOCUMENT_BYTES
+
+    { "ops" => composed_ops }
   end
 
-  def apply_text_crdt_delta(text, ops)
-    cursor = 0
-    result = +""
+  # Applies incoming_ops (an already OT-transformed text_crdt diff: insert/retain/delete,
+  # where retain/insert may carry attributes) onto doc_ops — the currently persisted
+  # document, itself an insert-only list of {"insert" => string, "attributes" => hash} runs
+  # — and returns the new persisted document as a normalized insert-only run list.
+  #
+  # This is a Delta "compose" (unlike TextOT.transform, which reconciles two *concurrent*
+  # diffs against each other, this applies a single diff directly onto the current
+  # document) and, unlike the old plain-string merge, it keeps each run's attributes intact
+  # instead of collapsing every run down to bare text — a reload or resync must see the same
+  # bold/italic/etc. formatting a still-connected client does (see PR #55 review).
+  #
+  # Lengths and slicing are UTF-16-code-unit-based (see Utf16Text) so retain/delete offsets
+  # from a browser client land on the same character Ruby does, even across the BMP/astral
+  # boundary. retain/delete are already validated to be positive integers (see
+  # validate_text_crdt_op!); reaching the end of doc_ops while incoming_ops still wants to
+  # retain/delete more is rejected outright rather than silently truncated.
+  def compose_text_crdt_ops(doc_ops, incoming_ops)
+    a_ops = doc_ops.map(&:dup)
+    b_ops = incoming_ops.map(&:dup)
 
-    ops.each do |op|
-      if op["retain"].present?
-        retain = op["retain"].to_i
-        result << text.slice(cursor, retain).to_s
-        cursor += retain
+    a_idx = 0
+    b_idx = 0
+    a_rem = a_ops[a_idx]
+    b_rem = b_ops[b_idx]
+    result = []
+
+    while a_rem || b_rem
+      if b_rem && b_rem["insert"]
+        result << { "insert" => b_rem["insert"], "attributes" => b_rem["attributes"] }.compact
+        b_idx += 1
+        b_rem = b_ops[b_idx]
         next
       end
 
-      if op["delete"].present?
-        cursor += op["delete"].to_i
+      if b_rem.nil?
+        result << { "insert" => a_rem["insert"], "attributes" => a_rem["attributes"] }.compact
+        a_idx += 1
+        a_rem = a_ops[a_idx]
         next
       end
 
-      if op["insert"].present?
-        result << op["insert"].to_s
+      if a_rem.nil?
+        raise InvalidOpValueError, "text_crdt op retains or deletes beyond the end of the document"
+      end
+
+      a_len = Utf16Text.length(a_rem["insert"])
+      b_len = b_rem["retain"] || b_rem["delete"]
+      min_len = [ a_len, b_len ].min
+
+      # min_len must land exactly on a character boundary within a_rem["insert"] — never
+      # inside a UTF-16 surrogate pair (an astral character like most emoji). Slicing at a
+      # mid-character offset would otherwise duplicate that character into both the
+      # retained/deleted piece *and* the remainder (see PR #55 review); a legitimate
+      # browser client operating on real cursor positions never produces such an offset, so
+      # this can only happen from a malformed or malicious op.
+      unless Utf16Text.valid_boundary?(a_rem["insert"], min_len)
+        raise InvalidOpValueError, "text_crdt op offset splits a UTF-16 surrogate pair"
+      end
+
+      if b_rem["retain"]
+        merged_attributes = merge_text_crdt_attributes(a_rem["attributes"], b_rem["attributes"])
+        result << { "insert" => Utf16Text.slice(a_rem["insert"], 0, min_len), "attributes" => merged_attributes }.compact
+      end
+      # b_rem["delete"]: this span of the document is removed — nothing appended to result.
+
+      if a_len > min_len
+        a_rem = a_rem.merge("insert" => Utf16Text.slice(a_rem["insert"], min_len))
+      else
+        a_idx += 1
+        a_rem = a_ops[a_idx]
+      end
+
+      if b_len > min_len
+        key = b_rem["retain"] ? "retain" : "delete"
+        b_rem = b_rem.merge(key => b_len - min_len)
+      else
+        b_idx += 1
+        b_rem = b_ops[b_idx]
       end
     end
 
-    result << text.slice(cursor..).to_s
+    normalize_text_crdt_document(result)
+  end
+
+  # A retain's attributes represent a formatting *change* over that span (e.g. "make this
+  # bold"), applied on top of whatever the span already had — nil/absent incoming attributes
+  # mean "no formatting change", not "clear formatting". Delta semantics use an explicit
+  # `nil` value on a key (e.g. {"bold" => nil}) to mean "clear this attribute" rather than
+  # "set it to null" — compact removes those keys after the merge so a resync doesn't leave
+  # a dead {"bold" => nil} behind once formatting was explicitly cleared (see PR #55
+  # review). The merged result is re-validated through the same bytesize/depth limits
+  # incoming attributes are already held to, so repeated small merges across many separate
+  # ops can't accumulate past those bounds.
+  def merge_text_crdt_attributes(base_attributes, incoming_attributes)
+    return base_attributes if incoming_attributes.blank?
+
+    merged = (base_attributes || {}).merge(incoming_attributes).compact.presence
+    validate_text_crdt_attributes!(merged) if merged
+    merged
+  end
+
+  def normalize_text_crdt_document(ops)
+    result = []
+    ops.each do |op|
+      next if op["insert"].nil? || op["insert"].empty?
+
+      last = result.last
+      if last && last["attributes"] == op["attributes"]
+        last["insert"] += op["insert"]
+      else
+        result << op.dup
+      end
+    end
     result
   end
 
@@ -750,6 +873,64 @@ class ObjectsController < ApplicationController
   end
 end
 
+# Browser clients measure/slice text_crdt string offsets as UTF-16 code units (JS string
+# semantics: `"😀".length === 2`), while Ruby's String#length/#slice operate on Unicode
+# codepoints (`"😀".length == 1`). For any character outside the Basic Multilingual Plane
+# (astral characters — most emoji, some rare CJK) those two counts diverge, so retain/delete
+# offsets computed by a browser and interpreted with plain Ruby string semantics land on the
+# wrong character (see PR #55 review). This module measures and slices in UTF-16 code-unit
+# space so offsets agree with what a browser client sent, regardless of BMP/astral mix.
+module Utf16Text
+  def self.length(str)
+    str.each_char.sum { |ch| unit_width(ch) }
+  end
+
+  # Returns the substring covering UTF-16 code units [start, start + len) (or [start, end)
+  # if len is nil). Only ever call this with start/(start+len) offsets already confirmed by
+  # valid_boundary? to land on a whole character — calling it with an offset that splits a
+  # surrogate pair silently includes or excludes that character wholesale rather than
+  # actually cutting it in half, which duplicates or drops content (see PR #55 review).
+  def self.slice(str, start, len = nil)
+    result = +""
+    units_seen = 0
+
+    str.each_char do |ch|
+      width = unit_width(ch)
+      char_start = units_seen
+      units_seen += width
+
+      next if units_seen <= start
+      break if !len.nil? && char_start >= start + len
+
+      result << ch
+    end
+
+    result
+  end
+
+  # True only if offset (a UTF-16 code-unit count) falls exactly on a character boundary
+  # within str — i.e. before the first character, after the last, or between two whole
+  # characters. False for any offset that would land inside an astral character's surrogate
+  # pair, or beyond the end of str.
+  def self.valid_boundary?(str, offset)
+    return true if offset == 0
+
+    units_seen = 0
+    str.each_char do |ch|
+      units_seen += unit_width(ch)
+      return true if units_seen == offset
+      return false if units_seen > offset
+    end
+
+    false
+  end
+
+  def self.unit_width(ch)
+    ch.ord > 0xFFFF ? 2 : 1
+  end
+  private_class_method :unit_width
+end
+
 class TextOT
   def self.transform(a_ops, b_ops, priority)
     a_idx = 0
@@ -802,7 +983,18 @@ class TextOT
         min_len = [ a_len, b_len ].min
 
         if a_type == :retain && b_type == :retain
-          transformed << { "retain" => min_len }
+          # a_rem is *our own* op being transformed; its attributes (e.g. a formatting
+          # change like bold:true) represent an intent that must survive transformation
+          # against a concurrent op, not just the plain retain length. Dropping them here
+          # silently discarded the user's own formatting edit whenever it overlapped
+          # another client's concurrent op (see PR #55 review). b_rem's attributes are
+          # deliberately not consulted: whichever attribute change actually lands last in
+          # commit order already wins once compose_text_crdt_ops merges this transformed
+          # retain onto the current document (last-write-wins per key, consistent with how
+          # every other property in this system resolves concurrent writes) — b_rem's own
+          # op (if it carried attributes) already applied directly, in its own right, when
+          # *it* was originally composed onto the document before this transform even ran.
+          transformed << { "retain" => min_len, "attributes" => op_attributes(a_rem) }.compact
         elsif a_type == :delete && b_type == :delete
           # no-op
         elsif a_type == :delete && b_type == :retain
@@ -838,7 +1030,7 @@ class TextOT
   end
 
   def self.op_len(op)
-    if op.key?("insert") || op.key?(:insert) then (op["insert"] || op[:insert]).length
+    if op.key?("insert") || op.key?(:insert) then Utf16Text.length(op["insert"] || op[:insert])
     elsif op.key?("delete") || op.key?(:delete) then (op["delete"] || op[:delete]).to_i
     elsif op.key?("retain") || op.key?(:retain) then (op["retain"] || op[:retain]).to_i
     end
@@ -854,7 +1046,7 @@ class TextOT
 
   def self.consume!(op, len)
     if op.key?("insert")
-      op["insert"] = op["insert"][len..]
+      op["insert"] = Utf16Text.slice(op["insert"], len)
     elsif op.key?("delete")
       op["delete"] = op["delete"].to_i - len
     elsif op.key?("retain")
@@ -885,7 +1077,13 @@ class TextOT
       end
     end
 
-    while result.last && op_type(result.last) == :retain
+    # A trailing plain retain is redundant (Delta convention: an op list implicitly retains
+    # whatever it doesn't mention) and safe to drop. A trailing retain *with* attributes is
+    # not redundant — it is the only thing carrying a formatting change over the rest of the
+    # document (e.g. the retain/retain transform branch above, when the transformed op
+    # happens to end on one) — dropping it here would silently discard that formatting
+    # change (see PR #55 review).
+    while result.last && op_type(result.last) == :retain && op_attributes(result.last).nil?
       result.pop
     end
 

@@ -22,8 +22,9 @@ import (
 )
 
 type stubRelay struct {
-	mu   sync.Mutex
-	subs map[string]chan ws.Op
+	mu           sync.Mutex
+	subs         map[string]chan ws.Op
+	publishCalls int32
 }
 
 func newStubRelay() *stubRelay {
@@ -38,7 +39,10 @@ func (r *stubRelay) Subscribe(_ context.Context, boardID string) (<-chan ws.Op, 
 	return ch, func() {}, nil
 }
 
-func (r *stubRelay) Publish(context.Context, ws.Op) error { return nil }
+func (r *stubRelay) Publish(context.Context, ws.Op) error {
+	atomic.AddInt32(&r.publishCalls, 1)
+	return nil
+}
 
 func (r *stubRelay) Close() error { return nil }
 
@@ -79,29 +83,29 @@ func (allowAllAuthorizer) Allow(ctx context.Context, auth *ws.AuthContext, op ws
 
 type noopStore struct{}
 
-func (noopStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return op, nil
+func (noopStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return op, false, nil
 }
 
 type presenceTrapStore struct {
 	calls int32
 }
 
-func (s *presenceTrapStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
+func (s *presenceTrapStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
 	atomic.AddInt32(&s.calls, 1)
-	return op, nil
+	return op, false, nil
 }
 
 type staleOpStore struct{}
 
-func (staleOpStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return ws.Op{}, ws.ErrStaleOp
+func (staleOpStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return ws.Op{}, false, ws.ErrStaleOp
 }
 
 type unsupportedPropertyStore struct{}
 
-func (unsupportedPropertyStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return ws.Op{}, ws.ErrUnsupportedOpProperty
+func (unsupportedPropertyStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return ws.Op{}, false, ws.ErrUnsupportedOpProperty
 }
 
 // persistedValueStore simulates a backend that normalizes/coerces the submitted value
@@ -112,9 +116,24 @@ type persistedValueStore struct {
 	persistedValue json.RawMessage
 }
 
-func (s persistedValueStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
+func (s persistedValueStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
 	op.Value = s.persistedValue
-	return op, nil
+	return op, false, nil
+}
+
+// duplicateOpStore simulates Rails reporting an already-recorded (retried) op — the
+// Handler must ack the sender only, never broadcast/relay.
+// duplicateOpStore simulates Rails' duplicate-op response: it still carries the confirmed
+// op's own persisted value (which for text_crdt includes "revision" — see
+// ObjectsController#serialize_op), same as a normal, non-duplicate confirmation would.
+type duplicateOpStore struct {
+	calls int32
+}
+
+func (s *duplicateOpStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	atomic.AddInt32(&s.calls, 1)
+	op.Value = json.RawMessage(`{"ops":[{"insert":"hi"}],"revision":42}`)
+	return op, true, nil
 }
 
 func TestConfirmedOpsBroadcastToSameBoardConnections(t *testing.T) {
@@ -719,14 +738,14 @@ func waitForRelaySubscription(t *testing.T, relay *stubRelay, boardID string) {
 
 type deletedObjectEditStore struct{}
 
-func (deletedObjectEditStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return ws.Op{}, ws.ErrDeletedObjectEdit
+func (deletedObjectEditStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return ws.Op{}, false, ws.ErrDeletedObjectEdit
 }
 
 type resyncRequiredStore struct{}
 
-func (resyncRequiredStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return ws.Op{}, ws.ErrResyncRequired
+func (resyncRequiredStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return ws.Op{}, false, ws.ErrResyncRequired
 }
 
 // TestResyncRequiredSendsNotificationNotBroadcast verifies that a resync-required
@@ -786,6 +805,93 @@ func TestResyncRequiredSendsNotificationNotBroadcast(t *testing.T) {
 	val, ok := got["resyncRequired"].(bool)
 	if !ok || !val {
 		t.Fatalf("expected resyncRequired to be true, got %v", got["resyncRequired"])
+	}
+}
+
+// TestDuplicateOpAcksSenderWithoutBroadcastOrRelay verifies that when the Store reports an
+// op as a duplicate (already recorded before this request — e.g. a retry after a dropped
+// ack), the Handler acks only the sender and never broadcasts to the room or relays it.
+// text_crdt is a diff, not an idempotent absolute value: every other connected client
+// already applied that exact insert/delete the first time this op was confirmed, so
+// re-broadcasting it would double-apply the diff on their side (see PR #55 review).
+func TestDuplicateOpAcksSenderWithoutBroadcastOrRelay(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	store := &duplicateOpStore{}
+	relay := newStubRelay()
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(store)
+	handler.SetRelay(relay)
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-dup"
+	connA := mustDialWebSocket(t, wsURL)
+	defer connA.Close()
+	connB := mustDialWebSocket(t, wsURL)
+	defer connB.Close()
+
+	waitForRelaySubscription(t, relay, "board-dup")
+
+	op := map[string]any{
+		"boardId":    "board-dup",
+		"objectId":   "object-1",
+		"property":   "text_crdt",
+		"value":      map[string]any{"ops": []any{map[string]any{"insert": "hi"}}},
+		"lamport_ts": 1,
+		"clientId":   "client-a",
+	}
+	mustWriteJSON(t, connA, op)
+
+	// connB must never receive a broadcast for a duplicate op.
+	if err := connB.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+		t.Fatalf("SetReadDeadline() error = %v", err)
+	}
+	if _, _, err := connB.ReadMessage(); err == nil {
+		t.Fatal("connB received a message for a duplicate op, want no broadcast")
+	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
+		t.Fatalf("connB read error = %v, want a read timeout", err)
+	}
+
+	// connA (the sender) must still receive an ack, tagged as a duplicate, and stay
+	// connected.
+	got := mustReadJSONMessage(t, connA)
+	assertJSONField(t, got, "objectId", "object-1")
+	assertJSONField(t, got, "clientId", "client-a")
+
+	val, ok := got["duplicate"].(bool)
+	if !ok || !val {
+		t.Fatalf("expected duplicate to be true, got %v", got["duplicate"])
+	}
+
+	// The ack must still carry the confirmed value (and, for text_crdt, its revision) — a
+	// client that missed the *original* confirmation but successfully retries must be able
+	// to recover a valid ref_revision from this ack alone, or it would be stuck unable to
+	// make its next edit (see PR #55 review).
+	value, ok := got["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected value to be present on the duplicate ack, got %v", got["value"])
+	}
+	if revision, ok := value["revision"].(float64); !ok || revision != 42 {
+		t.Fatalf("expected value.revision = 42 on the duplicate ack, got %v", value["revision"])
+	}
+
+	if calls := atomic.LoadInt32(&store.calls); calls != 1 {
+		t.Fatalf("store was called %d times, want 1", calls)
+	}
+	if calls := atomic.LoadInt32(&relay.publishCalls); calls != 0 {
+		t.Fatalf("relay.Publish was called %d times, want 0 for a duplicate op", calls)
 	}
 }
 

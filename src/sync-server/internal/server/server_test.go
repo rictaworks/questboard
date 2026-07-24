@@ -36,8 +36,8 @@ func (allowAllAuthorizer) Allow(ctx context.Context, auth *ws.AuthContext, op ws
 
 type noopStore struct{}
 
-func (noopStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return op, nil
+func (noopStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return op, false, nil
 }
 
 func setupMockHandler(s *server.Server) {

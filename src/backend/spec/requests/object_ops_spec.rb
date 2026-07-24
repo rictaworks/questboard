@@ -82,6 +82,13 @@ RSpec.describe "Object ops", type: :request do
     }, as: :json
   end
 
+  # text_crdt is persisted as an insert-only Delta run list (see
+  # ObjectsController#compose_text_crdt_ops), not a plain string, so tests that only care
+  # about the resulting characters (not formatting) can assert against this instead.
+  def plain_text(text_crdt)
+    text_crdt.fetch("ops", []).sum("") { |op| op.fetch("insert") }
+  end
+
   it "applies a geometry op and records it in object_ops" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -221,8 +228,7 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:ok)
 
     object = BoardObject.find(object_id)
-    expect(object.text_crdt.fetch("text")).to eq("Hello world")
-    expect(object.text_crdt).to eq({ "text" => "Hello world" })
+    expect(plain_text(object.text_crdt)).to eq("Hello world")
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
   end
 
@@ -246,7 +252,7 @@ RSpec.describe "Object ops", type: :request do
     body = JSON.parse(response.body)
     expect(body.fetch("resyncRequired")).to be(true)
 
-    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("Hello")
   end
 
   it "rejects a ref_revision that does not belong to this object's text_crdt history" do
@@ -278,7 +284,7 @@ RSpec.describe "Object ops", type: :request do
     apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { delete: 1 } ], ref_revision: other_object_revision + 1_000_000 }, lamport_ts: 12, client_id: "client-a")
     expect(response).to have_http_status(:conflict)
 
-    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("Hello")
   end
 
   it "rejects stale text snapshots and keeps the current text_crdt state" do
@@ -295,7 +301,7 @@ RSpec.describe "Object ops", type: :request do
 
     apply_op(share_token:, object_id:, property: "text_crdt", value: { text: "old" }, lamport_ts: 1, client_id: "client-b")
     expect(response).to have_http_status(:unprocessable_entity)
-    expect(BoardObject.find(object_id).text_crdt).to eq({ "text" => "Hello" })
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("Hello")
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(1)
   end
 
@@ -323,7 +329,7 @@ RSpec.describe "Object ops", type: :request do
 
     # Since both deleted their respective characters, the document should converge to empty ""
     object = BoardObject.find(object_id)
-    expect(object.text_crdt.fetch("text")).to eq("")
+    expect(plain_text(object.text_crdt)).to eq("")
   end
 
   it "transforms correctly when a lower-lamport client's op is actually the later persisted one" do
@@ -354,7 +360,7 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:ok)
 
     object = BoardObject.find(object_id)
-    expect(object.text_crdt.fetch("text")).to eq("Xa")
+    expect(plain_text(object.text_crdt)).to eq("Xa")
   end
 
   it "rejects a retried text_crdt op whose ref_revision differs from what was recorded" do
@@ -409,6 +415,120 @@ RSpec.describe "Object ops", type: :request do
     expect(body.fetch("resyncRequired")).to be(true)
   end
 
+  it "preserves a retain's formatting attributes after OT transform against a concurrent insert" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "ab" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-b appends 'c' at the end, persisted first.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 2 }, { insert: "c" } ], ref_revision: base_revision },
+      lamport_ts: 1, client_id: "client-b"
+    )
+    expect(response).to have_http_status(:ok)
+
+    # client-a concurrently bolds the first character only — a pure formatting change, no
+    # text edit. TextOT.transform's retain/retain branch must carry this attribute through
+    # the transform against client-b's insert, not just the bare retain length.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1, attributes: { bold: true } }, { retain: 1 } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    stored_ops = BoardObject.find(object_id).text_crdt.fetch("ops")
+    expect(stored_ops).to eq(
+      [
+        { "insert" => "a", "attributes" => { "bold" => true } },
+        { "insert" => "bc" }
+      ]
+    )
+  end
+
+  it "preserves an attribute removal after OT transform against a concurrent insert" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { insert: "a", attributes: { bold: true } } ] },
+      lamport_ts: 1, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-b appends 'c' at the end, persisted first.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1 }, { insert: "c" } ], ref_revision: base_revision },
+      lamport_ts: 1, client_id: "client-b"
+    )
+    expect(response).to have_http_status(:ok)
+
+    # client-a concurrently un-bolds 'a' (attributes: {bold: nil} clears the key). This must
+    # survive OT transform against client-b's insert just like adding an attribute does.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1, attributes: { bold: nil } } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    stored_ops = BoardObject.find(object_id).text_crdt.fetch("ops")
+    expect(stored_ops).to eq([ { "insert" => "ac" } ])
+  end
+
+  it "resolves a same-key attribute conflict by letting the later-committed change win" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "a" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # client-b bolds 'a', persisted first.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1, attributes: { bold: true } } ], ref_revision: base_revision },
+      lamport_ts: 1, client_id: "client-b"
+    )
+    expect(response).to have_http_status(:ok)
+
+    # client-a concurrently un-bolds the same character. Both changes touch the same
+    # "bold" key on an overlapping span — the one composed onto the document *later* (in
+    # commit/arrival order) wins, consistent with how every other property in this system
+    # resolves concurrent writes (last-write-wins), rather than TextOT itself picking a side.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1, attributes: { bold: false } } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    stored_ops = BoardObject.find(object_id).text_crdt.fetch("ops")
+    expect(stored_ops).to eq([ { "insert" => "a", "attributes" => { "bold" => false } } ])
+  end
+
   it "keeps distinct attributes on adjacent inserts instead of merging them away during OT" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
@@ -456,10 +576,322 @@ RSpec.describe "Object ops", type: :request do
     expect(inserts[1]).to include("insert" => "b", "attributes" => { "italic" => true })
   end
 
+  it "persists text_crdt attributes in the stored snapshot so formatting survives reload/resync" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { insert: "a", attributes: { bold: true } }, { insert: "b", attributes: { italic: true } } ] },
+      lamport_ts: 1, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # A later, unrelated edit (appending plain text) must not disturb the earlier runs'
+    # attributes in the persisted snapshot.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 2 }, { insert: "c" } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    stored_ops = BoardObject.find(object_id).text_crdt.fetch("ops")
+    expect(stored_ops).to eq(
+      [
+        { "insert" => "a", "attributes" => { "bold" => true } },
+        { "insert" => "b", "attributes" => { "italic" => true } },
+        { "insert" => "c" }
+      ]
+    )
+
+    # A reload (board GET) must see the exact same formatted document as a still-connected
+    # client that only ever saw the apply_op responses — not a plain-text-only projection.
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    board_object = JSON.parse(response.body).fetch("objects").find { |entry| entry.fetch("id") == object_id }
+    expect(board_object.fetch("textCrdt").fetch("ops")).to eq(stored_ops)
+  end
+
+  it "applies retain/delete offsets in UTF-16 code units, matching browser string semantics" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # 😀 is an astral character: 1 Ruby codepoint, but 2 UTF-16 code units (a surrogate
+    # pair) — exactly how a browser client measures/sends offsets.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "😀a" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # A browser deleting the trailing 'a' sends {retain: 2, delete: 1} — 2 UTF-16 units to
+    # skip over 😀's surrogate pair, then delete the next 1 unit ('a'). Interpreting this
+    # with plain Ruby codepoint semantics (😀a has only 2 codepoints) would let retain:2
+    # consume the *entire* string, leaving nothing for delete to actually remove.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 2 }, { delete: 1 } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("😀")
+  end
+
+  it "rejects a retain/delete offset that splits a UTF-16 surrogate pair instead of duplicating the character" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "😀" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # retain:1 only covers half of 😀's 2-unit surrogate pair. Silently rounding this to a
+    # whole-character slice would duplicate 😀 into both the "retained" piece and the
+    # unconsumed remainder, corrupting the document into "😀😀" instead of raising.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1 } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("😀")
+  end
+
+  it "accepts a retain offset that lands exactly on a surrogate pair boundary" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "😀a" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # retain:2 covers exactly 😀's full surrogate pair (a valid boundary), then inserts.
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 2 }, { insert: "!" } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("😀!a")
+  end
+
+  it "clears a formatting attribute from the persisted document when set to null" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { insert: "a", attributes: { bold: true } } ] },
+      lamport_ts: 1, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    # Delta semantics: a null attribute value means "clear this attribute", not "set it to
+    # the literal value null".
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { retain: 1, attributes: { bold: nil } } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:ok)
+
+    stored_ops = BoardObject.find(object_id).text_crdt.fetch("ops")
+    expect(stored_ops).to eq([ { "insert" => "a" } ])
+  end
+
+  it "rejects a composed document whose aggregate size (text plus every run's attributes) exceeds the document limit" do
+    controller = ObjectsController.new
+    # Each run's attributes must be distinct, or normalize_text_crdt_document merges
+    # adjacent identical-attribute runs back into one small run and defeats this test.
+    existing_ops = Array.new(3000) { |i| { "insert" => "a", "attributes" => { "note" => "x" * 100, "idx" => i } } }
+    existing_state = { "ops" => existing_ops }
+    # A pure retain that touches every existing run — well within MAX_TEXT_CRDT_TEXT_BYTES
+    # (3000 bytes of plain text), but the *document* (text + 3000 distinct 100+ byte
+    # attributes hashes) is what actually blows past the limit.
+    incoming_value = { "ops" => [ { "retain" => 3000 } ] }
+
+    expect do
+      controller.send(:merge_text_crdt_state, existing_state, incoming_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /document must not exceed/)
+  end
+
+  it "rejects retain/delete that consumes beyond the end of the persisted document" do
+    controller = ObjectsController.new
+    existing_state = { "ops" => [ { "insert" => "ab" } ] }
+    incoming_value = { "ops" => [ { "retain" => 10 } ] }
+
+    expect do
+      controller.send(:merge_text_crdt_state, existing_state, incoming_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /retains or deletes beyond the end/)
+  end
+
+  it "rejects text_crdt ops with a zero or negative delete/retain" do
+    controller = ObjectsController.new
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "delete" => 0 } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /delete must be a positive integer/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "delete" => -1 } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /delete must be a positive integer/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "retain" => 0 } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /retain must be a positive integer/)
+
+    allow(controller).to receive(:params).and_return(ActionController::Parameters.new(value: { "ops" => [ { "retain" => -5 } ] }))
+    expect do
+      controller.send(:validated_text_crdt_value)
+    end.to raise_error(ObjectsController::InvalidOpValueError, /retain must be a positive integer/)
+  end
+
+  it "rejects non-Hash attributes that present? would otherwise let slip through" do
+    controller = ObjectsController.new
+
+    [ "", [], false ].each do |bad_attributes|
+      allow(controller).to receive(:params).and_return(
+        ActionController::Parameters.new(value: { "ops" => [ { "insert" => "x", "attributes" => bad_attributes } ] })
+      )
+      expect do
+        controller.send(:validated_text_crdt_value)
+      end.to raise_error(ObjectsController::InvalidOpValueError, /attributes must be an object/), "expected #{bad_attributes.inspect} to be rejected"
+    end
+  end
+
+  it "rejects an insert with non-Hash attributes end-to-end instead of persisting a value that later 500s" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # Previously, present? treated "", [], and false as blank and skipped the type check
+    # entirely, letting them reach the persisted document and later crash
+    # merge_text_crdt_attributes' Hash#merge with a TypeError when a later formatting op
+    # touched that range (see PR #55 review). These must never be persisted in the first
+    # place.
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "x", attributes: "" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(0)
+  end
+
+  it "rejects a negative delete op end-to-end instead of shifting the cursor backwards" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "abc" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    apply_op(
+      share_token:, object_id:, property: "text_crdt",
+      value: { ops: [ { delete: -1 } ], ref_revision: base_revision },
+      lamport_ts: 2, client_id: "client-a"
+    )
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("abc")
+  end
+
+  it "marks a retried text_crdt op as duplicate instead of a fresh confirmation" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "hi" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    first_body = JSON.parse(response.body)
+    expect(first_body.fetch("duplicate")).to be(false)
+    first_revision = first_body.fetch("value").fetch("revision")
+
+    # Same client_id/lamport_ts/ops as above (e.g. a retry after a dropped ack) must be
+    # reported as a duplicate, not a fresh op — the sync-server Handler must never
+    # broadcast/relay a duplicate text_crdt op, since every other connected client already
+    # applied that exact diff the first time (see PR #55 review).
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "hi" } ] }, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    retry_body = JSON.parse(response.body)
+    expect(retry_body.fetch("duplicate")).to be(true)
+
+    # A client that missed the *original* confirmation must still be able to recover a
+    # usable ref_revision from the duplicate response alone — the retry's own value/revision
+    # must converge on exactly what the original confirmation returned, not be omitted or
+    # different (see PR #55 review).
+    expect(retry_body.fetch("value").fetch("revision")).to eq(first_revision)
+    expect(retry_body.fetch("value").fetch("ops")).to eq(first_body.fetch("value").fetch("ops"))
+  end
+
+  it "marks a geometry op that lost the insert race as duplicate" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 10, y: 20 }, lamport_ts: 5, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    existing_op = ObjectOp.find_by!(object_id:, client_id: "client-a", lamport_ts: 5)
+
+    # Simulate the race the RecordNotUnique rescue exists for: this request's own
+    # pre-create existence check misses the row (as if it ran just before the concurrent
+    # winner's commit) on its first call, so it falls through to ObjectOp.create!, which
+    # then genuinely hits the real unique index violation against the row the first
+    # apply_op call above already persisted. The rescue block's own find_by! call (its
+    # second invocation of the stub) must still resolve to that real, pre-existing row.
+    allow(ObjectOp).to receive(:find_by).and_return(nil, existing_op)
+
+    apply_op(share_token:, object_id:, property: "geometry", value: { x: 10, y: 20 }, lamport_ts: 5, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("duplicate")).to be(true)
+  end
+
   it "rejects text_crdt documents that exceed the stored text limit" do
     controller = ObjectsController.new
-    existing_state = { "text" => "a" * (ObjectsController::MAX_TEXT_CRDT_TEXT_BYTES - 1) }
-    incoming_value = { "ops" => [ { "insert" => "ab" } ] }
+    existing_state = { "ops" => [ { "insert" => "a" * (ObjectsController::MAX_TEXT_CRDT_TEXT_BYTES - 1) } ] }
+    incoming_value = { "ops" => [ { "retain" => ObjectsController::MAX_TEXT_CRDT_TEXT_BYTES - 1 }, { "insert" => "ab" } ] }
 
     expect do
       controller.send(:merge_text_crdt_state, existing_state, incoming_value)

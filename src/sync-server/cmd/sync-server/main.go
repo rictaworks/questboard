@@ -29,8 +29,8 @@ func (developmentAuthorizer) Allow(ctx context.Context, auth *ws.AuthContext, op
 
 type developmentStore struct{}
 
-func (developmentStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
-	return op, nil
+func (developmentStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
+	return op, false, nil
 }
 
 func main() {
