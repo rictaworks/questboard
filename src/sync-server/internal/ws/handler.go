@@ -27,6 +27,11 @@ const (
 	PingPeriod = (PongWait * 9) / 10
 	// WriteWait is the maximum time allowed to write a message to the peer.
 	WriteWait = 10 * time.Second
+	// PresenceBroadcastInterval caps cursor broadcasts at 30Hz.
+	PresenceBroadcastInterval = time.Second / 30
+	// MaxPresenceValueBytes keeps transient cursor payloads tiny so they cannot be used
+	// as a broadcast/relay amplification vector.
+	MaxPresenceValueBytes = 512
 
 	// railsSessionCookieName must match config.session_store's `key:` in the Rails
 	// backend (src/backend/config/application.rb). Rails authenticates solely via this
@@ -45,15 +50,51 @@ var ErrStaleOp = errors.New("stale or duplicate operation rejected")
 var ErrDeletedObjectEdit = errors.New("object has been deleted")
 
 // ErrUnsupportedOpProperty indicates the store has no persistence path for this op's
-// Property (e.g. "text_crdt" ahead of its own sync issue landing). Treating this as
-// success would broadcast a change to every connected client that the backend never
-// actually saved, so it must never be silently swallowed.
+// Property (for example a transient presence update). Treating this as success would
+// broadcast a change to every connected client that the backend never actually saved, so
+// it must never be silently swallowed.
 var ErrUnsupportedOpProperty = errors.New("unsupported op property")
+
+// ErrResyncRequired indicates Rails rejected the operation because its reference revision
+// is missing, stale, or does not belong to the target object's history — the client must
+// refetch the object's current snapshot/revision before retrying. This must be surfaced to
+// the originating client distinctly from ErrStaleOp: a stale/duplicate op is silently
+// dropped because a newer confirmed value already superseded it, but a resync-required
+// rejection means the client's local state may already be diverged and it needs to recover
+// (see PR #55 review).
+var ErrResyncRequired = errors.New("operation rejected: resync required")
 
 type DeletedObjectEditPayload struct {
 	ObjectID         string `json:"objectId"`
 	Error            string `json:"error"`
 	RestoreSuggested bool   `json:"restoreSuggested"`
+}
+
+type ResyncRequiredPayload struct {
+	ObjectID       string `json:"objectId"`
+	Error          string `json:"error"`
+	ResyncRequired bool   `json:"resyncRequired"`
+}
+
+// OpAckPayload is sent only to the client that submitted a duplicate/already-recorded op —
+// never broadcast to the room or relayed. text_crdt is a diff, not an idempotent absolute
+// value: every other connected client already applied this exact insert/delete the first
+// time this op was recorded, so re-broadcasting it would double-apply the diff on their
+// side and diverge from Rails' persisted state (see PR #55 review).
+// Value carries the confirmed op's own value (for text_crdt, this includes "revision" —
+// see ObjectsController#serialize_op) — omitting it here would leave a client that missed
+// the *original* confirmation (e.g. its connection dropped right after Rails persisted the
+// op but before the broadcast reached it) with no way to recover a valid ref_revision from
+// a retry: it would ack successfully yet still have nothing usable for its next edit,
+// leaving it stuck against ObjectsController#transform_text_crdt_ops' "ref_revision
+// required" check forever (see PR #55 review).
+type OpAckPayload struct {
+	ObjectID  string          `json:"objectId"`
+	Property  string          `json:"property"`
+	Value     json.RawMessage `json:"value"`
+	LamportTS int64           `json:"lamportTs"`
+	ClientID  string          `json:"clientId"`
+	Duplicate bool            `json:"duplicate"`
 }
 
 type AuthContext struct {
@@ -69,12 +110,14 @@ type Authorizer interface {
 	Allow(ctx context.Context, auth *AuthContext, op Op) (bool, error)
 }
 
-// Store persists a confirmed op and returns the op as actually persisted. The returned
-// Value must reflect whatever the backend normalized, coerced, or otherwise settled on —
-// never the caller's raw input — since Handler broadcasts the returned Op to every other
-// connected client as the confirmed state.
+// Store persists a confirmed op and returns the op as actually persisted, plus whether it
+// was already recorded before this call (a retried op, or one that lost an insert race)
+// rather than newly created. The returned Value must reflect whatever the backend
+// normalized, coerced, or otherwise settled on — never the caller's raw input — since
+// Handler broadcasts the returned Op to every other connected client as the confirmed
+// state, unless duplicate is true (see OpAckPayload).
 type Store interface {
-	SaveConfirmedOp(ctx context.Context, op Op) (Op, error)
+	SaveConfirmedOp(ctx context.Context, op Op) (confirmed Op, duplicate bool, err error)
 }
 
 type contextKey string
@@ -203,18 +246,20 @@ type opRequestPayload struct {
 // source of truth for what gets broadcast — it may normalize a submitted value (e.g.
 // resolving a color to its color_id) — and for a retried/duplicate op it echoes back that
 // specific op's own value/lamport_ts/client_id, never whatever a different, newer op left
-// the object's live state as.
+// the object's live state as. Duplicate is true when Rails had already recorded this exact
+// op before this request (see Store).
 type opResponsePayload struct {
 	Value     json.RawMessage `json:"value"`
 	LamportTS int64           `json:"lamportTs"`
 	ClientID  string          `json:"clientId"`
+	Duplicate bool            `json:"duplicate"`
 }
 
-func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
+func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, bool, error) {
 	switch op.Property {
-	case "geometry", "color", "deleted_at":
+	case "geometry", "color", "deleted_at", "text_crdt":
 	default:
-		return Op{}, fmt.Errorf("%w: %q", ErrUnsupportedOpProperty, op.Property)
+		return Op{}, false, fmt.Errorf("%w: %q", ErrUnsupportedOpProperty, op.Property)
 	}
 
 	body, err := json.Marshal(opRequestPayload{
@@ -224,7 +269,7 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 		ClientID:  op.ClientID,
 	})
 	if err != nil {
-		return Op{}, fmt.Errorf("encode op payload: %w", err)
+		return Op{}, false, fmt.Errorf("encode op payload: %w", err)
 	}
 
 	endpoint := fmt.Sprintf("%s/boards/%s/objects/%s/ops", s.BackendURL, op.BoardID, op.ObjectID)
@@ -232,7 +277,7 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return Op{}, err
+		return Op{}, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
@@ -242,7 +287,7 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Op{}, fmt.Errorf("failed to save op to rails: %w", err)
+		return Op{}, false, fmt.Errorf("failed to save op to rails: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -252,30 +297,34 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, error) {
 		var errPayload struct {
 			Error            string `json:"error"`
 			RestoreSuggested bool   `json:"restoreSuggested"`
+			ResyncRequired   bool   `json:"resyncRequired"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&errPayload); err == nil {
 			if errPayload.RestoreSuggested {
-				return Op{}, ErrDeletedObjectEdit
+				return Op{}, false, ErrDeletedObjectEdit
+			}
+			if errPayload.ResyncRequired {
+				return Op{}, false, ErrResyncRequired
 			}
 		}
-		return Op{}, ErrStaleOp
+		return Op{}, false, ErrStaleOp
 	default:
-		return Op{}, fmt.Errorf("rails save op failed with status %d", resp.StatusCode)
+		return Op{}, false, fmt.Errorf("rails save op failed with status %d", resp.StatusCode)
 	}
 
 	var persisted opResponsePayload
 	if err := json.NewDecoder(resp.Body).Decode(&persisted); err != nil {
-		return Op{}, fmt.Errorf("decode rails op response: %w", err)
+		return Op{}, false, fmt.Errorf("decode rails op response: %w", err)
 	}
 	if len(persisted.Value) == 0 {
-		return Op{}, fmt.Errorf("rails response missing persisted op value")
+		return Op{}, false, fmt.Errorf("rails response missing persisted op value")
 	}
 
 	confirmed := op
 	confirmed.Value = persisted.Value
 	confirmed.LamportTS = persisted.LamportTS
 	confirmed.ClientID = persisted.ClientID
-	return confirmed, nil
+	return confirmed, persisted.Duplicate, nil
 }
 
 type denyAllAuthenticator struct{}
@@ -292,22 +341,23 @@ func (denyAllAuthorizer) Allow(context.Context, *AuthContext, Op) (bool, error) 
 
 type errorStore struct{}
 
-func (errorStore) SaveConfirmedOp(context.Context, Op) (Op, error) {
-	return Op{}, fmt.Errorf("no store configured")
+func (errorStore) SaveConfirmedOp(context.Context, Op) (Op, bool, error) {
+	return Op{}, false, fmt.Errorf("no store configured")
 }
 
 type Handler struct {
-	router        *sharding.Router
-	upgrader      websocket.Upgrader
-	originAllowed func(*http.Request) bool
-	readLimit     int64
-	hub           *Hub
-	metrics       *Metrics
-	authenticator Authenticator
-	authorizer    Authorizer
-	store         Store
-	relay         Relay
-	nodeID        string
+	router          *sharding.Router
+	upgrader        websocket.Upgrader
+	originAllowed   func(*http.Request) bool
+	readLimit       int64
+	hub             *Hub
+	metrics         *Metrics
+	authenticator   Authenticator
+	authorizer      Authorizer
+	store           Store
+	relay           Relay
+	nodeID          string
+	presenceLimiter *RateLimiter
 
 	mu            sync.Mutex
 	closing       bool
@@ -324,16 +374,17 @@ func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 		upgrader: websocket.Upgrader{
 			CheckOrigin: originChecker,
 		},
-		originAllowed: originChecker,
-		readLimit:     MaxMessageSize,
-		hub:           NewHub(metrics),
-		metrics:       metrics,
-		authenticator: denyAllAuthenticator{},
-		authorizer:    denyAllAuthorizer{},
-		store:         errorStore{},
-		closeCh:       make(chan struct{}),
-		subscriptions: make(map[string]context.CancelFunc),
-		nodeID:        "sync-server-local",
+		originAllowed:   originChecker,
+		readLimit:       MaxMessageSize,
+		hub:             NewHub(metrics),
+		metrics:         metrics,
+		authenticator:   denyAllAuthenticator{},
+		authorizer:      denyAllAuthorizer{},
+		store:           errorStore{},
+		presenceLimiter: NewRateLimiter(),
+		closeCh:         make(chan struct{}),
+		subscriptions:   make(map[string]context.CancelFunc),
+		nodeID:          "sync-server-local",
 	}
 }
 
@@ -549,6 +600,8 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 		return nil
 	})
 
+	var lastPresenceBroadcast time.Time
+
 	for {
 		select {
 		case <-h.closeCh:
@@ -586,13 +639,66 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 				return
 			}
 
-			confirmedOp, err := h.store.SaveConfirmedOp(reqCtx, op)
+			if op.Property == "presence" {
+				// Charge the rate limiter for the full wire message (raw), not just
+				// op.Value — objectId/clientId sit outside Value and are broadcast/relayed
+				// as part of the same envelope, so billing only op.Value would let an
+				// attacker inflate those fields (up to MaxObjectIDBytes/MaxClientIDBytes
+				// each) without it counting against the byte budget (see PR #55 review).
+				if !h.presenceLimiter.Allow(boardID, authCtx.UserID, len(raw)) {
+					continue
+				}
+
+				now := time.Now()
+				if !lastPresenceBroadcast.IsZero() && now.Sub(lastPresenceBroadcast) < PresenceBroadcastInterval {
+					continue
+				}
+
+				lastPresenceBroadcast = now
+				payload, err := op.MarshalJSON()
+				if err != nil {
+					client.requestClose(websocket.CloseInternalServerErr, err.Error())
+					return
+				}
+
+				h.hub.Broadcast(boardID, payload)
+				if h.relay != nil {
+					if err := h.relay.Publish(ctx.Request.Context(), op); err != nil {
+						client.requestClose(websocket.CloseInternalServerErr, err.Error())
+						return
+					}
+				}
+				continue
+			}
+
+			confirmedOp, duplicate, err := h.store.SaveConfirmedOp(reqCtx, op)
 			if err != nil {
 				if errors.Is(err, ErrDeletedObjectEdit) {
 					errPayload := DeletedObjectEditPayload{
 						ObjectID:         op.ObjectID,
 						Error:            "Object has been deleted; restore it before editing",
 						RestoreSuggested: true,
+					}
+					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
+						select {
+						case client.send <- payload:
+						default:
+							client.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+							return
+						}
+					}
+					continue
+				}
+				if errors.Is(err, ErrResyncRequired) {
+					// Unlike ErrStaleOp, this isn't "a newer op already won" — the
+					// client's reference revision was missing, stale, or invalid, so its
+					// local state may already be diverged from the server. Tell the
+					// originating client explicitly instead of silently dropping the op,
+					// so it knows to refetch the object before retrying.
+					errPayload := ResyncRequiredPayload{
+						ObjectID:       op.ObjectID,
+						Error:          "operation rejected: resync required before retrying",
+						ResyncRequired: true,
 					}
 					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
 						select {
@@ -619,6 +725,45 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 				}
 				client.requestClose(websocket.CloseInternalServerErr, err.Error())
 				return
+			}
+
+			if duplicate {
+				// This exact op was already recorded before this request (a retried op
+				// after a dropped ack, or one that lost an insert race) — every other
+				// connected client *should* have already received and applied it the first
+				// time it was confirmed. Re-broadcasting/relaying it here would
+				// double-apply a text_crdt diff (or, for absolute-value properties, is
+				// simply redundant), so only ack the sender directly.
+				//
+				// Known limitation (accepted trade-off, not fixed here — see PR #55
+				// review): if this process crashes or loses its Redis connection strictly
+				// between Rails confirming the *original* op and this process completing
+				// Broadcast/relay.Publish for it, no client other than the original sender
+				// ever receives that op — the retry that lands here sees duplicate=true and
+				// (correctly, per the above) does not re-send it either, so it is lost for
+				// everyone who didn't already have it. Closing this gap for real requires a
+				// durable outbox (persist "op X still needs delivery" atomically with the
+				// op itself, retry until acknowledged) or client-side reconciliation against
+				// Rails' revision history on reconnect — out of scope while this runs as a
+				// single sync-server instance in early development.
+
+				ackPayload := OpAckPayload{
+					ObjectID:  confirmedOp.ObjectID,
+					Property:  confirmedOp.Property,
+					Value:     confirmedOp.Value,
+					LamportTS: confirmedOp.LamportTS,
+					ClientID:  confirmedOp.ClientID,
+					Duplicate: true,
+				}
+				if payload, jsonErr := json.Marshal(ackPayload); jsonErr == nil {
+					select {
+					case client.send <- payload:
+					default:
+						client.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+						return
+					}
+				}
+				continue
 			}
 
 			// Broadcast confirmedOp (what the store actually persisted), never the raw

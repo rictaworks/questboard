@@ -15,6 +15,16 @@ type Op struct {
 	ClientID  string          `json:"clientId"`
 }
 
+const (
+	// MaxObjectIDBytes and MaxClientIDBytes bound two fields that sit outside Value and so
+	// are never covered by validatePresenceValue's byte limit. Real object ids are small
+	// numeric strings and real client ids are short generated identifiers, so these limits
+	// are generous for legitimate use while blocking a client from inflating either field to
+	// hundreds of KB to amplify the per-message broadcast/relay cost (see PR #55 review).
+	MaxObjectIDBytes = 128
+	MaxClientIDBytes = 128
+)
+
 func ParseOp(raw []byte) (Op, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 {
@@ -122,6 +132,8 @@ func (op Op) Validate(expectedBoardID string) error {
 		return fmt.Errorf("boardId is required")
 	case op.ObjectID == "":
 		return fmt.Errorf("objectId is required")
+	case len(op.ObjectID) > MaxObjectIDBytes:
+		return fmt.Errorf("objectId must not exceed %d bytes", MaxObjectIDBytes)
 	case op.Property == "":
 		return fmt.Errorf("property is required")
 	case len(op.Value) == 0:
@@ -130,9 +142,16 @@ func (op Op) Validate(expectedBoardID string) error {
 		return fmt.Errorf("lamport_ts must be non-negative")
 	case op.ClientID == "":
 		return fmt.Errorf("clientId is required")
+	case len(op.ClientID) > MaxClientIDBytes:
+		return fmt.Errorf("clientId must not exceed %d bytes", MaxClientIDBytes)
 	case expectedBoardID != "" && op.BoardID != expectedBoardID:
 		return fmt.Errorf("op boardId %q does not match connection boardId %q", op.BoardID, expectedBoardID)
 	default:
+		if op.Property == "presence" {
+			if err := op.validatePresenceValue(); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 }
@@ -209,4 +228,60 @@ func cloneRawMessage(raw json.RawMessage) json.RawMessage {
 	clone := make([]byte, len(raw))
 	copy(clone, raw)
 	return clone
+}
+
+type PresenceValue struct {
+	Cursor *CursorCoords `json:"cursor"`
+}
+
+type CursorCoords struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+func (op Op) validatePresenceValue() error {
+	if len(op.Value) == 0 {
+		return fmt.Errorf("presence value is required")
+	}
+	if len(op.Value) > 512 {
+		return fmt.Errorf("presence value must not exceed 512 bytes")
+	}
+
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(op.Value, &payload); err != nil {
+		return fmt.Errorf("presence value must be an object: %w", err)
+	}
+	if len(payload) != 1 {
+		return fmt.Errorf("presence value must contain only cursor")
+	}
+
+	cursorRaw, ok := payload["cursor"]
+	if !ok {
+		return fmt.Errorf("presence value must include cursor")
+	}
+
+	var cursor map[string]json.RawMessage
+	if err := json.Unmarshal(cursorRaw, &cursor); err != nil {
+		return fmt.Errorf("presence cursor must be an object: %w", err)
+	}
+	if len(cursor) != 2 {
+		return fmt.Errorf("presence cursor must contain only x and y")
+	}
+
+	if _, ok := cursor["x"]; !ok {
+		return fmt.Errorf("presence cursor must include x")
+	}
+	if _, ok := cursor["y"]; !ok {
+		return fmt.Errorf("presence cursor must include y")
+	}
+
+	var x, y float64
+	if err := json.Unmarshal(cursor["x"], &x); err != nil {
+		return fmt.Errorf("presence cursor.x must be numeric: %w", err)
+	}
+	if err := json.Unmarshal(cursor["y"], &y); err != nil {
+		return fmt.Errorf("presence cursor.y must be numeric: %w", err)
+	}
+
+	return nil
 }

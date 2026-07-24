@@ -42,7 +42,7 @@ func TestRailsStoreForwardsRailsSessionCookieAndOpPayload(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	if _, err := store.SaveConfirmedOp(ctx, op); err != nil {
+	if _, _, err := store.SaveConfirmedOp(ctx, op); err != nil {
 		t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
 	}
 
@@ -130,7 +130,7 @@ func TestRailsStoreReturnsPersistedOpNotClientSubmittedOp(t *testing.T) {
 				ClientID:  tt.clientID,
 			}
 
-			persisted, err := store.SaveConfirmedOp(context.Background(), op)
+			persisted, _, err := store.SaveConfirmedOp(context.Background(), op)
 			if err != nil {
 				t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
 			}
@@ -176,7 +176,7 @@ func TestRailsStoreTranslatesConflictIntoErrStaleOp(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrStaleOp) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrStaleOp", err)
 	}
@@ -200,7 +200,7 @@ func TestRailsStoreReturnsErrorForUnexpectedStatus(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if err == nil {
 		t.Fatal("SaveConfirmedOp() error = nil, want non-nil for a 500 response")
 	}
@@ -223,22 +223,90 @@ func TestRailsStoreRejectsUnsupportedProperties(t *testing.T) {
 	op := ws.Op{
 		BoardID:   "board-1",
 		ObjectID:  "object-1",
-		Property:  "text_crdt",
+		Property:  "presence",
 		Value:     json.RawMessage(`{}`),
 		LamportTS: 1,
 		ClientID:  "client-a",
 	}
 
-	// An unsupported property (e.g. text_crdt, ahead of its own sync issue landing) must
-	// error rather than succeed — succeeding would let the caller broadcast a change the
-	// backend never actually persisted.
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	// Transient presence updates are never persisted through Rails.
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrUnsupportedOpProperty) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrUnsupportedOpProperty", err)
 	}
 
 	if called {
-		t.Fatal("backend was called for an unsupported property, want it to be rejected locally")
+		t.Fatal("backend was called for a transient property, want it to be rejected locally")
+	}
+}
+
+func TestRailsStoreAcceptsTextCRDTOps(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"property":"text_crdt","value":{"ops":[{"insert":"hi"}]},"lamportTs":3,"clientId":"client-a"}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	store := ws.NewRailsStore(backend.URL)
+	op := ws.Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "text_crdt",
+		Value:     json.RawMessage(`{"ops":[{"insert":"hi"}]}`),
+		LamportTS: 3,
+		ClientID:  "client-a",
+	}
+
+	persisted, duplicate, err := store.SaveConfirmedOp(context.Background(), op)
+	if err != nil {
+		t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
+	}
+	if duplicate {
+		t.Fatal("SaveConfirmedOp() duplicate = true, want false for a freshly-recorded op")
+	}
+
+	if gotBody["property"] != "text_crdt" {
+		t.Fatalf("body property = %v, want text_crdt", gotBody["property"])
+	}
+	if persisted.Property != "text_crdt" {
+		t.Fatalf("persisted.Property = %q, want text_crdt", persisted.Property)
+	}
+	if string(persisted.Value) != `{"ops":[{"insert":"hi"}]}` {
+		t.Fatalf("persisted.Value = %s, want text_crdt payload", persisted.Value)
+	}
+}
+
+func TestRailsStoreTranslatesResyncRequiredConflictIntoErrResyncRequired(t *testing.T) {
+	t.Parallel()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":"ref_revision is required once text_crdt history exists for this object","resyncRequired":true}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	store := ws.NewRailsStore(backend.URL)
+	op := ws.Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "text_crdt",
+		Value:     json.RawMessage(`{"ops":[{"insert":"hi"}]}`),
+		LamportTS: 1,
+		ClientID:  "client-a",
+	}
+
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
+	if !errors.Is(err, ws.ErrResyncRequired) {
+		t.Fatalf("SaveConfirmedOp() error = %v, want ErrResyncRequired", err)
+	}
+	if errors.Is(err, ws.ErrStaleOp) {
+		t.Fatal("SaveConfirmedOp() error wraps ErrStaleOp, want it to be distinguished as ErrResyncRequired")
 	}
 }
 
@@ -262,7 +330,7 @@ func TestRailsStoreTranslatesConflictIntoErrDeletedObjectEdit(t *testing.T) {
 		ClientID:  "client-a",
 	}
 
-	_, err := store.SaveConfirmedOp(context.Background(), op)
+	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrDeletedObjectEdit) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrDeletedObjectEdit", err)
 	}

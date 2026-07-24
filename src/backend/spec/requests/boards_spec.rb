@@ -75,6 +75,7 @@ RSpec.describe "Boards", type: :request do
       object_type:,
       color_palette: color,
       geometry: { "x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0 },
+      text_crdt: { "ops" => [ { "insert" => "Hello" } ] },
       deleted_at: nil
     )
 
@@ -93,9 +94,59 @@ RSpec.describe "Boards", type: :request do
         "objectTypeCode" => "frame",
         "colorId" => color.id,
         "geometry" => include("x" => 32, "y" => 48, "w" => 240, "h" => 180, "rotation" => 0),
+        "textCrdt" => include("ops" => [ { "insert" => "Hello" } ]),
+        "textCrdtRevision" => 0,
         "locked" => false
       )
     )
+  end
+
+  it "returns a text_crdt revision from the board endpoint that a client can use as ref_revision" do
+    seed_object_support
+    board_payload = create_board(title: "Canvas Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "text",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    }, as: :json
+    expect(response).to have_http_status(:created)
+    object_id = JSON.parse(response.body).fetch("id")
+
+    post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+      property: "text_crdt",
+      value: { ops: [ { insert: "Hello" } ] },
+      lamport_ts: 1,
+      client_id: "client-a"
+    }, as: :json
+    expect(response).to have_http_status(:ok)
+    op_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    board_object = JSON.parse(response.body).fetch("objects").find { |entry| entry.fetch("id") == object_id }
+
+    # The board endpoint's revision must match the exact revision apply_op returned for the
+    # op that produced the current text, so a client that only ever loads objects through
+    # this endpoint (never a per-object fetch) still has a valid ref_revision to send with
+    # its next edit — otherwise every first edit would be rejected as resync-required with
+    # no way to recover (see PR #55 review).
+    expect(board_object.fetch("textCrdtRevision")).to eq(op_revision)
+
+    # That revision must actually be usable as ref_revision for a follow-up edit.
+    post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+      property: "text_crdt",
+      value: { ops: [ { retain: 5 }, { insert: " world" } ], ref_revision: board_object.fetch("textCrdtRevision") },
+      lamport_ts: 2,
+      client_id: "client-a"
+    }, as: :json
+    expect(response).to have_http_status(:ok)
+    text_crdt = BoardObject.find(object_id).text_crdt
+    expect(text_crdt.fetch("ops").sum("") { |op| op.fetch("insert") }).to eq("Hello world")
   end
 
   it "joins a board through the share token with the selected invite role" do
