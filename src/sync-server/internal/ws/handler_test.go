@@ -489,3 +489,55 @@ func waitForRelaySubscription(t *testing.T, relay *stubRelay, boardID string) {
 
 	t.Fatalf("relay subscription for %s never registered", boardID)
 }
+
+type deletedObjectEditStore struct{}
+
+func (deletedObjectEditStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, error) {
+	return ws.Op{}, ws.ErrDeletedObjectEdit
+}
+
+func TestDeletedObjectEditSendsRecoveryNotification(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(deletedObjectEditStore{})
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
+	conn := mustDialWebSocket(t, wsURL)
+	defer conn.Close()
+
+	op := map[string]any{
+		"boardId":    "board-123",
+		"objectId":   "object-1",
+		"property":   "geometry",
+		"value":      map[string]any{"x": 20, "y": 40},
+		"lamport_ts": 7,
+		"clientId":   "client-a",
+	}
+	mustWriteJSON(t, conn, op)
+
+	// 他のクライアントへのブロードキャストは行われないが、
+	// 送信元のコネクションは維持されたまま、専用の復元提案メッセージが送られてくるはず
+	got := mustReadJSONMessage(t, conn)
+	assertJSONField(t, got, "objectId", "object-1")
+	assertJSONField(t, got, "error", "Object has been deleted; restore it before editing")
+	
+	// restoreSuggested が boolean の true であることを検証
+	val, ok := got["restoreSuggested"].(bool)
+	if !ok || !val {
+		t.Fatalf("expected restoreSuggested to be true, got %v", got["restoreSuggested"])
+	}
+}
+

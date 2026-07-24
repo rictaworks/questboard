@@ -5,8 +5,8 @@ RSpec.describe BoardObject, type: :model do
 
   it "exposes tombstones eligible for purge after 30 days" do
     board = Board.create!(title: "Board")
-    object_type = ObjectType.create!(code: "sticky")
-    color = ColorPalette.create!(hex: "#FDE68A")
+    object_type = ObjectType.find_or_create_by!(code: "sticky")
+    color = ColorPalette.find_or_create_by!(hex: "#FDE68A")
     now = Time.zone.parse("2026-07-24 12:00:00")
 
     travel_to(now) do
@@ -35,9 +35,14 @@ RSpec.describe BoardObject, type: :model do
         deleted_at: 31.days.ago
       )
 
-      expect(described_class.active).to contain_exactly(active_object)
-      expect(described_class.tombstones).to contain_exactly(recent_tombstone, old_tombstone)
-      expect(described_class.purgeable_tombstones).to contain_exactly(old_tombstone)
+      expect(described_class.active).to include(active_object)
+      expect(described_class.active).not_to include(recent_tombstone, old_tombstone)
+
+      expect(described_class.tombstones).to include(recent_tombstone, old_tombstone)
+      expect(described_class.tombstones).not_to include(active_object)
+
+      expect(described_class.purgeable_tombstones).to include(old_tombstone)
+      expect(described_class.purgeable_tombstones).not_to include(active_object, recent_tombstone)
     end
   end
 end

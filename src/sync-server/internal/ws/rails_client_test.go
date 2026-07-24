@@ -241,3 +241,29 @@ func TestRailsStoreRejectsUnsupportedProperties(t *testing.T) {
 		t.Fatal("backend was called for an unsupported property, want it to be rejected locally")
 	}
 }
+
+func TestRailsStoreTranslatesConflictIntoErrDeletedObjectEdit(t *testing.T) {
+	t.Parallel()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"error":"Object has been deleted; restore it before editing","restoreSuggested":true}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	store := ws.NewRailsStore(backend.URL)
+	op := ws.Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "geometry",
+		Value:     json.RawMessage(`{"x":10}`),
+		LamportTS: 1,
+		ClientID:  "client-a",
+	}
+
+	_, err := store.SaveConfirmedOp(context.Background(), op)
+	if !errors.Is(err, ws.ErrDeletedObjectEdit) {
+		t.Fatalf("SaveConfirmedOp() error = %v, want ErrDeletedObjectEdit", err)
+	}
+}

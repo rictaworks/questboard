@@ -179,6 +179,10 @@ class ObjectsController < ApplicationController
     confirmed_op = nil
 
     object.with_lock do
+      if property != "deleted_at" && object.deleted_at.present?
+        raise DeletedObjectEditError, "Object has been deleted; restore it before editing"
+      end
+
       existing = ObjectOp.find_by(object_id: object.id, client_id:, lamport_ts:)
       if existing
         if existing.property != property || existing.value != incoming_value
