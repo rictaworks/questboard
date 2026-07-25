@@ -339,6 +339,36 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
    sendObjectRealtimeOp(objectId, 'deleted_at', {restore: true});
   }, [sendObjectRealtimeOp]);
 
+  const resyncTimerRef = useRef<number | null>(null);
+  const resyncingObjectsRef = useRef<Set<string>>(new Set());
+  const reloadBoardRef = useRef<(objectId: string, delay?: number) => void>(() => {});
+  const reloadBoardWithBackoff = useCallback((objectId: string, delay = 1000) => {
+    if (disposedRef.current) return;
+
+    if (delay === 1000 && resyncingObjectsRef.current.has(objectId)) {
+      return;
+    }
+    resyncingObjectsRef.current.add(objectId);
+
+    onReloadBoard()
+      .then(() => {
+        if (disposedRef.current) return;
+        resyncingObjectsRef.current.delete(objectId);
+        prunePendingOps((pending) => pending.objectId === objectId && pending.resyncFailed === true);
+      })
+      .catch(() => {
+        if (disposedRef.current) return;
+        resyncTimerRef.current = window.setTimeout(() => {
+          if (disposedRef.current) return;
+          reloadBoardRef.current(objectId, Math.min(delay * 2, 30000));
+        }, delay);
+      });
+  }, [onReloadBoard, prunePendingOps]);
+
+  useEffect(() => {
+    reloadBoardRef.current = reloadBoardWithBackoff;
+  }, [reloadBoardWithBackoff]);
+
   useEffect(() => {
    let reconnectDelay = 800;
 
@@ -377,6 +407,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
          reconnectDelay = 800;
          updateSyncStatus('connected');
          pendingOpsRef.current.forEach((pending) => {
+           if (pending.resyncFailed) {
+             return;
+           }
            try {
              socket.send(JSON.stringify(pending));
            } catch {
@@ -411,11 +444,16 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
          if ('resyncRequired' in message) {
            const resyncMessage = message as BoardResyncRequired;
-           prunePendingOps((pending) => pending.objectId === resyncMessage.objectId);
            enqueueToast(resyncMessage.error);
-           void onReloadBoard().catch((error) => {
-             enqueueToast(error instanceof Error ? error.message : t('errorMessage'));
+
+           // Mark all pending ops for this object as resyncFailed to prevent them from being resent
+           pendingOpsRef.current.forEach((pending) => {
+             if (pending.objectId === resyncMessage.objectId) {
+               pending.resyncFailed = true;
+             }
            });
+
+           reloadBoardWithBackoff(resyncMessage.objectId);
            return;
          }
 
@@ -480,6 +518,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
      if (reconnectTimerRef.current != null) {
        window.clearTimeout(reconnectTimerRef.current);
      }
+     if (resyncTimerRef.current != null) {
+       window.clearTimeout(resyncTimerRef.current);
+     }
      if (presenceThrottleRef.current != null) {
        window.clearTimeout(presenceThrottleRef.current);
      }
@@ -488,7 +529,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
      window.removeEventListener('online', handleOnline);
      window.removeEventListener('offline', handleOffline);
    };
-  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus]);
+  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus, reloadBoardWithBackoff]);
 
   useEffect(() => {
     if (!interaction) {

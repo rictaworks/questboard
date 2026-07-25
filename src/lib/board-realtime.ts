@@ -25,6 +25,7 @@ export interface BoardRealtimeOp {
   lamport_ts: number;
   clientId: string;
   duplicate?: boolean;
+  resyncFailed?: boolean;
 }
 
 export interface BoardPresenceCursor {
