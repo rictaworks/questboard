@@ -44,6 +44,38 @@
 
 カーソル位置などのephemeralな状態。`object_ops`へは永続化せず、`hub.Broadcast`とRedis中継のみで同一board内に共有する。value形式検証・30Hzスロットリング・トークンバケット方式のレート制限（board+ユーザー単位、受信メッセージ全体のバイト数で課金）を行う（詳細は[`SPEC/api/sync-server.md`](api/sync-server.md)）。
 
+## フロントエンド統合（WSクライアント・presence描画・トゥームストーン復元UX）
+
+Issue #19（PR #56）で実装。実装は `src/components/board-canvas-panel.tsx`、`src/lib/board-realtime.ts`（純粋関数群、`test/board-realtime.test.mjs`で検証）。
+
+### WebSocket接続・再接続
+
+- ボード（`/{locale}/b/{shareToken}`）表示時に`NEXT_PUBLIC_SYNC_SERVER_URL`へ接続する。切断時は800msから開始し、最大8秒まで倍々に伸びるバックオフで自動再接続する
+- ブラウザの`online`/`offline`イベントを監視し、接続状態（`connecting`/`connected`/`reconnecting`/`offline`）をヘッダーの`board-sync-status`に表示する
+
+### 楽観的op送信とサーバー確定値への収束
+
+- ローカル編集（`geometry`/`color`/`deleted_at`）は`sendObjectRealtimeOp`が即座にローカル state（`boardState`）へ適用しつつ、サーバーへLamport順序付きopを送信する
+- サーバーから確定opが返る（または他クライアントの確定opを受信する）と`recordRealtimeOp`が`applyRealtimeOp`で収束させる。ローカル未確定opの方が新しい（Lamport比較、同値なら`clientId`昇順）場合はサーバー確定値での上書きをスキップし、後から追いつくまで待つ
+- オフライン中・送信失敗中のopは`pendingOpsRef`にキューされ、再接続時（`socket.onopen`）に送信済み順序のまま再送される
+
+### presence（リモートカーソル）描画
+
+- カーソル移動は33ms間隔でスロットリングして`presence` opとして送信する（`objectId`にはサーバーが認証済みユーザーIDを強制設定するため、表示名・IDの偽装はできない。[`SPEC/api/sync-server.md`](api/sync-server.md)参照）
+- 受信したpresenceは自分自身（`objectId === 自分のuserId`）を除外して`board-presence-cursor`として描画し、5秒間更新がなければ自動的に消える
+
+### 再同期（resync）とboard切り替え
+
+- `resyncRequired`受信時は該当オブジェクトの未確定opを`resyncFailed`としてマークし（再送はしない）、boardスナップショットを1秒起点・最大30秒までの指数バックオフで再取得する
+- 再取得中に別オブジェクトの`resyncRequired`が届いた場合、取得開始時点でカバーしていたオブジェクトのみを完了扱いにし、後発オブジェクトは次の再取得サイクルへ回す（古いスナップショットで後発の失敗opを誤って確定扱いにしない）
+- `BoardCanvasPanel`は`key={boardData.board.shareToken}`でboard単位にマウントされる。snapshotの再取得（reload）ではコンポーネントを再マウントせず、`boardState`をrender中に同期するのみ。boardそのものが切り替わった場合のみ再マウントし、WebSocket接続・pending opキュー・presence・lamportをリセットする
+
+### トゥームストーン復元UX
+
+- 削除済みオブジェクトへ編集opを送ると`restoreSuggested`通知が返り、トースト（native `alert`/`confirm`は使用しない）で復元提案を表示する
+- 復元アクションは`canRestoreDeletedObject`（owner/editor）で権限がない場合`disabled`になる。加えて誤操作防止のため、F7キーを押している間のみボタンが有効化される「hold-to-restore」ゲート（`restoreGateOpen`）を経由する
+- 有効化されたボタンから`deleted_at` opに`value.restore: true`を付けて送信することで復元する
+
 ## デプロイ上の注意（`text_crdt_revision`カラム）
 
 `db/migrate/20260724150000_add_text_crdt_revision_to_objects.rb`（列追加）と`20260724160000_backfill_text_crdt_revision.rb`（既存`text_crdt`履歴を持つオブジェクトへのバックフィル）は分離しており、後者はDDLを含まないため中断後の再実行が安全。ただし、両migrationの実行中は`text_crdt`編集を受け付ける旧アプリコードを稼働させないこと（新アプリコードのみが`text_crdt_revision`を正しく維持する）。
