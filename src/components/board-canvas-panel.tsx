@@ -107,6 +107,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [boardState, setBoardState] = useState(boardData);
+  const [prevBoardData, setPrevBoardData] = useState(boardData);
+  if (boardData !== prevBoardData) {
+    setPrevBoardData(boardData);
+    setBoardState(boardData);
+  }
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
@@ -341,26 +346,42 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
   const resyncTimerRef = useRef<number | null>(null);
   const resyncingObjectsRef = useRef<Set<string>>(new Set());
-  const reloadBoardRef = useRef<(objectId: string, delay?: number) => void>(() => {});
-  const reloadBoardWithBackoff = useCallback((objectId: string, delay = 1000) => {
+  const inFlightReloadRef = useRef<boolean>(false);
+  const reloadBoardRef = useRef<(delay?: number) => void>(() => {});
+  const reloadBoardWithBackoff = useCallback((delay = 1000) => {
     if (disposedRef.current) return;
 
-    if (delay === 1000 && resyncingObjectsRef.current.has(objectId)) {
+    if (inFlightReloadRef.current || resyncTimerRef.current != null || resyncingObjectsRef.current.size === 0) {
       return;
     }
-    resyncingObjectsRef.current.add(objectId);
+
+    inFlightReloadRef.current = true;
+
+    // Snapshot the objects this reload attempt covers. Objects added to
+    // resyncingObjectsRef after this point are not guaranteed to be reflected
+    // in the fetched snapshot, so they must not be cleared when this attempt
+    // succeeds.
+    const coveredObjectIds = new Set(resyncingObjectsRef.current);
 
     onReloadBoard()
       .then(() => {
         if (disposedRef.current) return;
-        resyncingObjectsRef.current.delete(objectId);
-        prunePendingOps((pending) => pending.objectId === objectId && pending.resyncFailed === true);
+        inFlightReloadRef.current = false;
+        coveredObjectIds.forEach((objectId) => {
+          resyncingObjectsRef.current.delete(objectId);
+          prunePendingOps((pending) => pending.objectId === objectId && pending.resyncFailed === true);
+        });
+        if (resyncingObjectsRef.current.size > 0) {
+          reloadBoardRef.current();
+        }
       })
       .catch(() => {
         if (disposedRef.current) return;
+        inFlightReloadRef.current = false;
         resyncTimerRef.current = window.setTimeout(() => {
           if (disposedRef.current) return;
-          reloadBoardRef.current(objectId, Math.min(delay * 2, 30000));
+          resyncTimerRef.current = null;
+          reloadBoardRef.current(Math.min(delay * 2, 30000));
         }, delay);
       });
   }, [onReloadBoard, prunePendingOps]);
@@ -453,7 +474,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
              }
            });
 
-           reloadBoardWithBackoff(resyncMessage.objectId);
+           // Track the object and kick off the reload
+           resyncingObjectsRef.current.add(resyncMessage.objectId);
+           reloadBoardWithBackoff();
            return;
          }
 
@@ -520,9 +543,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
      }
      if (resyncTimerRef.current != null) {
        window.clearTimeout(resyncTimerRef.current);
+       resyncTimerRef.current = null;
      }
      if (presenceThrottleRef.current != null) {
        window.clearTimeout(presenceThrottleRef.current);
+       presenceThrottleRef.current = null;
      }
      syncSocketRef.current?.close();
      syncSocketRef.current = null;

@@ -25,7 +25,6 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const [roleCode, setRoleCode] = useState<'viewer' | 'commenter' | 'editor'>('viewer');
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
-  const [boardVersion, setBoardVersion] = useState(0);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -76,7 +75,6 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
   const handleBoardData = useCallback((nextBoardData: BoardCanvasData) => {
     setBoardData(nextBoardData);
-    setBoardVersion((current) => current + 1);
   }, []);
 
   const reloadBoard = useCallback(async () => {
@@ -216,7 +214,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return (
       <BoardCanvasPanel
         boardData={boardData}
-        key={boardVersion}
+        key={boardData.board.shareToken}
         onReloadBoard={reloadBoard}
       />
     );
