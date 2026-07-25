@@ -85,12 +85,12 @@
     "saveComment": "[TODO] translate",
     "cancelEdit": "[TODO] translate",
     "commentBodyRequired": "[TODO] translate",
-    "connectionConnected": "Live sync connected",
-    "connectionConnecting": "Connecting live sync…",
-    "connectionReconnecting": "Reconnecting live sync…",
-    "connectionOffline": "Live sync offline",
-    "queuedOps": "{count, plural, one {# queued edit} other {# queued edits}}",
-    "restoreAction": "Restore",
-    "restoreGateHint": "Hold F7 to enable restore"
+    "connectionConnected": "[TODO] translate",
+    "connectionConnecting": "[TODO] translate",
+    "connectionReconnecting": "[TODO] translate",
+    "connectionOffline": "[TODO] translate",
+    "queuedOps": "[TODO] translate",
+    "restoreAction": "[TODO] translate",
+    "restoreGateHint": "[TODO] translate"
   }
 }

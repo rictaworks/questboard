@@ -29,7 +29,7 @@
 }
 ```
 
-`property: "presence"` の場合は `value.cursor` に加えて任意で `value.displayName` を含められる。表示名はクライアントが送信した実表示名をそのまま中継し、受信側はその文字列をカーソルラベルとして描画する。
+`property: "presence"` の場合は `value.cursor` に加えて任意で `value.displayName` を含められる。ただし `objectId`・`clientId` と同様、`value.displayName` はなりすまし防止のためサーバー側で認証済みセッションの表示名に強制上書きされ、他クライアントへは常にサーバー採番の実表示名が配信される（クライアント送信値がそのまま中継されることはない）。
 
 ## メッセージ形式（サーバー→クライアント、確定op）
 
