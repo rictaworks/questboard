@@ -98,8 +98,9 @@ type OpAckPayload struct {
 }
 
 type AuthContext struct {
-	UserID string
-	Role   string
+	UserID      string
+	Role        string
+	DisplayName string
 }
 
 type Authenticator interface {
@@ -208,8 +209,9 @@ func (c *RailsAPIClient) Authenticate(ctx context.Context, boardID string, token
 	}
 
 	return &AuthContext{
-		UserID: fmt.Sprintf("%d", sessionResp.User.ID),
-		Role:   boardData.Membership.Role.Code,
+		UserID:      fmt.Sprintf("%d", sessionResp.User.ID),
+		Role:        boardData.Membership.Role.Code,
+		DisplayName: sessionResp.User.DisplayName,
 	}, nil
 }
 
@@ -649,13 +651,40 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 					continue
 				}
 
+				var presenceValue PresenceValue
+				if err := json.Unmarshal(op.Value, &presenceValue); err != nil || presenceValue.Cursor == nil {
+					client.requestClose(websocket.ClosePolicyViolation, "presence value is invalid")
+					return
+				}
+
+				payload, err := json.Marshal(struct {
+					Cursor      *CursorCoords `json:"cursor"`
+					DisplayName string        `json:"displayName"`
+				}{
+					Cursor:      presenceValue.Cursor,
+					DisplayName: authCtx.DisplayName,
+				})
+				if err != nil {
+					client.requestClose(websocket.CloseInternalServerErr, err.Error())
+					return
+				}
+
+				presenceOp := Op{
+					BoardID:   boardID,
+					ObjectID:  authCtx.UserID,
+					Property:  "presence",
+					Value:     payload,
+					LamportTS: op.LamportTS,
+					ClientID:  authCtx.UserID,
+				}
+
 				now := time.Now()
 				if !lastPresenceBroadcast.IsZero() && now.Sub(lastPresenceBroadcast) < PresenceBroadcastInterval {
 					continue
 				}
 
 				lastPresenceBroadcast = now
-				payload, err := op.MarshalJSON()
+				payload, err = presenceOp.MarshalJSON()
 				if err != nil {
 					client.requestClose(websocket.CloseInternalServerErr, err.Error())
 					return
@@ -711,9 +740,19 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 					continue
 				}
 				if errors.Is(err, ErrStaleOp) {
-					// A newer op already won for this object; skip broadcasting this
-					// one so other clients never see a value regress, but keep the
-					// connection open since the client did nothing wrong.
+					errPayload := ResyncRequiredPayload{
+						ObjectID:       op.ObjectID,
+						Error:          "operation rejected: a newer value already won; reload the object before retrying",
+						ResyncRequired: true,
+					}
+					if payload, jsonErr := json.Marshal(errPayload); jsonErr == nil {
+						select {
+						case client.send <- payload:
+						default:
+							client.requestClose(websocket.ClosePolicyViolation, "slow client, queue overflow")
+							return
+						}
+					}
 					continue
 				}
 				if errors.Is(err, ErrUnsupportedOpProperty) {

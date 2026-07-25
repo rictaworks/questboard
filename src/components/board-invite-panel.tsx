@@ -2,7 +2,7 @@
 
 import {faSpinner} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {FormEvent, useEffect, useState} from 'react';
+import {FormEvent, useCallback, useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
 import AuthPanel from '@/components/auth-panel';
@@ -73,6 +73,23 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     };
   }, [authT]);
 
+  const handleBoardData = useCallback((nextBoardData: BoardCanvasData) => {
+    setBoardData(nextBoardData);
+  }, []);
+
+  const reloadBoard = useCallback(async () => {
+    const {backendUrl} = readGoogleAuthSettings();
+    const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      throw new Error(t('errorMessage'));
+    }
+
+    handleBoardData(await response.json() as BoardCanvasData);
+  }, [handleBoardData, shareToken, t]);
+
   useEffect(() => {
     if (!sessionState?.authenticated) {
       return;
@@ -102,7 +119,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           throw new Error(t('errorMessage'));
         }
 
-        setBoardData(await response.json() as BoardCanvasData);
+        handleBoardData(await response.json() as BoardCanvasData);
         setErrorMessage(null);
       } catch (error) {
         if (!abortController.signal.aborted) {
@@ -115,7 +132,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return () => {
       abortController.abort();
     };
-  }, [sessionState?.authenticated, shareToken, t]);
+  }, [handleBoardData, sessionState?.authenticated, shareToken, t]);
 
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -197,18 +214,8 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return (
       <BoardCanvasPanel
         boardData={boardData}
-        onReloadBoard={async () => {
-          const {backendUrl} = readGoogleAuthSettings();
-          const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
-            credentials: 'include'
-          });
-
-          if (!response.ok) {
-            throw new Error(t('errorMessage'));
-          }
-
-          setBoardData(await response.json() as BoardCanvasData);
-        }}
+        key={boardData.board.shareToken}
+        onReloadBoard={reloadBoard}
       />
     );
   }

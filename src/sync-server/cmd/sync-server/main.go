@@ -18,7 +18,7 @@ const shutdownTimeout = 10 * time.Second
 type developmentAuthenticator struct{}
 
 func (developmentAuthenticator) Authenticate(ctx context.Context, boardID string, token string) (*ws.AuthContext, error) {
-	return &ws.AuthContext{UserID: "dev-user", Role: "owner"}, nil
+	return &ws.AuthContext{UserID: "dev-user", Role: "owner", DisplayName: "Dev User"}, nil
 }
 
 type developmentAuthorizer struct{}

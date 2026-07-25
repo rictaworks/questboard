@@ -25,7 +25,7 @@ import (
 type allowAllAuthenticator struct{}
 
 func (allowAllAuthenticator) Authenticate(ctx context.Context, boardID string, token string) (*ws.AuthContext, error) {
-	return &ws.AuthContext{UserID: "test-user", Role: "owner"}, nil
+	return &ws.AuthContext{UserID: "test-user", Role: "owner", DisplayName: "Test User"}, nil
 }
 
 type allowAllAuthorizer struct{}

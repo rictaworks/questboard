@@ -29,6 +29,8 @@
 }
 ```
 
+`property: "presence"` の場合は `value.cursor` に加えて任意で `value.displayName` を含められる。ただし `objectId`・`clientId` と同様、`value.displayName` はなりすまし防止のためサーバー側で認証済みセッションの表示名に強制上書きされ、他クライアントへは常にサーバー採番の実表示名が配信される（クライアント送信値がそのまま中継されることはない）。
+
 `objectId`・`clientId`にはそれぞれ長さ上限（`MaxObjectIDBytes`/`MaxClientIDBytes`、共に128バイト）があり、超過は`Validate()`エラーとして扱われる（後述の接続クローズを参照）。
 
 ## メッセージ形式（サーバー→クライアント、確定op）
@@ -85,11 +87,13 @@ Railsが「既に記録済みのop（ack再送など）」と判定した場合�
 }
 ```
 
+復元アクションは `deleted_at` op の `value.restore: true` を送信する。復元できるかどうかはクライアント側の権限判定に従う。
+
 ## `presence`（カーソル位置などのephemeralな状態）
 
 他のプロパティと異なり、Rails（`object_ops`）へは一切永続化されない。同一board内の接続へ`hub.Broadcast`とRedis中継のみ行う一時的な状態共有。
 
-- `value`は`{ "cursor": { "x": number, "y": number } }`のみを許可し、512バイトを超える値・余分なキーは拒否（接続を`ClosePolicyViolation`でクローズ）
+- `value`は`cursor`（必須）と`displayName`（任意、サーバー側で強制上書き。前述）のみを許可し、512バイトを超える値・上記以外のキーは拒否（接続を`ClosePolicyViolation`でクローズ）
 - 送信元単位で同一board内、30Hz（約33ms間隔）を超えるブロードキャストは間引かれる（黙って破棄、接続は維持）
 - 別途トークンバケット方式のレート制限（`internal/ws/limiter.go`）があり、board+ユーザー単位でイベント数（平均40/秒・バースト60）とバイト数（平均10KB/秒・バースト20KB）を課金する。課金対象は受信メッセージ全体のバイト数（`objectId`/`clientId`を含む）であり、`value`のバイト数だけではない
 

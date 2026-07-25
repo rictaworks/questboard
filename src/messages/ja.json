@@ -84,6 +84,13 @@
     "deleteComment": "削除",
     "saveComment": "保存",
     "cancelEdit": "キャンセル",
-    "commentBodyRequired": "投稿前にコメントを入力してください"
+    "commentBodyRequired": "投稿前にコメントを入力してください",
+    "connectionConnected": "ライブ同期に接続しました",
+    "connectionConnecting": "ライブ同期に接続中…",
+    "connectionReconnecting": "ライブ同期を再接続中…",
+    "connectionOffline": "ライブ同期はオフラインです",
+    "queuedOps": "{count, plural, one {保留中の編集が#件あります} other {保留中の編集が#件あります}}",
+    "restoreAction": "復元",
+    "restoreGateHint": "F7を押している間だけ復元できます"
   }
 }

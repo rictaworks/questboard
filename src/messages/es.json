@@ -84,6 +84,13 @@
     "deleteComment": "[TODO] translate",
     "saveComment": "[TODO] translate",
     "cancelEdit": "[TODO] translate",
-    "commentBodyRequired": "[TODO] translate"
+    "commentBodyRequired": "[TODO] translate",
+    "connectionConnected": "[TODO] translate",
+    "connectionConnecting": "[TODO] translate",
+    "connectionReconnecting": "[TODO] translate",
+    "connectionOffline": "[TODO] translate",
+    "queuedOps": "[TODO] translate",
+    "restoreAction": "[TODO] translate",
+    "restoreGateHint": "[TODO] translate"
   }
 }

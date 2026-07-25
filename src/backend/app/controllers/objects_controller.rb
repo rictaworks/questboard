@@ -492,9 +492,29 @@ class ObjectsController < ApplicationController
     case property
     when "geometry" then validated_geometry_value
     when "color" then { "color_id" => op_color_id }
-    when "deleted_at" then {}
+    when "deleted_at" then deleted_at_op_value
     when "text_crdt" then validated_text_crdt_value
     end
+  end
+
+  def deleted_at_op_value
+    raw_value =
+      case params[:value]
+      when ActionController::Parameters
+        params[:value].to_unsafe_h
+      when Hash
+        params[:value]
+      else
+        {}
+      end
+
+    normalized = raw_value.stringify_keys
+    unknown_keys = normalized.keys - %w[restore]
+    raise InvalidOpValueError, "deleted_at op contains unsupported keys: #{unknown_keys.join(', ')}" if unknown_keys.any?
+
+    return { "restore" => true } if normalized["restore"] == true
+
+    {}
   end
 
   def validated_geometry_value
@@ -526,7 +546,7 @@ class ObjectsController < ApplicationController
     when "color"
       object.update!(color_palette: ColorPalette.find(value.fetch("color_id")))
     when "deleted_at"
-      object.update!(deleted_at: Time.current)
+      object.update!(deleted_at: value["restore"] ? nil : Time.current)
     when "text_crdt"
       # text_crdt and text_crdt_revision are updated together in this single call (itself
       # inside object.with_lock's transaction) so a reader can never observe one without

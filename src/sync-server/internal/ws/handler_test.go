@@ -59,7 +59,7 @@ func (r *stubRelay) Emit(boardID string, op ws.Op) {
 type allowAllAuthenticator struct{}
 
 func (allowAllAuthenticator) Authenticate(ctx context.Context, boardID string, token string) (*ws.AuthContext, error) {
-	return &ws.AuthContext{UserID: "test-user", Role: "owner"}, nil
+	return &ws.AuthContext{UserID: "test-user", Role: "owner", DisplayName: "Test User"}, nil
 }
 
 // callCountingAuthenticator records how many times Authenticate was invoked, so tests can
@@ -72,7 +72,7 @@ type callCountingAuthenticator struct {
 
 func (a *callCountingAuthenticator) Authenticate(ctx context.Context, boardID string, token string) (*ws.AuthContext, error) {
 	atomic.AddInt32(&a.calls, 1)
-	return &ws.AuthContext{UserID: "test-user", Role: "owner"}, nil
+	return &ws.AuthContext{UserID: "test-user", Role: "owner", DisplayName: "Test User"}, nil
 }
 
 type allowAllAuthorizer struct{}
@@ -223,13 +223,20 @@ func TestStaleOpsAreNotBroadcastAndConnectionStaysOpen(t *testing.T) {
 		t.Fatalf("connB read error = %v, want a read timeout", err)
 	}
 
+	got := mustReadJSONMessage(t, connA)
+	assertJSONField(t, got, "objectId", "object-1")
+	if got["resyncRequired"] != true {
+		t.Fatalf("resyncRequired = %v, want true", got["resyncRequired"])
+	}
+	assertJSONField(t, got, "error", "operation rejected: a newer value already won; reload the object before retrying")
+
 	// connA's connection must remain open (not closed as an internal server error) since
 	// a rejected stale op is an expected outcome, not a client bug.
 	if err := connA.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
 		t.Fatalf("SetReadDeadline() error = %v", err)
 	}
 	if _, _, err := connA.ReadMessage(); err == nil {
-		t.Fatal("connA received an unexpected message")
+		t.Fatal("connA received an unexpected follow-up message")
 	} else if netErr, ok := err.(net.Error); !ok || !netErr.Timeout() {
 		t.Fatalf("connA read error = %v, want a read timeout (connection should stay open)", err)
 	}
@@ -467,7 +474,7 @@ func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 		"boardId":    "board-presence",
 		"objectId":   "object-1",
 		"property":   "presence",
-		"value":      map[string]any{"cursor": map[string]any{"x": 10, "y": 20}},
+		"value":      map[string]any{"cursor": map[string]any{"x": 10, "y": 20}, "displayName": "Imposter User"},
 		"lamport_ts": 1,
 		"clientId":   "client-a",
 	}
@@ -475,7 +482,15 @@ func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 
 	got := mustReadJSONMessage(t, connB)
 	assertJSONField(t, got, "property", "presence")
-	assertJSONField(t, got, "clientId", "client-a")
+	assertJSONField(t, got, "objectId", "test-user")
+	assertJSONField(t, got, "clientId", "test-user")
+	value, ok := got["value"].(map[string]any)
+	if !ok {
+		t.Fatalf("got value = %T, want map[string]any", got["value"])
+	}
+	if value["displayName"] != "Test User" {
+		t.Fatalf("presence displayName = %v, want Test User", value["displayName"])
+	}
 
 	mustWriteJSON(t, connA, presence)
 
