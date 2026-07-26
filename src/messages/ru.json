@@ -91,6 +91,17 @@
     "connectionOffline": "[TODO] translate",
     "queuedOps": "[TODO] translate",
     "restoreAction": "[TODO] translate",
-    "restoreGateHint": "[TODO] translate"
+    "restoreGateHint": "[TODO] translate",
+    "questHeading": "Onboarding quests",
+    "questDescription": "Track the eight seeded onboarding quests here.",
+    "questProgress": "{current}/{total}",
+    "questSkip": "Skip",
+    "questReopen": "Reopen",
+    "questStateNotStarted": "Not started",
+    "questStateInProgress": "In progress",
+    "questStateAchieved": "Achieved",
+    "questStateRewardGranted": "Reward granted",
+    "questStateCompleted": "Completed",
+    "questStateSkipped": "Skipped"
   }
 }

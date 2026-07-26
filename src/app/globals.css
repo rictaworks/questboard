@@ -475,7 +475,8 @@ a {
 }
 
 .board-minimap,
-.board-details {
+.board-details,
+.board-quest-panel {
   padding: var(--space-4);
 }
 
@@ -491,6 +492,41 @@ a {
 .board-details h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+.board-quest-copy,
+.board-quest-progress {
+  margin: 0;
+}
+
+.board-quest-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-quest-item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.board-quest-item-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: 0.82rem;
+}
+
+.board-quest-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .board-minimap-surface {

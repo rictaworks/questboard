@@ -7,6 +7,7 @@ import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker} from '@/lib/analytics-tracker';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {questEngine} from '@/lib/quest-engine';
 
 type SessionState = {
   authenticated: boolean;
@@ -117,6 +118,7 @@ export default function BoardCreatePanel() {
         title: payload.board.title,
         shareUrl: new URL(`/b/${payload.board.shareToken}`, window.location.origin).toString()
       });
+      questEngine.trackEvent({eventId: 'board_shared', attributes: {source: 'board-create'}}, {autoAdvanceReward: true});
       setTitle('');
       setErrorMessage(null);
     } catch (error) {

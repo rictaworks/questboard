@@ -22,6 +22,7 @@ import {
   type BoardResyncRequired
 } from '@/lib/board-realtime';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {questEngine, type QuestStateCode} from '@/lib/quest-engine';
 
 export interface BoardCanvasObject {
   id: number;
@@ -123,6 +124,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
   const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
+  const [questSnapshot, setQuestSnapshot] = useState(() => questEngine.getSnapshot());
 
   useEffect(() => {
     boardStateRef.current = boardState;
@@ -131,13 +133,18 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   useEffect(() => {
     const {backendUrl} = readGoogleAuthSettings();
     analyticsTrackerRef.current?.dispose();
-    analyticsTrackerRef.current = new AnalyticsTracker({
+    const tracker = new AnalyticsTracker({
       boardId: boardState.board.id,
       endpointUrl: `${backendUrl}/kpi_events`,
       userId: userGoogleSub
     });
+    analyticsTrackerRef.current = tracker;
+    const unsubscribeQuestEvents = tracker.subscribe((event) => {
+      questEngine.trackEvent(event, {autoAdvanceReward: true});
+    });
 
     return () => {
+      unsubscribeQuestEvents();
       analyticsTrackerRef.current?.dispose();
       analyticsTrackerRef.current = null;
     };
@@ -174,6 +181,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   useEffect(() => {
     previewGeometryRef.current = previewGeometry;
   }, [previewGeometry]);
+
+  useEffect(() => {
+    const unsubscribe = questEngine.subscribe(() => {
+      setQuestSnapshot(questEngine.getSnapshot());
+    });
+    return unsubscribe;
+  }, [boardState.board.id, userGoogleSub]);
 
   useEffect(() => {
     if (viewport.width <= 0 || viewport.height <= 0) {
@@ -261,6 +275,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 4000);
+  }, []);
+
+  const recordQuestEvent = useCallback((eventId: KpiEventDefinitionCode, attributes: Record<string, unknown> = {}) => {
+    questEngine.trackEvent({eventId, attributes}, {autoAdvanceReward: true});
   }, []);
 
   const updateSyncStatus = useCallback((status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => {
@@ -874,6 +892,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
+      const questEventId = toAnalyticsObjectCreatedEventId(objectTypeCode);
+      if (questEventId) {
+        recordQuestEvent(questEventId, {source: 'toolbar', objectTypeCode});
+      }
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -900,6 +922,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     }
 
     sendObjectRealtimeOp(active.id, 'deleted_at', {});
+    recordQuestEvent('object_deleted', {source: 'toolbar'});
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -1083,6 +1106,41 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         </div>
 
         <aside className="board-sidebar">
+          {questSnapshot.panelVisible ? (
+            <section className="board-quest-panel" aria-labelledby="quest-panel-heading">
+              <div className="board-minimap-header">
+                <h2 id="quest-panel-heading">{t('questHeading')}</h2>
+                <span>{questSnapshot.quests.filter((quest) => quest.state !== 'completed' && quest.state !== 'skipped').length}</span>
+              </div>
+              <p className="board-quest-copy">{t('questDescription')}</p>
+              <ul className="board-quest-list">
+                {questSnapshot.quests.map((quest) => (
+                  <li className="board-quest-item" key={quest.id}>
+                    <div className="board-quest-item-header">
+                      <strong>{quest.title}</strong>
+                      <span>{t(questStateLabelKey(quest.state) as never)}</span>
+                    </div>
+                    <p className="board-quest-progress">
+                      {t('questProgress', {current: quest.progress, total: quest.conditionCount})}
+                    </p>
+                    <div className="board-quest-actions">
+                      {quest.state !== 'completed' && quest.state !== 'skipped' ? (
+                        <button className="button button-secondary" type="button" onClick={() => questEngine.skipQuest(quest.id)}>
+                          {t('questSkip')}
+                        </button>
+                      ) : null}
+                      {quest.state === 'skipped' ? (
+                        <button className="button button-secondary" type="button" onClick={() => questEngine.reopenQuest(quest.id)}>
+                          {t('questReopen')}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="board-minimap">
             <div className="board-minimap-header">
               <h2>{t('minimapHeading')}</h2>
@@ -1126,6 +1184,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
                   t={t}
                   enqueueToast={enqueueToast}
                   canCreateComments={canCreateComments}
+                  recordQuestEvent={recordQuestEvent}
                 />
               ) : (
                 <p className="board-comments-empty">{t('commentsHidden')}</p>
@@ -1362,6 +1421,23 @@ function nextColorId(object: BoardCanvasObject, colors: Array<{id: number}>) {
   return colors[(currentIndex + 1) % colors.length]?.id ?? object.colorId;
 }
 
+function questStateLabelKey(state: QuestStateCode) {
+  switch (state) {
+    case 'not_started':
+      return 'questStateNotStarted';
+    case 'in_progress':
+      return 'questStateInProgress';
+    case 'achieved':
+      return 'questStateAchieved';
+    case 'reward_granted':
+      return 'questStateRewardGranted';
+    case 'completed':
+      return 'questStateCompleted';
+    case 'skipped':
+      return 'questStateSkipped';
+  }
+}
+
 function toAnalyticsObjectCreatedEventId(objectTypeCode: string): KpiEventDefinitionCode | null {
   switch (objectTypeCode) {
     case 'sticky':
@@ -1407,6 +1483,7 @@ interface BoardCommentsProps {
   t: (key: string) => string;
   enqueueToast: (message: string) => void;
   canCreateComments: boolean;
+  recordQuestEvent: (eventId: KpiEventDefinitionCode, attributes?: Record<string, unknown>) => void;
 }
 
 function BoardComments({
@@ -1417,7 +1494,8 @@ function BoardComments({
   onReloadBoard,
   t,
   enqueueToast,
-  canCreateComments
+  canCreateComments,
+  recordQuestEvent
 }: BoardCommentsProps) {
   const [commentDraft, setCommentDraft] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
@@ -1478,6 +1556,7 @@ function BoardComments({
 
       if (action === 'create') {
         // Handled server-side now
+        recordQuestEvent('comment_created', {source: 'comment-form', objectTypeCode: selectedObject.objectTypeCode});
       }
 
       setCommentDraft('');

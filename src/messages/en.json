@@ -91,6 +91,17 @@
     "connectionOffline": "Live sync offline",
     "queuedOps": "{count, plural, one {# queued edit} other {# queued edits}}",
     "restoreAction": "Restore",
-    "restoreGateHint": "Hold F7 to enable restore"
+    "restoreGateHint": "Hold F7 to enable restore",
+    "questHeading": "Onboarding quests",
+    "questDescription": "Track the eight seeded onboarding quests here.",
+    "questProgress": "{current}/{total}",
+    "questSkip": "Skip",
+    "questReopen": "Reopen",
+    "questStateNotStarted": "Not started",
+    "questStateInProgress": "In progress",
+    "questStateAchieved": "Achieved",
+    "questStateRewardGranted": "Reward granted",
+    "questStateCompleted": "Completed",
+    "questStateSkipped": "Skipped"
   }
 }

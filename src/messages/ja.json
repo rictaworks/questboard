@@ -91,6 +91,17 @@
     "connectionOffline": "ライブ同期はオフラインです",
     "queuedOps": "{count, plural, one {保留中の編集が#件あります} other {保留中の編集が#件あります}}",
     "restoreAction": "復元",
-    "restoreGateHint": "F7を押している間だけ復元できます"
+    "restoreGateHint": "F7を押している間だけ復元できます",
+    "questHeading": "オンボーディングクエスト",
+    "questDescription": "ここで8つのシード済みクエストを進めます。",
+    "questProgress": "{current}/{total}",
+    "questSkip": "スキップ",
+    "questReopen": "再開",
+    "questStateNotStarted": "未開始",
+    "questStateInProgress": "進行中",
+    "questStateAchieved": "達成",
+    "questStateRewardGranted": "報酬付与",
+    "questStateCompleted": "完了",
+    "questStateSkipped": "スキップ済み"
   }
 }
