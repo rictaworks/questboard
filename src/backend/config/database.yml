@@ -16,4 +16,6 @@ test:
   database: <%= ENV.fetch("POSTGRES_TEST_DB", "questboard_test") %>
 
 production:
-  url: <%= ENV["DATABASE_URL"] %>
+  <<: *default
+  url: <%= Rails.env.production? ? ENV.fetch("DATABASE_URL") : ENV.fetch("DATABASE_URL", nil) %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>

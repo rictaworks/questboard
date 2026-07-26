@@ -12,7 +12,7 @@ Questboard フロントエンド（Next.js, TypeScript, App Router, next-intl, F
 
 ## Development environment
 
-Development と test の Rails backend は PostgreSQL を使う。ローカル手順は [`ENV/DEVELOPMENT.md`](ENV/DEVELOPMENT.md) を参照。
+Development と test の Rails backend は PostgreSQL を使う。ローカル手順は [src/backend/README.md](src/backend/README.md) を参照。
 
 - `docker compose up -d postgres`
 - `cp src/backend/.env.example src/backend/.env`

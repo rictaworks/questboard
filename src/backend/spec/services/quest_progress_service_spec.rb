@@ -22,7 +22,7 @@ RSpec.describe QuestProgressService, type: :service do
           q.condition_event = "object_created_sticky"
           q.condition_count = 3
         end
-        [user, board, other_board, quest]
+        [ user, board, other_board, quest ]
       end
     end.value
   end
@@ -30,7 +30,7 @@ RSpec.describe QuestProgressService, type: :service do
   after do
     BoardMember.where(user_id: user.id).delete_all
     UserQuest.where(user_id: user.id).delete_all
-    Board.where(title: [board_title, other_board_title]).delete_all
+    Board.where(title: [ board_title, other_board_title ]).delete_all
     User.where(google_sub: user_google_sub).delete_all
     Quest.where(title: quest_title).delete_all
   end
