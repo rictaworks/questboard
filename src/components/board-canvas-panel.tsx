@@ -1,7 +1,8 @@
 "use client";
 
-import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
+import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faStar, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
+import {useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
@@ -22,6 +23,21 @@ import {
   type BoardResyncRequired
 } from '@/lib/board-realtime';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
+import {
+  QUEST_QUERY_ROOT_KEY,
+  useQuestsQuery,
+  useReopenQuestMutation,
+  useSkipQuestMutation
+} from '@/hooks/use-quests';
+import {QUEST_CELEBRATION_OVERLAY_MS} from '@/lib/quest-celebration';
+import {
+  countActiveQuests,
+  createPlaceholderQuestSnapshots,
+  isQuestPanelVisible,
+  isQuestSkippable,
+  questStateLabelKey
+} from '@/lib/quest-engine';
 
 export interface BoardCanvasObject {
   id: number;
@@ -123,25 +139,37 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
   const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
+  const queryClient = useQueryClient();
+  const {backendUrl} = readGoogleAuthSettings();
+
+  // クエスト状態の取得・再取得・順序保証・重複排除は TanStack Query に任せる。
+  // 以前はこれらを自前で書いていたため、順序逆転・初回誤祝賀・再接続漏れといった
+  // 不具合が繰り返し発生していた（PR #61 レビュー）。
+  const questsQuery = useQuestsQuery({backendUrl, userGoogleSub});
+  // 祝賀判定には必ず生の data を渡す。プレースホルダを混ぜると、初回の実応答で
+  // 「表示時点ですでに完了していたクエスト」を新規完了と誤認して祝ってしまう。
+  const activeCelebration = useQuestCelebrations(questsQuery.data);
+  const placeholderQuests = useMemo(() => createPlaceholderQuestSnapshots(), []);
+  const quests = questsQuery.data ?? placeholderQuests;
 
   useEffect(() => {
     boardStateRef.current = boardState;
   }, [boardState]);
 
   useEffect(() => {
-    const {backendUrl} = readGoogleAuthSettings();
     analyticsTrackerRef.current?.dispose();
-    analyticsTrackerRef.current = new AnalyticsTracker({
+    const tracker = new AnalyticsTracker({
       boardId: boardState.board.id,
       endpointUrl: `${backendUrl}/kpi_events`,
       userId: userGoogleSub
     });
+    analyticsTrackerRef.current = tracker;
 
     return () => {
       analyticsTrackerRef.current?.dispose();
       analyticsTrackerRef.current = null;
     };
-  }, [boardState.board.id, userGoogleSub]);
+  }, [backendUrl, boardState.board.id, userGoogleSub]);
 
   useEffect(() => {
     analyticsTrackerRef.current?.setConnectionState(
@@ -262,6 +290,26 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       setToasts((current) => current.filter((toast) => toast.id !== id));
     }, 4000);
   }, []);
+
+  // スキップ／再開の失敗は握り潰さずトーストで通知する。onSettled 側で必ず
+  // invalidate が走るため、失敗後の表示はサーバー真実へ戻る。
+  const notifyQuestActionFailed = useCallback((error: Error) => {
+    console.error('Quest action failed:', error);
+    enqueueToast(t('questActionFailed'));
+  }, [enqueueToast, t]);
+
+  const skipQuestMutation = useSkipQuestMutation({
+    backendUrl,
+    shareToken: boardState.board.shareToken,
+    userGoogleSub,
+    onError: notifyQuestActionFailed
+  });
+  const reopenQuestMutation = useReopenQuestMutation({
+    backendUrl,
+    shareToken: boardState.board.shareToken,
+    userGoogleSub,
+    onError: notifyQuestActionFailed
+  });
 
   const updateSyncStatus = useCallback((status: 'connecting' | 'connected' | 'reconnecting' | 'offline') => {
    setSyncStatus(status);
@@ -464,6 +512,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
        socket.onopen = () => {
          reconnectDelay = 800;
          updateSyncStatus('connected');
+         // 切断中にサーバー側で進んだクエストを取り戻す。refetchOnReconnect は
+         // ネットワーク復帰時にしか働かないため、ソケット単独の再接続はここで補う。
+         void queryClient.invalidateQueries({queryKey: QUEST_QUERY_ROOT_KEY});
          pendingOpsRef.current.forEach((pending) => {
            if (pending.resyncFailed) {
              return;
@@ -537,6 +588,17 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
            return;
          }
 
+         if (message.property === 'quest_state_changed') {
+           // 個人のクエスト内容はWS経由では一切送られてこない（他ボードメンバーへの漏洩防止）。
+           // これは純粋なキャッシュ無効化シグナルであり、実データは認証済みの
+           // GET /quests からのみ取得する。
+           // objectId の一致判定は必須。無いと他メンバーの進捗ごとに全員が再取得する。
+           if (message.objectId === String(currentUserId)) {
+             void queryClient.invalidateQueries({queryKey: QUEST_QUERY_ROOT_KEY});
+           }
+           return;
+         }
+
          recordRealtimeOp(message as BoardRealtimeOp);
        };
 
@@ -591,7 +653,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
      window.removeEventListener('online', handleOnline);
      window.removeEventListener('offline', handleOffline);
    };
-  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus, reloadBoardWithBackoff]);
+  // queryClient は useQueryClient() 由来で参照が安定しているため、依存に加えても再購読は起きない。
+  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, queryClient, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus, reloadBoardWithBackoff]);
 
   useEffect(() => {
     if (!interaction) {
@@ -874,6 +937,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
+      // Handled server-side now via F8 events
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -1083,6 +1147,54 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         </div>
 
         <aside className="board-sidebar">
+          {isQuestPanelVisible(quests) ? (
+            <section className="board-quest-panel" aria-labelledby="quest-panel-heading">
+              <div className="board-minimap-header">
+                <h2 id="quest-panel-heading">{t('questHeading')}</h2>
+                <span>{countActiveQuests(quests)}</span>
+              </div>
+              <p className="board-quest-copy">{t('questDescription')}</p>
+              {questsQuery.isError ? (
+                <p className="board-quest-error" role="alert">{t('questSyncError')}</p>
+              ) : null}
+              <ul className="board-quest-list">
+                {quests.map((quest) => (
+                  <li className="board-quest-item" key={quest.id}>
+                    <div className="board-quest-item-header">
+                      <strong>{quest.title}</strong>
+                      <span>{t(questStateLabelKey(quest.state) as never)}</span>
+                    </div>
+                    <p className="board-quest-progress">
+                      {t('questProgress', {current: quest.progress, total: quest.conditionCount})}
+                    </p>
+                    <div className="board-quest-actions">
+                      {isQuestSkippable(quest.state) ? (
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={skipQuestMutation.isPending}
+                          onClick={() => skipQuestMutation.mutate(quest.id)}
+                        >
+                          {t('questSkip')}
+                        </button>
+                      ) : null}
+                      {quest.state === 'skipped' ? (
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={reopenQuestMutation.isPending}
+                          onClick={() => reopenQuestMutation.mutate(quest.id)}
+                        >
+                          {t('questReopen')}
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="board-minimap">
             <div className="board-minimap-header">
               <h2>{t('minimapHeading')}</h2>
@@ -1158,6 +1270,25 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           </div>
         ))}
       </div>
+      {activeCelebration ? (
+        <div
+          className={`quest-celebration-overlay ${activeCelebration.motionMode === 'color-only' ? 'motion-color-only' : ''}`}
+          style={{
+            animationDuration: `${QUEST_CELEBRATION_OVERLAY_MS}ms`,
+            animationTimingFunction: activeCelebration.easing,
+          }}
+        >
+          <div className="celebration-content">
+            {/* アイコンは FontAwesome を使う（絵文字は規約で禁止）。文言はロケールから引く。 */}
+            <span className="celebration-badge">
+              <FontAwesomeIcon icon={faStar} aria-hidden="true" />
+              {t('questCelebrationBadge')}
+              <FontAwesomeIcon icon={faStar} aria-hidden="true" />
+            </span>
+            <h2 className="celebration-title">{t('questHeading')}</h2>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1476,9 +1607,7 @@ function BoardComments({
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
-      if (action === 'create') {
-        // Handled server-side now
-      }
+      // Handled server-side now
 
       setCommentDraft('');
       setEditingCommentId(null);

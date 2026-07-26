@@ -40,6 +40,12 @@ export interface AnalyticsTrackerOptions {
   logger?: Pick<Console, 'error' | 'warn'>;
 }
 
+export interface AnalyticsTrackerPublishedEvent extends AnalyticsTrackerEvent {
+  boardId: number;
+  timestamp: string;
+  userId: string;
+}
+
 type StoredAnalyticsEvent = {
   boardId: number;
   attributes: Record<string, unknown>;
@@ -77,6 +83,7 @@ export class AnalyticsTracker {
   private readonly clearTimeoutImpl: typeof clearTimeout;
   private readonly logger: Pick<Console, 'error' | 'warn'>;
   private readonly storage: StorageLike | null;
+  private readonly listeners = new Set<(event: AnalyticsTrackerPublishedEvent) => void>();
   private pendingQueue: StoredAnalyticsEvent[] = [];
   private connectionState: AnalyticsConnectionState = 'connected';
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -112,6 +119,13 @@ export class AnalyticsTracker {
     }
   }
 
+  subscribe(listener: (event: AnalyticsTrackerPublishedEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   track(event: AnalyticsTrackerEvent): void {
     const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened'];
     if (!allowedClientEvents.includes(event.eventId)) {
@@ -119,6 +133,7 @@ export class AnalyticsTracker {
     }
 
     const trackedEvent = this.normalizeEvent(event);
+    this.emit(trackedEvent);
 
     if (this.connectionState === 'offline') {
       this.persistOfflineBuffer([...this.readOfflineBuffer(), trackedEvent]);
@@ -240,6 +255,20 @@ export class AnalyticsTracker {
       timestamp,
       userId: this.userId,
     };
+  }
+
+  private emit(event: StoredAnalyticsEvent): void {
+    const publishedEvent: AnalyticsTrackerPublishedEvent = {
+      boardId: event.boardId,
+      attributes: event.attributes,
+      eventId: event.eventId,
+      timestamp: event.timestamp,
+      userId: event.userId,
+    };
+
+    for (const listener of this.listeners) {
+      listener(publishedEvent);
+    }
   }
 
   private normalizeTimestamp(timestamp: string | number | Date): string {

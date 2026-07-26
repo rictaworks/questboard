@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_24_160000) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_26_143000) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
@@ -139,6 +139,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_24_160000) do
     t.integer "quest_id", null: false
     t.string "state", default: "not_started", null: false
     t.integer "progress", default: 0, null: false
+    t.datetime "achieved_at"
+    t.datetime "completed_at"
+    t.datetime "reward_granted_at"
+    t.datetime "skipped_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
     t.index ["user_id", "quest_id"], name: "index_user_quests_on_user_id_and_quest_id", unique: true
   end
 

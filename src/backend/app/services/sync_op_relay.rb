@@ -40,7 +40,7 @@ class SyncOpRelay
       origin: ORIGIN,
       op: {
         boardId: board_share_token,
-        objectId: object_op.object_id.to_s,
+        objectId: object_op.relay_object_id.to_s,
         property: object_op.property,
         value: object_op.value,
         lamport_ts: object_op.lamport_ts,
