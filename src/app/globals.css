@@ -499,6 +499,13 @@ a {
   margin: 0;
 }
 
+/* クエスト取得が失敗している間だけ出る通知。復旧すると自動で消える。 */
+.board-quest-error {
+  margin: 0;
+  color: var(--color-danger, #ff6b6b);
+  font-size: 0.85rem;
+}
+
 .board-quest-list {
   display: grid;
   gap: var(--space-3);
@@ -671,5 +678,91 @@ a {
 @media (max-width: 960px) {
   .board-canvas-body {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ── Quest Celebration Animation Overlay ── */
+.quest-celebration-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6, 7, 26, 0.65);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  pointer-events: none;
+  animation: fadeInOut 2000ms cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+.quest-celebration-overlay.motion-color-only {
+  animation: fadeInOutSimple 2000ms ease forwards;
+  backdrop-filter: none;
+  background: rgba(6, 7, 26, 0.85);
+}
+
+.celebration-content {
+  text-align: center;
+  transform: scale(0.8);
+  animation: popIn 600ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.quest-celebration-overlay.motion-color-only .celebration-content {
+  animation: none;
+  transform: scale(1);
+}
+
+.celebration-badge {
+  /* 左右のFontAwesomeアイコンと文言を一列に揃える */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 2rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7b2fff, #a855f7);
+  color: white;
+  font-weight: 700;
+  font-size: 1.4rem;
+  box-shadow: 0 0 25px rgba(168, 85, 247, 0.6);
+  margin-bottom: var(--space-4);
+  letter-spacing: 0.05em;
+}
+
+.celebration-title {
+  color: white;
+  font-size: 2.75rem;
+  font-weight: 800;
+  margin: 0;
+  text-shadow: 0 0 30px rgba(168, 85, 247, 0.8);
+  font-family: var(--font-display);
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes fadeInOutSimple {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes popIn {
+  0% { transform: scale(0.7); }
+  100% { transform: scale(1.15); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quest-celebration-overlay {
+    animation: fadeInOutSimple 2000ms ease forwards !important;
+    backdrop-filter: none !important;
+  }
+  .celebration-content {
+    animation: none !important;
+    transform: scale(1) !important;
   }
 }

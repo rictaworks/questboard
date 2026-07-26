@@ -2,9 +2,11 @@
 
 import {faRightFromBracket, faRightToBracket, faShieldHalved, faSpinner, faUserCheck} from "@fortawesome/free-solid-svg-icons";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
+import {useQueryClient} from "@tanstack/react-query";
 import {useEffect, useState} from "react";
 import {useTranslations} from "next-intl";
 
+import {QUEST_QUERY_ROOT_KEY} from "@/hooks/use-quests";
 import {
   buildGoogleAuthorizationUrl,
   createCodeChallenge,
@@ -21,6 +23,7 @@ type SessionState = {
 
 export default function AuthPanel() {
   const t = useTranslations("Auth");
+  const queryClient = useQueryClient();
   const isDev = process.env.NEXT_PUBLIC_ENV === "development";
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === "development" ? {authenticated: true, displayName: t("developmentDisplayName")} : null
@@ -110,6 +113,10 @@ export default function AuthPanel() {
         throw new Error(t("signOutError"));
       }
 
+      // サインアウト後に前のユーザーのクエスト状態がメモリ上のキャッシュへ
+      // 残らないようにする。キーはユーザー単位なので通常は別エントリになるが、
+      // 明示的に破棄しておく。
+      queryClient.removeQueries({queryKey: QUEST_QUERY_ROOT_KEY});
       setSessionState({authenticated: false});
       setErrorMessage(null);
     } catch (error) {

@@ -1,78 +1,57 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {createRequire} from 'node:module';
 import path from 'node:path';
 import test from 'node:test';
 import * as ts from 'typescript';
 
 const root = process.cwd();
 
-async function loadModule() {
-  const source = await readFile(path.join(root, 'src/lib/quest-engine.ts'), 'utf8');
+async function loadModule(relativePath) {
+  const source = await readFile(path.join(root, relativePath), 'utf8');
   const {outputText} = ts.transpileModule(source, {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
   });
 
+  // quest-engine.ts の import は `import type` のみで、transpile 時に完全に消える。
+  // そのため require シムは不要。
   const moduleShim = {exports: {}};
-  const realRequire = createRequire(import.meta.url);
-  const require = (specifier) => {
-    if (specifier === '@/lib/feedback-director') {
-      return {
-        FeedbackDirector: class FeedbackDirector {
-          decide(trigger, intensity) {
-            return {
-              trigger,
-              eventKind: 'radial_opened',
-              effectCode: 'radial_bloom',
-              intensity,
-              resolvedIntensity: intensity,
-              reducedMotion: false,
-              durationMs: 180,
-              easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
-              motionMode: intensity === 'off' ? 'color-only' : 'motion',
-              modal: false,
-              blocksInput: false,
-              soundEnabled: false,
-            };
-          }
-        }
-      };
-    }
-
-    return realRequire(specifier);
-  };
-  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
 
   return moduleShim.exports;
 }
 
-function createRecordingDirector() {
-  const calls = [];
+const {
+  QUEST_DEFINITIONS,
+  countActiveQuests,
+  createPlaceholderQuestSnapshots,
+  isQuestPanelVisible,
+  isQuestSkippable,
+  questStateLabelKey,
+} = await loadModule('src/lib/quest-engine.ts');
 
+const ALL_STATES = [
+  'not_started',
+  'in_progress',
+  'achieved',
+  'reward_granted',
+  'completed',
+  'skipped',
+];
+
+function questWithState(id, state) {
   return {
-    calls,
-    decide(trigger, intensity) {
-      const decision = {
-        trigger,
-        eventKind: 'radial_opened',
-        effectCode: 'radial_bloom',
-        intensity,
-        resolvedIntensity: intensity,
-        reducedMotion: false,
-        durationMs: 180,
-        easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)',
-        motionMode: intensity === 'off' ? 'color-only' : 'motion',
-        modal: false,
-        blocksInput: false,
-        soundEnabled: false,
-      };
-      calls.push(decision);
-      return decision;
-    },
+    id,
+    title: id,
+    conditionEvent: 'camera_panned',
+    conditionCount: 1,
+    progress: 0,
+    state,
+    achievedAt: null,
+    completedAt: null,
+    rewardGrantedAt: null,
+    skippedAt: null,
   };
 }
-
-const {QuestEngine, QUEST_DEFINITIONS} = await loadModule();
 
 test('quest definitions stay aligned with the seeded quest rows', async () => {
   const seeds = await readFile(path.join(root, 'src/backend/db/seeds.rb'), 'utf8');
@@ -90,163 +69,55 @@ test('quest definitions stay aligned with the seeded quest rows', async () => {
   );
 });
 
-test('quest engine covers the 44 valid onboarding transitions', () => {
-  const cases = [];
+test('createPlaceholderQuestSnapshots returns a render-only baseline with no completed quests', () => {
+  const placeholders = createPlaceholderQuestSnapshots();
 
-  for (const definition of QUEST_DEFINITIONS) {
-    cases.push({
-      label: `${definition.title}: first event advances the state machine`,
-      run() {
-        const director = createRecordingDirector();
-        const engine = new QuestEngine([definition], {feedbackDirector: director});
-        const result = engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
+  assert.equal(placeholders.length, QUEST_DEFINITIONS.length);
+  // 祝賀判定にこの配列を渡してはならない理由そのもの: 全て not_started なので、
+  // これを基準にすると実応答の完了済みクエストが全て「新規完了」に見えてしまう。
+  assert.equal(placeholders.every((quest) => quest.state === 'not_started'), true);
+  assert.equal(placeholders.every((quest) => quest.progress === 0), true);
+});
 
-        const snapshot = engine.getSnapshot().quests[0];
-        assert.equal(result.startedQuestIds.includes(definition.id), true);
-        assert.equal(snapshot.state, definition.conditionCount === 1 ? 'achieved' : 'in_progress');
-        assert.equal(snapshot.progress, 1);
-        assert.equal(director.calls.length, 0);
-      }
-    });
+test('panel visibility and active count treat completed and skipped as terminal', () => {
+  assert.equal(isQuestPanelVisible([questWithState('a', 'completed'), questWithState('b', 'skipped')]), false);
+  assert.equal(isQuestPanelVisible([questWithState('a', 'completed'), questWithState('b', 'in_progress')]), true);
+  assert.equal(isQuestPanelVisible([]), false);
 
-    cases.push({
-      label: `${definition.title}: repeated events reach achieved`,
-      run() {
-        const director = createRecordingDirector();
-        const engine = new QuestEngine([definition], {feedbackDirector: director});
-        const repetitions = Array.from({length: definition.conditionCount}, () => ({
-          eventId: definition.conditionEvent,
-          attributes: {source: 'test'}
-        }));
+  assert.equal(countActiveQuests([
+    questWithState('a', 'completed'),
+    questWithState('b', 'skipped'),
+    questWithState('c', 'in_progress'),
+    questWithState('d', 'not_started'),
+  ]), 2);
+});
 
-        repetitions.forEach((event) => engine.trackEvent(event));
+test('isQuestSkippable allows every non-terminal state and blocks terminal ones', () => {
+  assert.equal(isQuestSkippable('not_started'), true);
+  assert.equal(isQuestSkippable('in_progress'), true);
+  // サーバー(QuestProgressService#skip_quest)は completed/skipped 以外からのスキップを
+  // 受理する。ここが食い違うと「サーバーだけスキップ済み」状態が生まれる（PR #61 レビュー）。
+  assert.equal(isQuestSkippable('achieved'), true);
+  assert.equal(isQuestSkippable('reward_granted'), true);
+  assert.equal(isQuestSkippable('completed'), false);
+  assert.equal(isQuestSkippable('skipped'), false);
+});
 
-        const snapshot = engine.getSnapshot().quests[0];
-        assert.equal(snapshot.state, 'achieved');
-        assert.equal(snapshot.progress, definition.conditionCount);
-      }
-    });
+test('questStateLabelKey returns a distinct translation key for every state', () => {
+  const keys = ALL_STATES.map((state) => questStateLabelKey(state));
 
-    cases.push({
-      label: `${definition.title}: grantReward routes through F4`,
-      run() {
-        const director = createRecordingDirector();
-        const engine = new QuestEngine([definition], {feedbackDirector: director});
+  assert.equal(new Set(keys).size, ALL_STATES.length, 'every state needs its own key');
+  assert.equal(keys.every((key) => typeof key === 'string' && key.startsWith('questState')), true);
+});
 
-        for (let index = 0; index < definition.conditionCount; index += 1) {
-          engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
-        }
-
-        const decision = engine.grantReward(definition.id, 'subtle');
-        const snapshot = engine.getSnapshot().quests[0];
-
-        assert.equal(director.calls.length, 1);
-        assert.equal(decision?.trigger, 'quest_completed');
-        assert.equal(decision?.effectCode, 'radial_bloom');
-        assert.equal(snapshot.state, 'reward_granted');
-      }
-    });
-
-    cases.push({
-      label: `${definition.title}: reward_granted completes cleanly`,
-      run() {
-        const director = createRecordingDirector();
-        const engine = new QuestEngine([definition], {feedbackDirector: director});
-
-        for (let index = 0; index < definition.conditionCount; index += 1) {
-          engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
-        }
-
-        engine.grantReward(definition.id);
-        assert.equal(engine.completeQuest(definition.id), true);
-        assert.equal(engine.getSnapshot().quests[0].state, 'completed');
-      }
-    });
-
-    cases.push({
-      label: `${definition.title}: skip freezes progress until reopen`,
-      run() {
-        const director = createRecordingDirector();
-        const engine = new QuestEngine([definition], {feedbackDirector: director});
-        engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
-        engine.skipQuest(definition.id);
-        const skippedProgress = engine.getSnapshot().quests[0].progress;
-        engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
-        assert.equal(engine.getSnapshot().quests[0].progress, skippedProgress);
-        assert.equal(engine.reopenQuest(definition.id), true);
-        assert.equal(engine.getSnapshot().quests[0].state, 'in_progress');
-      }
-    });
-  }
-
-  cases.push({
-    label: 'panel hides when every quest is terminal',
-    run() {
-      const director = createRecordingDirector();
-      const engine = new QuestEngine(QUEST_DEFINITIONS, {feedbackDirector: director});
-
-      QUEST_DEFINITIONS.forEach((definition) => {
-        engine.skipQuest(definition.id);
-      });
-
-      assert.equal(engine.isPanelVisible(), false);
-      assert.equal(engine.getSnapshot().panelVisible, false);
+test('every quest state label key exists in the ja and en locale files', async () => {
+  for (const locale of ['ja', 'en']) {
+    const messages = JSON.parse(await readFile(path.join(root, `src/messages/${locale}.json`), 'utf8'));
+    for (const state of ALL_STATES) {
+      const key = questStateLabelKey(state);
+      assert.ok(messages.BoardCanvas[key], `${locale}.json is missing BoardCanvas.${key}`);
     }
-  });
-
-  cases.push({
-    label: 'auto-advance completes a quest and keeps the celebration alias',
-    run() {
-      const director = createRecordingDirector();
-      const engine = new QuestEngine([QUEST_DEFINITIONS[1]], {feedbackDirector: director});
-      const result = engine.trackEvent(
-        {eventId: QUEST_DEFINITIONS[1].conditionEvent, attributes: {source: 'test'}},
-        {autoAdvanceReward: true}
-      );
-
-      assert.equal(result.rewardDecisions.length, 1);
-      assert.equal(engine.getSnapshot().quests[0].state, 'completed');
-      assert.equal(engine.getSnapshot().lastCelebration?.trigger, 'quest_completed');
-    }
-  });
-
-  cases.push({
-    label: 'listeners are notified whenever quest state changes',
-    run() {
-      const director = createRecordingDirector();
-      const engine = new QuestEngine([QUEST_DEFINITIONS[0]], {feedbackDirector: director});
-      let notifications = 0;
-
-      const unsubscribe = engine.subscribe(() => {
-        notifications += 1;
-      });
-
-      engine.trackEvent({eventId: QUEST_DEFINITIONS[0].conditionEvent, attributes: {source: 'test'}});
-      engine.skipQuest(QUEST_DEFINITIONS[0].id);
-      unsubscribe();
-
-      assert.equal(notifications >= 2, true);
-    }
-  });
-
-  cases.push({
-    label: 'reopening a skipped quest preserves its progress counter',
-    run() {
-      const director = createRecordingDirector();
-      const definition = QUEST_DEFINITIONS[0];
-      const engine = new QuestEngine([definition], {feedbackDirector: director});
-
-      engine.trackEvent({eventId: definition.conditionEvent, attributes: {source: 'test'}});
-      engine.skipQuest(definition.id);
-      engine.reopenQuest(definition.id);
-
-      assert.equal(engine.getSnapshot().quests[0].progress, 1);
-      assert.equal(engine.getSnapshot().quests[0].state, 'in_progress');
-    }
-  });
-
-  assert.equal(cases.length, 44);
-  for (const testCase of cases) {
-    testCase.run();
+    assert.ok(messages.BoardCanvas.questSyncError, `${locale}.json is missing BoardCanvas.questSyncError`);
+    assert.ok(messages.BoardCanvas.questActionFailed, `${locale}.json is missing BoardCanvas.questActionFailed`);
   }
 });

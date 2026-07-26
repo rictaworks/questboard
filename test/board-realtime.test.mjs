@@ -122,3 +122,24 @@ test('isNewerRealtimeOp compares Lamport timestamps then client ids', () => {
   assert.equal(realtime.isNewerRealtimeOp({...older, clientId: 'a'}, sameLamport), true);
   assert.equal(realtime.isNewerRealtimeOp(sameLamport, older), false);
 });
+
+test('parseRealtimeMessage accepts a payload-free quest_state_changed signal but rejects a null value', () => {
+  const base = {
+    boardId: 'board-1',
+    objectId: '42',
+    property: 'quest_state_changed',
+    lamport_ts: 7,
+    clientId: 'system',
+  };
+
+  // サーバーは個人データを載せない空オブジェクトを送る。これが受理されないと
+  // クエスト通知がハンドラまで届かず、ポーリング待ちになる（PR #61 レビュー）。
+  const accepted = realtime.parseRealtimeMessage(JSON.stringify({...base, value: {}}));
+  assert.notEqual(accepted, null);
+  assert.equal(accepted.property, 'quest_state_changed');
+  assert.equal(accepted.objectId, '42');
+  assert.deepEqual(accepted.value, {});
+
+  // value: null は従来どおり捨てる。このガードは applyRealtimeOp も守っているため緩めない。
+  assert.equal(realtime.parseRealtimeMessage(JSON.stringify({...base, value: null})), null);
+});

@@ -29,5 +29,13 @@ Rails.application.routes.draw do
   patch "/boards/:share_token/objects/:object_id/comments/:id", to: "comments#update"
   delete "/boards/:share_token/objects/:object_id/comments/:id", to: "comments#destroy"
 
+  resources :quests, only: :index do
+    member do
+      post :skip
+      post :reopen
+      post :claim
+    end
+  end
+
   resource :session, controller: "session", only: %i[show destroy]
 end
