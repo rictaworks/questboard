@@ -12,13 +12,16 @@ import {readGoogleAuthSettings} from '@/lib/google-auth';
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  googleSub?: string;
 };
 
 export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const t = useTranslations('BoardInvite');
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    process.env.NEXT_PUBLIC_ENV === 'development' ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
+    process.env.NEXT_PUBLIC_ENV === 'development'
+      ? {authenticated: true, displayName: authT('developmentDisplayName'), googleSub: 'development-google-sub'}
+      : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -52,12 +55,13 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string};
+          user?: {displayName?: string; googleSub?: string};
         };
 
         setSessionState({
           authenticated: payload.authenticated,
-          displayName: payload.user?.displayName
+          displayName: payload.user?.displayName,
+          googleSub: payload.user?.googleSub
         });
         setErrorMessage(null);
       } catch (error) {
@@ -216,6 +220,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         boardData={boardData}
         key={boardData.board.shareToken}
         onReloadBoard={reloadBoard}
+        userGoogleSub={sessionState.googleSub ?? 'development-google-sub'}
       />
     );
   }

@@ -2,14 +2,16 @@
 
 import {faSpinner} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {FormEvent, useEffect, useMemo, useState} from 'react';
+import {FormEvent, useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
+import {AnalyticsTracker} from '@/lib/analytics-tracker';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  googleSub?: string;
 };
 
 type CreatedBoard = {
@@ -21,13 +23,16 @@ export default function BoardCreatePanel() {
   const t = useTranslations('BoardCreate');
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    process.env.NEXT_PUBLIC_ENV === 'development' ? {authenticated: true, displayName: authT('developmentDisplayName')} : null
+    process.env.NEXT_PUBLIC_ENV === 'development'
+      ? {authenticated: true, displayName: authT('developmentDisplayName'), googleSub: 'development-google-sub'}
+      : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
   const [creating, setCreating] = useState(false);
+  const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -55,12 +60,13 @@ export default function BoardCreatePanel() {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string};
+          user?: {displayName?: string; googleSub?: string};
         };
 
         setSessionState({
           authenticated: payload.authenticated,
-          displayName: payload.user?.displayName
+          displayName: payload.user?.displayName,
+          googleSub: payload.user?.googleSub
         });
         setErrorMessage(null);
       } catch (error) {
@@ -104,7 +110,7 @@ export default function BoardCreatePanel() {
       }
 
       const payload = await response.json() as {
-        board: {title: string; shareToken: string};
+        board: {id: number; title: string; shareToken: string};
       };
 
       setCreatedBoard({

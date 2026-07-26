@@ -9,6 +9,7 @@ Rails.application.routes.draw do
     post "/google_sessions", to: "google_sessions#create"
   end
 
+  resources :kpi_events, only: :create
   resources :boards, only: :create
   get "/boards/:share_token", to: "boards#show"
   post "/boards/:share_token/join", to: "boards#join"

@@ -1271,4 +1271,90 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:ok)
     expect(BoardObject.find(object_id).geometry).to include("x" => 20, "y" => 20)
   end
+
+  it "publishes the op via SyncOpRelay only after the transaction commits, ensuring changes and KPIs are visible" do
+    effect = EffectMaster.find_or_create_by!(code: "recolor_pulse", duration_ms: 140)
+    EventDef.find_or_create_by!(code: "object_recolored", effect_id: effect.id)
+
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    color = ColorPalette.first!
+
+    fake_relay = instance_double(SyncOpRelay)
+    allow(SyncOpRelay).to receive(:new).and_return(fake_relay)
+
+    publish_called = false
+    expect(fake_relay).to receive(:publish) do |board_share_token:, object_op:|
+      publish_called = true
+      # verify DB change is visible
+      expect(BoardObject.find(object_id).color_id).to eq(color.id)
+      # verify KPI event is already committed and visible
+      expect(KpiEvent.exists?(
+        board_id: Board.find_by!(share_token:).id,
+        user_id: editor.id,
+        event_def: EventDef.find_by!(code: "object_recolored")
+      )).to be_truthy
+    end
+
+    patch "/boards/#{share_token}/objects/#{object_id}/color", params: { color_id: color.id }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(publish_called).to be_truthy
+  end
+
+  it "does not publish the op via SyncOpRelay when transaction fails and rolls back" do
+    effect = EffectMaster.find_or_create_by!(code: "recolor_pulse", duration_ms: 140)
+    EventDef.find_or_create_by!(code: "object_recolored", effect_id: effect.id)
+
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    color = ColorPalette.first!
+
+    fake_relay = instance_double(SyncOpRelay)
+    allow(SyncOpRelay).to receive(:new).and_return(fake_relay)
+    expect(fake_relay).not_to receive(:publish)
+
+    # Force error during KPI Event persistence inside the transaction
+    allow(KpiEvent).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(KpiEvent.new))
+
+    patch "/boards/#{share_token}/objects/#{object_id}/color", params: { color_id: color.id }, as: :json
+    expect(response).to have_http_status(:unprocessable_entity)
+  end
+
+  it "allows large CRDT apply_op payloads exceeding 64KB (up to 256KB) to succeed, avoiding limiter middleware block" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # Create 6 ops, each with a 10KB insert and 1KB attributes.
+    # Total text is 60KB (under 64KB limit), attributes are 1KB each (under 2KB limit),
+    # but overall request JSON size is >66KB (exceeds 64KB limiter check).
+    large_ops = 6.times.map { { insert: "a" * 10000, attributes: { foo: "b" * 1000 } } }
+
+    apply_op(
+      share_token:,
+      object_id:,
+      property: "text_crdt",
+      value: { ops: large_ops },
+      lamport_ts: 10,
+      client_id: "client-a"
+    )
+
+    expect(response).to have_http_status(:ok)
+
+    recorded_op = ObjectOp.where(object_id:, property: "text_crdt").first
+    expect(recorded_op).not_to be_nil
+    total_inserted = recorded_op.value["ops"].sum("") { |op| op["insert"] }
+    expect(total_inserted.bytesize).to eq(60000)
+  end
 end

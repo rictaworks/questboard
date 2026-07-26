@@ -12,7 +12,20 @@ class BoardsController < ApplicationController
   end
 
   def create
-    board = Board.create_with_owner!(title: create_params.fetch(:title), owner: current_user)
+    board = nil
+    Board.transaction do
+      board = Board.create_with_owner!(title: create_params.fetch(:title), owner: current_user)
+      event_def = EventDef.find_by(code: "board_shared")
+      if event_def
+        KpiEvent.create!(
+          event_def:,
+          user: current_user,
+          board:,
+          props: { source: "board-create" },
+          occurred_at: board.created_at
+        )
+      end
+    end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity

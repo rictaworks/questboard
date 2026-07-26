@@ -14,9 +14,9 @@ require "action_view/railtie"
 require "action_cable/engine"
 # require "rails/test_unit/railtie"
 
-# Require the gems listed in Gemfile, including any gems
-# you've limited to :test, :development, or :production.
 Bundler.require(*Rails.groups)
+
+require_relative "../app/middleware/request_body_size_limiter"
 
 module Backend
   class Application < Rails::Application
@@ -47,5 +47,6 @@ module Backend
 
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use ActionDispatch::Session::CookieStore, config.session_options
+    config.middleware.insert_before ActionDispatch::Cookies, RequestBodySizeLimiter
   end
 end
