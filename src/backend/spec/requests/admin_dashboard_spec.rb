@@ -15,6 +15,9 @@ RSpec.describe "Admin KPI dashboard", type: :request do
   end
 
   before do
+    quest_progress_service = instance_double(QuestProgressService, advance_for_event: true)
+    allow(QuestProgressService).to receive(:new).and_return(quest_progress_service)
+
     seed_kpi_masters
     seed_quests
     seed_intensity_masters
@@ -30,11 +33,11 @@ RSpec.describe "Admin KPI dashboard", type: :request do
     KpiEvent.create!(event_def: EventDef.find_by!(code: "object_created_sticky"), user: user_one, board: board_one, occurred_at: 8.days.ago.change(sec: 0, usec: 0))
     KpiEvent.create!(event_def: EventDef.find_by!(code: "object_created_sticky"), user: user_two, board: board_one, occurred_at: 8.days.ago.change(sec: 0, usec: 0))
     KpiEvent.create!(event_def: EventDef.find_by!(code: "radial_opened"), user: user_one, board: board_one, occurred_at: 7.days.ago.change(sec: 0, usec: 0))
-    KpiEvent.create!(event_def: EventDef.find_by!(code: "comment_created"), user: user_one, board: board_two, occurred_at: 8.days.ago.change(sec: 0, usec: 0))
+    KpiEvent.create!(event_def: EventDef.find_by!(code: "comment_created"), user: user_one, board: board_two, occurred_at: 1.day.ago.change(sec: 0, usec: 0))
     KpiEvent.create!(event_def: EventDef.find_by!(code: "object_created_sticky"), user: user_two, board: board_two, occurred_at: 8.days.ago.change(sec: 0, usec: 0))
     KpiEvent.create!(event_def: EventDef.find_by!(code: "comment_created"), user: user_two, board: board_two, occurred_at: 7.days.ago.change(sec: 0, usec: 0))
 
-    quests = Quest.order(:id).to_a
+    quests = Quest.where(title: %w[Q1 Q2 Q3 Q4]).order(:title).to_a
     UserQuest.create!(user: user_one, quest: quests[0], state: "completed", progress: 1)
     UserQuest.create!(user: user_one, quest: quests[1], state: "completed", progress: 1)
     UserQuest.create!(user: user_one, quest: quests[2], state: "completed", progress: 1)

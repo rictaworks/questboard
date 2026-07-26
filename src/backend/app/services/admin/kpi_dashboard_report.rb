@@ -57,7 +57,7 @@ module Admin
       @matured_user_event_dates ||= begin
         maturity_cutoff = now.to_date - MATURITY_WINDOW_DAYS
 
-        user_event_dates.filter_map do |dates|
+        user_event_dates.values.filter_map do |dates|
           unique_dates = dates.uniq.sort
           next if unique_dates.empty?
 
@@ -73,7 +73,7 @@ module Admin
       @user_event_dates ||= begin
         dates_by_user = Hash.new { |hash, user_id| hash[user_id] = [] }
 
-        KpiEvent.select(:user_id, :occurred_at).find_each do |event|
+        KpiEvent.select(:id, :user_id, :occurred_at).find_each do |event|
           dates_by_user[event.user_id] << event.occurred_at.to_date
         end
 
@@ -85,7 +85,7 @@ module Admin
       peak_editors_by_board = Hash.new(0)
       editors_by_board_and_bucket = Hash.new { |hash, board_id| hash[board_id] = Hash.new { |bucket_hash, bucket| bucket_hash[bucket] = Set.new } }
 
-      editing_event_scope.select(:board_id, :user_id, :occurred_at).find_each do |event|
+      editing_event_scope.select(:id, :board_id, :user_id, :occurred_at).find_each do |event|
         bucket = event.occurred_at.change(sec: 0, usec: 0)
         editors_by_board_and_bucket[event.board_id][bucket] << event.user_id
         peak_editors_by_board[event.board_id] = [ peak_editors_by_board[event.board_id], editors_by_board_and_bucket[event.board_id][bucket].size ].max
