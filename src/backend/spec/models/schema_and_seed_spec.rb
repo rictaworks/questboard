@@ -61,24 +61,16 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(object_ops_columns).to include("board_id", "object_id", "property", "value", "lamport_ts", "client_id")
 
     kpi_event_props = connection.columns("kpi_events").find { |column| column.name == "props" }
-    if connection.adapter_name == "PostgreSQL"
-      expect(kpi_event_props.comment).to eq("PII禁止")
-    else
-      expect(all_migrations_content).to include('comment: "PII禁止"')
-    end
+    expect(kpi_event_props.comment).to eq("PII禁止")
 
     expect(connection.primary_key("user_settings")).to eq("user_id")
+    expect(connection.columns("objects").find { |c| c.name == "geometry" }.sql_type).to eq("jsonb")
+    expect(connection.columns("objects").find { |c| c.name == "text_crdt" }.sql_type).to eq("jsonb")
+    expect(connection.columns("object_ops").find { |c| c.name == "value" }.sql_type).to eq("jsonb")
+    expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
 
-    if connection.adapter_name == "PostgreSQL"
-      expect(connection.columns("objects").find { |c| c.name == "geometry" }.sql_type).to eq("jsonb")
-      expect(connection.columns("objects").find { |c| c.name == "text_crdt" }.sql_type).to eq("jsonb")
-      expect(connection.columns("object_ops").find { |c| c.name == "value" }.sql_type).to eq("jsonb")
-      expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
-    end
-
-    # schema.rb は t.jsonb 呼び出しのまま維持すること。SQLite ではこの呼び出しを
-    # sqlite3_jsonb_compat.rb が json 型として実体化するため、schema.rb 上の表記が
-    # t.json になると db:schema:load を使う PostgreSQL 環境で jsonb が失われる。
+    # schema.rb は t.jsonb 呼び出しのまま維持すること。db:schema:load で復元した DB と
+    # マイグレーション適用後の DB が同じ型定義になるよう、PostgreSQL の表記を直接守る。
     schema_content = Rails.root.join("db/schema.rb").read
     expect(schema_content).to match(/t\.jsonb "geometry"/)
     expect(schema_content).to match(/t\.jsonb "text_crdt"/)
@@ -115,58 +107,6 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(object_op_indexes.any? { |index|
       index.unique && index.columns == %w[object_id client_id lamport_ts]
     }).to be(true)
-  end
-
-  it "keeps Sqlite3JsonbCompat definitions in sync with actual database schema" do
-    connection = ActiveRecord::Base.connection
-
-    if connection.adapter_name == "PostgreSQL"
-      actual_jsonb = Hash.new { |h, k| h[k] = [] }
-      actual_comments = Hash.new { |h, k| h[k] = {} }
-
-      connection.tables.each do |table|
-        connection.columns(table).each do |column|
-          actual_jsonb[table] << column.name if column.sql_type.to_s.downcase == "jsonb"
-          actual_comments[table][column.name] = column.comment if column.comment.present?
-        end
-      end
-
-      all_jsonb_tables = (actual_jsonb.keys + Sqlite3JsonbCompat::JSONB_TARGETS.keys).uniq
-      all_jsonb_tables.each do |table|
-        expect((Sqlite3JsonbCompat::JSONB_TARGETS[table] || []).sort).to eq((actual_jsonb[table] || []).sort)
-      end
-
-      all_comment_tables = (actual_comments.keys + Sqlite3JsonbCompat::COLUMN_COMMENTS.keys).uniq
-      all_comment_tables.each do |table|
-        expect(Sqlite3JsonbCompat::COLUMN_COMMENTS[table] || {}).to eq(actual_comments[table] || {})
-      end
-    else
-      # SQLite環境: 実DBのカラムおよび型（json/jsonb）を基準に検証
-      Sqlite3JsonbCompat::JSONB_TARGETS.each do |table, columns|
-        expect(connection.table_exists?(table)).to be(true), "JSONB_TARGETS に登録されているテーブル #{table} が実際のDBに存在しません。"
-        db_columns = connection.columns(table).index_by(&:name)
-        columns.each do |column|
-          col_obj = db_columns[column]
-          expect(col_obj).not_to be_nil, "JSONB_TARGETS に登録されている #{table}.#{column} が実際のDBに存在しません。"
-          expect(%i[json jsonb]).to include(col_obj.type), "JSONB_TARGETS の #{table}.#{column} は実際のDBでは json/jsonb 型ではありません (#{col_obj.type})"
-        end
-      end
-
-      connection.tables.each do |table|
-        db_json_columns = connection.columns(table).select { |c| %i[json jsonb].include?(c.type) }.map(&:name)
-        expected_json_columns = Sqlite3JsonbCompat::JSONB_TARGETS[table] || []
-        expect(expected_json_columns.sort).to eq(db_json_columns.sort),
-          "実DBの #{table} テーブルに存在する json/jsonb 型カラム #{db_json_columns.inspect} が Sqlite3JsonbCompat::JSONB_TARGETS と不一致です。"
-      end
-
-      Sqlite3JsonbCompat::COLUMN_COMMENTS.each do |table, columns|
-        expect(connection.table_exists?(table)).to be(true), "COLUMN_COMMENTS に登録されているテーブル #{table} が実際のDBに存在しません。"
-        db_columns = connection.columns(table).index_by(&:name)
-        columns.each_key do |column|
-          expect(db_columns[column]).not_to be_nil, "COLUMN_COMMENTS に登録されている #{table}.#{column} が実際のDBに存在しません。"
-        end
-      end
-    end
   end
 
   it "seeds the 72 master rows idempotently" do

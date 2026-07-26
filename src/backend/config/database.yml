@@ -1,22 +1,21 @@
 default: &default
-  adapter: sqlite3
+  adapter: postgresql
+  encoding: unicode
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  timeout: 5000
+  host: <%= ENV.fetch("POSTGRES_HOST", "127.0.0.1") %>
+  port: <%= ENV.fetch("POSTGRES_PORT", 5432) %>
+  username: <%= ENV.fetch("POSTGRES_USER", "questboard") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "questboard") %>
 
 development:
   <<: *default
-  database: storage/development.sqlite3
+  database: <%= ENV.fetch("POSTGRES_DB", "questboard_development") %>
 
 test:
   <<: *default
-  database: storage/test.sqlite3
+  database: <%= ENV.fetch("POSTGRES_TEST_DB", "questboard_test") %>
 
 production:
-<% if Rails.env.production? %>
-  adapter: postgresql
-  url: <%= ENV.fetch("DATABASE_URL") %>
-  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-<% else %>
   <<: *default
-  database: storage/production.sqlite3
-<% end %>
+  url: <%= Rails.env.production? ? ENV.fetch("DATABASE_URL") : ENV.fetch("DATABASE_URL", nil) %>
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>

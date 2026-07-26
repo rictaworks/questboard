@@ -155,10 +155,10 @@ test('backend scaffold uses env vars for config and secrets', async () => {
   ));
   const backendSource = (await Promise.all(backendFiles.map((file) => read(file)))).join('\n');
 
-  assert.match(database, /default:[\s\S]*adapter: sqlite3/);
-  assert.match(database, /development:[\s\S]*database: storage\/development\.sqlite3/);
-  assert.match(database, /test:[\s\S]*database: storage\/test\.sqlite3/);
-  assert.match(database, /production:[\s\S]*url: <%= ENV\.fetch\("DATABASE_URL"\) %>/);
+  assert.match(database, /default:[\s\S]*adapter: postgresql/);
+  assert.match(database, /development:[\s\S]*database: <%= ENV\.fetch\("POSTGRES_DB", "questboard_development"\) %>/);
+  assert.match(database, /test:[\s\S]*database: <%= ENV\.fetch\("POSTGRES_TEST_DB", "questboard_test"\) %>/);
+  assert.match(database, /production:[\s\S]*url: <%= Rails\.env\.production\? \? ENV\.fetch\("DATABASE_URL"\) : ENV\.fetch\("DATABASE_URL", nil\) %>/);
   assert.match(routes, /get "\/healthz", to: "health#show"/);
   assert.match(routes, /namespace :admin do[\s\S]*root to: "dashboard#show"/);
 

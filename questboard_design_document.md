@@ -29,7 +29,7 @@
 - MVPの制約をすべて継承：Googleログイン認証、PostgreSQL、Vercel（フロント）＋Railway優先（バックエンド・管理画面、不可時Render）、開発者用管理画面はBASIC認証、reCAPTCHA必須
 - スケーラビリティ・高可用性：Gin同期サーバーは水平分割（ボードID単位のシャーディング）、Redis Pub/Subでノード間中継、DBはリードレプリカ構成を想定
 - 個人情報：プライバシーポリシー・個人情報管理規程に従い設計（Google subとGoogleアカウント表示名のみ保持。身体測定値は本課題では扱わない）
-- 開発環境DBはSQLite、本番はPostgreSQL
+- 開発環境DBも本番もPostgreSQL
 
 ### 1.3 技術スタック
 
@@ -38,7 +38,7 @@
 | フロント | Next（TypeScript）+ Canvas/WebGL描画 | ボード描画、HUD、ラジアルメニュー、ミニマップ、演出 |
 | API | Rails | 認証（Googleログイン）、ボード/権限CRUD、クエスト、管理画面（BASIC認証） |
 | リアルタイム | Gin（Go）+ WebSocket | 操作同期、プレゼンス、競合解決（高速並列処理要件のため採用） |
-| DB | PostgreSQL（開発はSQLite） | 永続化。テキスト本文はCRDT状態をJSONBで保持 |
+| DB | PostgreSQL | 永続化。テキスト本文はCRDT状態をJSONBで保持 |
 | 計測 | Rails集約＋バッチ投入 | KPIイベント |
 | 監視 | 死活監視＋メトリクス＋アラート通知 | 稼働監視 |
 

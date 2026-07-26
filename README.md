@@ -10,6 +10,14 @@ Questboard フロントエンド（Next.js, TypeScript, App Router, next-intl, F
 - `npm test` — リポジトリのチェック一式を実行
 - 各サブシステムの個別コマンドは `CLAUDE.md` の「開発コマンド」を参照
 
+## Development environment
+
+Development と test の Rails backend は PostgreSQL を使う。ローカル手順は [src/backend/README.md](src/backend/README.md) を参照。
+
+- `docker compose up -d postgres`
+- `cp src/backend/.env.example src/backend/.env`
+- `cd src/backend && bundle exec rails db:prepare`
+
 ## 自動ログイン手順（開発環境）
 
 開発環境（`NEXT_PUBLIC_ENV` / Rails環境が development）では認証済み状態として分岐するため、Googleログインなしでそのまま各ページ・APIにアクセスできる。本番ビルドにはこの近道は存在しない。

@@ -1,9 +1,6 @@
 class AddCreatedAndUpdatedAtToUserQuests < ActiveRecord::Migration[8.0]
-  # SQLite の ALTER TABLE ADD COLUMN は CURRENT_TIMESTAMP のような非定数デフォルトを
-  # 受け付けない。既存行があるテーブルに対して実行すると
-  # "Cannot add a column with non-constant default" で db:migrate が停止する
-  # （空テーブルでは成功してしまうため、開発機だけで再現するという厄介な挙動になる）。
-  # そのため nullable で追加 → 既存行を定数でバックフィル → NOT NULL 化 の順で行う。
+  # 既存行があるテーブルに NOT NULL のタイムスタンプ列を追加するため、
+  # nullable で追加 → 既存行を定数でバックフィル → NOT NULL 化 の順で行う。
   def up
     add_column :user_quests, :created_at, :datetime
     add_column :user_quests, :updated_at, :datetime
