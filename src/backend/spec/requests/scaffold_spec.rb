@@ -30,7 +30,8 @@ RSpec.describe "Backend scaffold", type: :request do
     get "/admin", headers: { "Authorization" => credentials }
 
     expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body)).to eq("status" => "ok", "area" => "admin")
+    expect(response.media_type).to eq("text/html")
+    expect(response.body).to include("KPI開発者ダッシュボード")
   end
 
   it "fails safe with 401 when admin credentials are not configured" do

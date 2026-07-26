@@ -1,5 +1,9 @@
 module Admin
-  class BaseController < ApplicationController
+  class BaseController < ActionController::Base
+    include ActionController::HttpAuthentication::Basic::ControllerMethods
+
+    layout "admin"
+
     before_action :authenticate_admin!
 
     private
