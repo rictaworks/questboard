@@ -5,6 +5,7 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
+import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
 import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -58,6 +59,7 @@ export interface BoardCanvasData {
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
   onReloadBoard: () => Promise<void>;
+  userGoogleSub: string;
 };
 
 type Interaction =
@@ -85,7 +87,7 @@ type PresenceEntry = {
 
 const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
 
-export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvasPanelProps) {
+export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
@@ -120,10 +122,32 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
+  const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
 
   useEffect(() => {
     boardStateRef.current = boardState;
   }, [boardState]);
+
+  useEffect(() => {
+    const {backendUrl} = readGoogleAuthSettings();
+    analyticsTrackerRef.current?.dispose();
+    analyticsTrackerRef.current = new AnalyticsTracker({
+      boardId: boardState.board.id,
+      endpointUrl: `${backendUrl}/kpi_events`,
+      userId: userGoogleSub
+    });
+
+    return () => {
+      analyticsTrackerRef.current?.dispose();
+      analyticsTrackerRef.current = null;
+    };
+  }, [boardState.board.id, userGoogleSub]);
+
+  useEffect(() => {
+    analyticsTrackerRef.current?.setConnectionState(
+      syncStatus === 'offline' ? 'offline' : syncStatus === 'reconnecting' ? 'reconnecting' : 'connected'
+    );
+  }, [syncStatus]);
 
   const objects = useMemo(() => boardState.objects.filter((object) => object.deletedAt == null), [boardState.objects]);
   const currentUserId = boardState.membership.userId;
@@ -157,6 +181,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
     }
 
     const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
+    if (nextCamera.zoom !== cameraStateRef.current.zoom) {
+      analyticsTrackerRef.current?.track({
+        eventId: 'camera_zoomed',
+        attributes: {
+          source: 'fit-to-content',
+          zoom: nextCamera.zoom
+        }
+      });
+    }
     setCameraState({...nextCamera});
   }, [contentBounds, viewport]);
 
@@ -316,7 +349,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
    }, 33);
   }, [sendPresence]);
 
-  const sendObjectRealtimeOp = useCallback((objectId: number, property: 'geometry' | 'color' | 'deleted_at', value: Record<string, unknown>) => {
+  const sendObjectRealtimeOp = useCallback((
+    objectId: number,
+    property: 'geometry' | 'color' | 'deleted_at',
+    value: Record<string, unknown>,
+    analyticsEvent?: {eventId: KpiEventDefinitionCode; attributes?: Record<string, unknown>}
+  ) => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
    if (!object) {
      return;
@@ -338,6 +376,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
    recordRealtimeOp(op);
    queueRealtimeOp(op);
+
+   if (analyticsEvent) {
+     analyticsTrackerRef.current?.track(analyticsEvent);
+   }
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
   const restoreDeletedObject = useCallback((objectId: number) => {
@@ -803,6 +845,27 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
+      if (action === 'duplicate') {
+        analyticsTrackerRef.current?.track({
+          eventId: 'object_duplicated',
+          attributes: {source: 'toolbar'}
+        });
+      }
+
+      if (action === 'lock') {
+        analyticsTrackerRef.current?.track({
+          eventId: 'object_locked',
+          attributes: {source: 'object-toolbar'}
+        });
+      }
+
+      if (action === 'unlock') {
+        analyticsTrackerRef.current?.track({
+          eventId: 'object_unlocked',
+          attributes: {source: 'object-toolbar'}
+        });
+      }
+
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -837,6 +900,17 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
+      const createdEventId = toAnalyticsObjectCreatedEventId(objectTypeCode);
+      if (createdEventId) {
+        analyticsTrackerRef.current?.track({
+          eventId: createdEventId,
+          attributes: {
+            objectTypeCode,
+            source: 'toolbar'
+          }
+        });
+      }
+
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -844,7 +918,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
   }
 
   function changeColor(object: BoardCanvasObject, colorId: number) {
-    sendObjectRealtimeOp(object.id, 'color', {color_id: colorId});
+    sendObjectRealtimeOp(object.id, 'color', {color_id: colorId}, {
+      eventId: 'object_recolored',
+      attributes: {
+        colorId,
+        source: 'swatch'
+      }
+    });
   }
 
   function duplicateSelection() {
@@ -862,7 +942,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
       return;
     }
 
-    sendObjectRealtimeOp(active.id, 'deleted_at', {});
+    sendObjectRealtimeOp(active.id, 'deleted_at', {}, {
+      eventId: 'object_deleted',
+      attributes: {
+        source: 'toolbar'
+      }
+    });
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -877,6 +962,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
 
   function focusMinimap(event: ReactMouseEvent<HTMLButtonElement>) {
     const minimap = event.currentTarget.getBoundingClientRect();
+    analyticsTrackerRef.current?.track({
+      eventId: 'camera_panned',
+      attributes: {
+        source: 'minimap'
+      }
+    });
     const click = {x: event.clientX, y: event.clientY};
     controllerRef.current.focusOnMinimapClick({
       click,
@@ -942,6 +1033,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
           <div
             aria-label={t('canvasLabel')}
             className="board-scene"
+            onContextMenu={() => {
+              analyticsTrackerRef.current?.track({
+                eventId: 'radial_opened',
+                attributes: {
+                  source: 'contextmenu'
+                }
+              });
+            }}
             onPointerDown={handleBackgroundPointerDown}
             onPointerMove={handleScenePointerMove}
             onPointerLeave={handleScenePointerLeave}
@@ -1075,6 +1174,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard}: BoardCanvas
                   t={t}
                   enqueueToast={enqueueToast}
                   canCreateComments={canCreateComments}
+                  onCommentCreated={() => {
+                    analyticsTrackerRef.current?.track({
+                      eventId: 'comment_created',
+                      attributes: {
+                        source: 'sidebar'
+                      }
+                    });
+                  }}
                 />
               ) : (
                 <p className="board-comments-empty">{t('commentsHidden')}</p>
@@ -1311,6 +1418,23 @@ function nextColorId(object: BoardCanvasObject, colors: Array<{id: number}>) {
   return colors[(currentIndex + 1) % colors.length]?.id ?? object.colorId;
 }
 
+function toAnalyticsObjectCreatedEventId(objectTypeCode: string): KpiEventDefinitionCode | null {
+  switch (objectTypeCode) {
+    case 'sticky':
+      return 'object_created_sticky';
+    case 'shape':
+      return 'object_created_shape';
+    case 'text':
+      return 'object_created_text';
+    case 'image':
+      return 'object_created_image';
+    case 'frame':
+      return 'object_created_frame';
+    default:
+      return null;
+  }
+}
+
 function screenToWorld(
   clientX: number,
   clientY: number,
@@ -1339,6 +1463,7 @@ interface BoardCommentsProps {
   t: (key: string) => string;
   enqueueToast: (message: string) => void;
   canCreateComments: boolean;
+  onCommentCreated?: () => void;
 }
 
 function BoardComments({
@@ -1349,7 +1474,8 @@ function BoardComments({
   onReloadBoard,
   t,
   enqueueToast,
-  canCreateComments
+  canCreateComments,
+  onCommentCreated
 }: BoardCommentsProps) {
   const [commentDraft, setCommentDraft] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
@@ -1406,6 +1532,10 @@ function BoardComments({
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => ({})) as {error?: string};
         throw new Error(errorPayload.error ?? t('actionFailed'));
+      }
+
+      if (action === 'create') {
+        onCommentCreated?.();
       }
 
       setCommentDraft('');
