@@ -5,10 +5,12 @@ Rails API scaffold for questboard.
 ## Setup
 
 1. Copy `.env.example` to `.env`
-2. Set `DATABASE_URL` for production Postgres
-3. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
-4. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
-5. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, and `RECAPTCHA_SECRET_KEY`
+2. Start PostgreSQL with `docker compose up -d postgres` from the repository root
+3. Set `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, and `POSTGRES_TEST_DB`
+4. Set `DATABASE_URL` for production Postgres
+5. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
+6. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
+7. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, and `RECAPTCHA_SECRET_KEY`
 
 ## Admin access
 

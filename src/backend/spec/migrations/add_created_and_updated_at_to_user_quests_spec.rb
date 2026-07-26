@@ -1,12 +1,9 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20260726143000_add_created_and_updated_at_to_user_quests").to_s
 
-# このマイグレーションは「既存行があるSQLiteテーブル」でのみ壊れる種類のバグを起こす。
-# 空テーブルなら DEFAULT CURRENT_TIMESTAMP 付きの ADD COLUMN が成功してしまうため、
-# 行を入れた状態を再現しないと退行を検知できない（PR #61 レビュー）。
-#
-# テストDBには既に適用済みなので、down で列を落としてから up を実行し、
-# 「既存データがある状態への適用」を実際のマイグレーションコードで再現する。
+# 既存行がある状態への適用を再現し、タイムスタンプ列の追加とバックフィルの
+# 退行を検知する。テストDBには既に適用済みなので、down で列を落としてから up を
+# 実行し、マイグレーション本体の挙動を直接確認する。
 RSpec.describe AddCreatedAndUpdatedAtToUserQuests do
   let(:migration) { described_class.new }
   let(:connection) { ActiveRecord::Base.connection }
@@ -15,11 +12,16 @@ RSpec.describe AddCreatedAndUpdatedAtToUserQuests do
     ActiveRecord::Migration.suppress_messages do
       example.run
     ensure
-      # 例外で終わっても列を必ず戻し、後続のspecに影響させない。
-      unless connection.column_exists?(:user_quests, :created_at)
-        ActiveRecord::Migration.suppress_messages { described_class.new.up }
-      end
-      UserQuest.reset_column_information
+      # 例外で終わっても別接続で列を必ず戻し、後続のspecに影響させない。
+      Thread.new do
+        Thread.current.report_on_exception = false
+        ActiveRecord::Base.connection_pool.with_connection do |conn|
+          unless conn.column_exists?(:user_quests, :created_at)
+            ActiveRecord::Migration.suppress_messages { described_class.new.up }
+          end
+          UserQuest.reset_column_information
+        end
+      end.value
     end
   end
 
@@ -76,11 +78,20 @@ RSpec.describe AddCreatedAndUpdatedAtToUserQuests do
     seed_user_quest!
     rollback_then_reapply!
 
-    expect {
-      connection.execute(
-        "INSERT INTO user_quests (user_id, quest_id, state, progress, created_at, updated_at) " \
-        "VALUES (999999, 999999, 'not_started', 0, NULL, NULL)"
-      )
-    }.to raise_error(ActiveRecord::StatementInvalid)
+    thread = Thread.new do
+      Thread.current.report_on_exception = false
+      ActiveRecord::Base.connection_pool.with_connection do |conn|
+        begin
+          conn.execute(
+            "INSERT INTO user_quests (user_id, quest_id, state, progress, created_at, updated_at) " \
+            "VALUES (999999, 999999, 'not_started', 0, NULL, NULL)"
+          )
+        ensure
+          conn.reset!
+        end
+      end
+    end
+
+    expect { thread.value }.to raise_error(ActiveRecord::StatementInvalid)
   end
 end
