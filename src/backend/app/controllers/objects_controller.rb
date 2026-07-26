@@ -56,13 +56,17 @@ class ObjectsController < ApplicationController
       return
     end
 
-    object = board.board_objects.create!(
-      object_type: ObjectType.find_by!(code: object_type_code_param),
-      color_palette: ColorPalette.first!,
-      parent_frame_id: create_params[:parent_frame_id],
-      geometry: create_geometry,
-      deleted_at: nil
-    )
+    object = nil
+    Board.transaction do
+      object = board.board_objects.create!(
+        object_type: ObjectType.find_by!(code: object_type_code_param),
+        color_palette: ColorPalette.first!,
+        parent_frame_id: create_params[:parent_frame_id],
+        geometry: create_geometry,
+        deleted_at: nil
+      )
+      record_object_kpi_event!(board, object, "object_created_#{object.object_type.code}")
+    end
 
     render json: serialize_object(object), status: :created
   rescue ActionController::ParameterMissing => e
@@ -89,13 +93,17 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:edit_object)
     return if performed?
 
-    duplicated_object = object.board.board_objects.create!(
-      object_type: object.object_type,
-      color_palette: object.color_palette,
-      parent_frame_id: object.parent_frame_id,
-      geometry: object.geometry.merge("x" => object.geometry.fetch("x", 0) + 24, "y" => object.geometry.fetch("y", 0) + 24),
-      deleted_at: nil
-    )
+    duplicated_object = nil
+    Board.transaction do
+      duplicated_object = object.board.board_objects.create!(
+        object_type: object.object_type,
+        color_palette: object.color_palette,
+        parent_frame_id: object.parent_frame_id,
+        geometry: object.geometry.merge("x" => object.geometry.fetch("x", 0) + 24, "y" => object.geometry.fetch("y", 0) + 24),
+        deleted_at: nil
+      )
+      record_object_kpi_event!(object.board, duplicated_object, "object_duplicated")
+    end
 
     render json: serialize_object(duplicated_object), status: :created
   rescue ActiveRecord::RecordNotFound
@@ -114,7 +122,12 @@ class ObjectsController < ApplicationController
     # the object's persisted color_palette_id is the coerced Integer, leaving connected
     # clients unable to resolve the color from the type they expect (see PR #53 review).
     palette = ColorPalette.find(params.require(:color_id))
-    record_and_apply_legacy_op!(object, "color", { "color_id" => palette.id })
+    confirmed_op = nil
+    Board.transaction do
+      confirmed_op = record_and_apply_legacy_op!(object, "color", { "color_id" => palette.id })
+      record_object_kpi_event!(object.board, object, "object_recolored")
+    end
+    broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActionController::ParameterMissing => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -128,7 +141,12 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:delete_object)
     return if performed?
 
-    record_and_apply_legacy_op!(object, "deleted_at", {})
+    confirmed_op = nil
+    Board.transaction do
+      confirmed_op = record_and_apply_legacy_op!(object, "deleted_at", {})
+      record_object_kpi_event!(object.board, object, "object_deleted")
+    end
+    broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
@@ -140,8 +158,11 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(:lock_frame)
     return if performed?
 
-    lock = object.frame_lock || object.build_frame_lock
-    lock.update!(locked_by: current_user.id, locked_at: Time.current)
+    Board.transaction do
+      lock = object.frame_lock || object.build_frame_lock
+      lock.update!(locked_by: current_user.id, locked_at: Time.current)
+      record_object_kpi_event!(object.board, object, "object_locked")
+    end
 
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
@@ -161,7 +182,10 @@ class ObjectsController < ApplicationController
       return
     end
 
-    object.frame_lock.destroy!
+    Board.transaction do
+      object.frame_lock.destroy!
+      record_object_kpi_event!(object.board, object, "object_unlocked")
+    end
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
@@ -259,6 +283,15 @@ class ObjectsController < ApplicationController
         )
 
         apply_mutation_for!(object, property, actual_value, client_id, lamport_ts, revision: confirmed_op.id)
+
+        case property
+        when "color"
+          record_object_kpi_event!(object.board, object, "object_recolored")
+        when "deleted_at"
+          unless actual_value["restore"]
+            record_object_kpi_event!(object.board, object, "object_deleted")
+          end
+        end
       end
     end
 
@@ -287,6 +320,19 @@ class ObjectsController < ApplicationController
   end
 
   private
+
+  def record_object_kpi_event!(board, object, event_code, occurred_at = Time.current, props = {})
+    event_def = EventDef.find_by(code: event_code)
+    return unless event_def
+
+    KpiEvent.create!(
+      event_def:,
+      user: current_user,
+      board:,
+      props: props.merge(object_id: object.id, object_type_code: object.object_type.code),
+      occurred_at:
+    )
+  end
 
   def require_current_user!
     head :unauthorized unless current_user
@@ -347,7 +393,8 @@ class ObjectsController < ApplicationController
     object = find_authorized_object!(action)
     return if performed?
 
-    record_and_apply_legacy_op!(object, "geometry", validate_numeric_geometry_fields!(geometry_params.to_h))
+    confirmed_op = record_and_apply_legacy_op!(object, "geometry", validate_numeric_geometry_fields!(geometry_params.to_h))
+    broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
@@ -817,10 +864,7 @@ class ObjectsController < ApplicationController
       apply_mutation_for!(object, property, value, LEGACY_OP_CLIENT_ID, lamport_ts)
     end
 
-    # Publish outside the row lock (this is network I/O, not something that should hold a
-    # DB lock) and after the mutation has already committed successfully — object_ops is
-    # the source of truth regardless of whether this notification reaches anyone.
-    broadcast_legacy_op(object.board, confirmed_op)
+    confirmed_op
   end
 
   def broadcast_legacy_op(board, object_op)

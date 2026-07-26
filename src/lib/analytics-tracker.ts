@@ -113,6 +113,11 @@ export class AnalyticsTracker {
   }
 
   track(event: AnalyticsTrackerEvent): void {
+    const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened'];
+    if (!allowedClientEvents.includes(event.eventId)) {
+      return;
+    }
+
     const trackedEvent = this.normalizeEvent(event);
 
     if (this.connectionState === 'offline') {
@@ -146,7 +151,10 @@ export class AnalyticsTracker {
     this.clearScheduledFlush();
 
     try {
-      this.pendingQueue = [...this.readOfflineBuffer(), ...this.pendingQueue];
+      const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened'];
+      this.pendingQueue = [...this.readOfflineBuffer(), ...this.pendingQueue].filter((event) =>
+        allowedClientEvents.includes(event.eventId)
+      );
       this.persistOfflineBuffer([]);
 
       while (this.pendingQueue.length > 0) {
@@ -190,7 +198,7 @@ export class AnalyticsTracker {
   }
 
   private scheduleFlush(): void {
-    if (this.flushTimer != null || this.connectionState === 'offline' || this.pendingQueue.length === 0) {
+    if (this.flushTimer != null || this.connectionState === 'offline' || !this.hasPendingWork()) {
       return;
     }
 

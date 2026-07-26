@@ -352,8 +352,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const sendObjectRealtimeOp = useCallback((
     objectId: number,
     property: 'geometry' | 'color' | 'deleted_at',
-    value: Record<string, unknown>,
-    analyticsEvent?: {eventId: KpiEventDefinitionCode; attributes?: Record<string, unknown>}
+    value: Record<string, unknown>
   ) => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
    if (!object) {
@@ -376,10 +375,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
 
    recordRealtimeOp(op);
    queueRealtimeOp(op);
-
-   if (analyticsEvent) {
-     analyticsTrackerRef.current?.track(analyticsEvent);
-   }
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
   const restoreDeletedObject = useCallback((objectId: number) => {
@@ -845,27 +840,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
-      if (action === 'duplicate') {
-        analyticsTrackerRef.current?.track({
-          eventId: 'object_duplicated',
-          attributes: {source: 'toolbar'}
-        });
-      }
-
-      if (action === 'lock') {
-        analyticsTrackerRef.current?.track({
-          eventId: 'object_locked',
-          attributes: {source: 'object-toolbar'}
-        });
-      }
-
-      if (action === 'unlock') {
-        analyticsTrackerRef.current?.track({
-          eventId: 'object_unlocked',
-          attributes: {source: 'object-toolbar'}
-        });
-      }
-
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -900,17 +874,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         throw new Error(errorPayload.error ?? t('actionFailed'));
       }
 
-      const createdEventId = toAnalyticsObjectCreatedEventId(objectTypeCode);
-      if (createdEventId) {
-        analyticsTrackerRef.current?.track({
-          eventId: createdEventId,
-          attributes: {
-            objectTypeCode,
-            source: 'toolbar'
-          }
-        });
-      }
-
       await onReloadBoard();
     } catch (error) {
       enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
@@ -918,13 +881,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }
 
   function changeColor(object: BoardCanvasObject, colorId: number) {
-    sendObjectRealtimeOp(object.id, 'color', {color_id: colorId}, {
-      eventId: 'object_recolored',
-      attributes: {
-        colorId,
-        source: 'swatch'
-      }
-    });
+    sendObjectRealtimeOp(object.id, 'color', {color_id: colorId});
   }
 
   function duplicateSelection() {
@@ -942,12 +899,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       return;
     }
 
-    sendObjectRealtimeOp(active.id, 'deleted_at', {}, {
-      eventId: 'object_deleted',
-      attributes: {
-        source: 'toolbar'
-      }
-    });
+    sendObjectRealtimeOp(active.id, 'deleted_at', {});
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -1174,14 +1126,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
                   t={t}
                   enqueueToast={enqueueToast}
                   canCreateComments={canCreateComments}
-                  onCommentCreated={() => {
-                    analyticsTrackerRef.current?.track({
-                      eventId: 'comment_created',
-                      attributes: {
-                        source: 'sidebar'
-                      }
-                    });
-                  }}
                 />
               ) : (
                 <p className="board-comments-empty">{t('commentsHidden')}</p>
@@ -1463,7 +1407,6 @@ interface BoardCommentsProps {
   t: (key: string) => string;
   enqueueToast: (message: string) => void;
   canCreateComments: boolean;
-  onCommentCreated?: () => void;
 }
 
 function BoardComments({
@@ -1474,8 +1417,7 @@ function BoardComments({
   onReloadBoard,
   t,
   enqueueToast,
-  canCreateComments,
-  onCommentCreated
+  canCreateComments
 }: BoardCommentsProps) {
   const [commentDraft, setCommentDraft] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<number | null>(null);
@@ -1535,7 +1477,7 @@ function BoardComments({
       }
 
       if (action === 'create') {
-        onCommentCreated?.();
+        // Handled server-side now
       }
 
       setCommentDraft('');

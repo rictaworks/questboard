@@ -84,33 +84,6 @@ export default function BoardCreatePanel() {
 
   const shareUrl = useMemo(() => createdBoard?.shareUrl ?? null, [createdBoard]);
 
-  async function trackBoardShared(boardId: number) {
-    const googleSub = sessionState?.googleSub;
-    if (!googleSub) {
-      return;
-    }
-
-    analyticsTrackerRef.current?.dispose();
-    analyticsTrackerRef.current = new AnalyticsTracker({
-      boardId,
-      endpointUrl: `${readGoogleAuthSettings().backendUrl}/kpi_events`,
-      userId: googleSub
-    });
-
-    analyticsTrackerRef.current.track({
-      eventId: 'board_shared',
-      attributes: {
-        source: 'board-create'
-      }
-    });
-    await analyticsTrackerRef.current.flush();
-  }
-
-  useEffect(() => () => {
-    analyticsTrackerRef.current?.dispose();
-    analyticsTrackerRef.current = null;
-  }, []);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCreating(true);
@@ -144,7 +117,6 @@ export default function BoardCreatePanel() {
         title: payload.board.title,
         shareUrl: new URL(`/b/${payload.board.shareToken}`, window.location.origin).toString()
       });
-      void trackBoardShared(payload.board.id);
       setTitle('');
       setErrorMessage(null);
     } catch (error) {

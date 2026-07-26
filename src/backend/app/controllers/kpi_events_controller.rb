@@ -4,8 +4,33 @@ class KpiEventsController < ApplicationController
   class KpiEventValidationError < StandardError; end
 
   before_action :require_current_user!
+  rate_limit to: 100, within: 1.minute, only: :create, by: -> { "user:#{current_user&.id}" }
+
+  ALLOWED_CLIENT_EVENTS = {
+    "radial_opened" => {
+      required: %w[source],
+      types: { "source" => String },
+      max_lengths: { "source" => 30 }
+    },
+    "camera_panned" => {
+      required: %w[source],
+      types: { "source" => String },
+      max_lengths: { "source" => 30 }
+    },
+    "camera_zoomed" => {
+      required: %w[source zoom],
+      types: { "source" => String, "zoom" => Numeric },
+      max_lengths: { "source" => 30 }
+    }
+  }.freeze
+
+  MAX_REQUEST_SIZE = 64 * 1024 # 64KB
+
+
 
   def create
+    validate_request_size!
+
     events = normalized_events
     persisted = []
 
@@ -31,18 +56,28 @@ class KpiEventsController < ApplicationController
     head :unauthorized unless current_user
   end
 
+  def validate_request_size!
+    size = request.content_length.to_i
+    if size > MAX_REQUEST_SIZE
+      raise KpiEventValidationError, "Request body size exceeds limit of #{MAX_REQUEST_SIZE} bytes"
+    end
+  end
+
   def normalized_events
     raw_events = params.require(:events)
     raise KpiEventValidationError, "events must be an array" unless raw_events.is_a?(Array)
+    raise KpiEventValidationError, "batch size exceeds limit of 20" if raw_events.length > 20
 
     raw_events.map do |event|
       permitted = event.respond_to?(:permit) ? event.permit(:eventId, :boardId, :userId, :timestamp, attributes: {}) : event
       event_hash = permitted.to_h
 
+      event_id = parse_event_id!(event_hash["eventId"])
+
       {
-        attributes: validate_attributes!(event_hash["attributes"] || {}),
+        attributes: validate_attributes!(event_id, event_hash["attributes"] || {}),
         board_id: parse_board_id!(event_hash["boardId"]),
-        event_id: parse_event_id!(event_hash["eventId"]),
+        event_id: event_id,
         timestamp: parse_timestamp!(event_hash["timestamp"]),
         user_id: parse_user_id!(event_hash["userId"])
       }
@@ -74,6 +109,7 @@ class KpiEventsController < ApplicationController
   def parse_event_id!(value)
     event_id = value.to_s
     raise KpiEventValidationError, "eventId is required" if event_id.blank?
+    raise KpiEventValidationError, "Direct submission of event #{event_id} is not allowed" unless ALLOWED_CLIENT_EVENTS.key?(event_id)
 
     event_id
   end
@@ -92,12 +128,44 @@ class KpiEventsController < ApplicationController
     raise KpiEventValidationError, "timestamp is invalid"
   end
 
-  def validate_attributes!(attributes)
+  def validate_attributes!(event_id, attributes)
     raise KpiEventValidationError, "attributes must be an object" unless attributes.is_a?(Hash) || attributes.respond_to?(:to_unsafe_h)
 
     attributes = attributes.to_unsafe_h if attributes.respond_to?(:to_unsafe_h)
     attributes = attributes.to_h if attributes.is_a?(Hash)
     raise KpiEventValidationError, "attributes must be an object" unless attributes.is_a?(Hash)
+
+    rules = ALLOWED_CLIENT_EVENTS[event_id]
+    raise KpiEventValidationError, "Direct submission of event #{event_id} is not allowed" unless rules
+
+    # 未知のキーをすべて拒否 (PII回避防止)
+    unknown_keys = attributes.keys.map(&:to_s) - rules[:types].keys
+    raise KpiEventValidationError, "Unknown attributes are not allowed" if unknown_keys.any?
+
+    # 必須キーの存在チェック
+    rules[:required].each do |req|
+      raise KpiEventValidationError, "Missing required attribute: #{req}" unless attributes.key?(req) || attributes.key?(req.to_sym)
+    end
+
+    # 型と長さのチェック
+    attributes.each do |key, value|
+      key_str = key.to_s
+      expected_type = rules[:types][key_str]
+      if expected_type == Numeric
+        unless value.is_a?(Numeric)
+          raise KpiEventValidationError, "Attribute #{key} must be Numeric, got #{value.class}"
+        end
+      elsif expected_type == String
+        unless value.is_a?(String)
+          raise KpiEventValidationError, "Attribute #{key} must be String, got #{value.class}"
+        end
+
+        max_len = rules[:max_lengths][key_str]
+        if max_len && value.bytesize > max_len
+          raise KpiEventValidationError, "Attribute #{key} exceeds maximum length of #{max_len} bytes"
+        end
+      end
+    end
 
     reject_pii!(attributes)
     attributes
@@ -106,10 +174,10 @@ class KpiEventsController < ApplicationController
   def reject_pii!(value, path = [])
     case value
     when Array
-      value.each_with_index { |entry, index| reject_pii!(entry, path + [index.to_s]) }
+      value.each_with_index { |entry, index| reject_pii!(entry, path + [ index.to_s ]) }
     when Hash
       value.each do |key, entry|
-        key_path = path + [key.to_s]
+        key_path = path + [ key.to_s ]
         joined = key_path.join(".")
 
         if joined.match?(/(?:^|[_.-])(name|fullName|firstName|lastName|email|emailAddress|address|street|postalCode|zipCode|city|state|country|phone|phoneNumber|tel|telephone|mobile|dob|birth|birthday|dateOfBirth)(?:$|[_.-])/i)

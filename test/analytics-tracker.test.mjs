@@ -107,7 +107,7 @@ test('tracker flushes after ten seconds and preserves batching', async () => {
     clearTimeoutImpl: scheduler.clearTimeout,
   });
 
-  tracker.track({eventId: KPI_EVENT_DEFINITIONS[0], attributes: {source: 'toolbar'}});
+  tracker.track({eventId: 'camera_panned', attributes: {source: 'toolbar'}});
   assert.equal(calls.length, 0);
 
   scheduler.advance(9_999);
@@ -156,15 +156,16 @@ test('tracker covers the 3 × 2 × buffer-boundary matrix', async () => {
     if (scenario.pii) {
       assert.throws(() => {
         tracker.track({
-          eventId: KPI_EVENT_DEFINITIONS[10],
-          attributes: {email: 'ada@example.com'},
+          eventId: 'camera_zoomed',
+          attributes: {zoom: 1.0, email: 'ada@example.com'},
         });
       }, /PII-bearing attribute rejected/);
     } else {
+      const allowed = ['camera_panned', 'camera_zoomed', 'radial_opened'];
       for (let index = 0; index < scenario.count; index += 1) {
         tracker.track({
-          eventId: KPI_EVENT_DEFINITIONS[index % KPI_EVENT_DEFINITIONS.length],
-          attributes: {source: 'toolbar', step: index},
+          eventId: allowed[index % allowed.length],
+          attributes: {source: 'toolbar', step: index, zoom: 1.0},
         });
       }
 
@@ -210,11 +211,109 @@ test('tracker rejects disallowed PII and logs the hard failure path', () => {
 
   assert.throws(() => {
     tracker.track({
-      eventId: KPI_EVENT_DEFINITIONS[10],
-      attributes: {contact: {email: 'ada@example.com'}},
+      eventId: 'camera_zoomed',
+      attributes: {zoom: 1.0, contact: {email: 'ada@example.com'}},
     });
   }, /PII-bearing attribute rejected/);
 
   assert.equal(logger.errors.length, 1);
   assert.equal(storage.getItem('questboard.analytics.pii'), null);
 });
+
+test('tracker flushes offline buffer upon transitioning back to connected state', async () => {
+  const storage = createStorage();
+  const scheduler = createScheduler();
+  const logger = createLogger();
+  const {calls, fetchImpl} = createFetchStub();
+
+  const tracker = new AnalyticsTracker({
+    boardId: 42,
+    endpointUrl: 'https://backend.test/kpi_events',
+    fetchImpl,
+    logger,
+    offlineBufferLimit: 500,
+    storage,
+    storageKey: 'questboard.analytics.offline_test',
+    userId: 'google-sub-1',
+    setTimeoutImpl: scheduler.setTimeout,
+    clearTimeoutImpl: scheduler.clearTimeout,
+  });
+
+  // Start in offline mode
+  tracker.setConnectionState('offline');
+
+  // Track an event while offline (will be written to storage, queue is empty)
+  tracker.track({eventId: 'camera_panned', attributes: {source: 'toolbar'}});
+  assert.equal(calls.length, 0);
+
+  // Transition to connected state
+  tracker.setConnectionState('connected');
+
+  // Advance time to allow the scheduled flush to fire
+  scheduler.advance(10_000);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // The event from the offline buffer should have been flushed
+  assert.equal(calls.length, 1);
+  assert.equal(JSON.parse(calls[0].options.body).events.length, 1);
+  assert.equal(storage.values.size, 1);
+});
+
+test('tracker discards non-whitelisted client events defensively and does not lose whitelisted ones in mixed batches', async () => {
+  const storage = createStorage();
+  const scheduler = createScheduler();
+  const logger = createLogger();
+  const {calls, fetchImpl} = createFetchStub();
+
+  const tracker = new AnalyticsTracker({
+    boardId: 42,
+    endpointUrl: 'https://backend.test/kpi_events',
+    fetchImpl,
+    logger,
+    offlineBufferLimit: 500,
+    storage,
+    storageKey: 'questboard.analytics.mixed_test',
+    userId: 'google-sub-1',
+    setTimeoutImpl: scheduler.setTimeout,
+    clearTimeoutImpl: scheduler.clearTimeout,
+  });
+
+  // Track permitted events and non-permitted events mixed
+  tracker.track({eventId: 'camera_zoomed', attributes: {source: 'fit-to-content', zoom: 1.0}});
+  // Should be ignored:
+  tracker.track({eventId: 'object_created_sticky', attributes: {source: 'toolbar'}});
+  tracker.track({eventId: 'camera_panned', attributes: {source: 'minimap'}});
+
+  // Verify that only whitelisted events are in the pending queue by flushing once
+  await tracker.flush();
+  assert.equal(calls.length, 1);
+  let sentEvents = JSON.parse(calls[0].options.body).events;
+  assert.equal(sentEvents.length, 2); // 'camera_zoomed' and 'camera_panned'
+  assert.equal(sentEvents[0].eventId, 'camera_zoomed');
+  assert.equal(sentEvents[1].eventId, 'camera_panned');
+
+  // Reset fetch calls stub
+  calls.length = 0;
+
+  // Directly bypass track() method filter to simulate older events in offline buffer
+  // simulating: ['camera_zoomed', 'object_created_sticky', 'camera_panned'] in buffer
+  const rawEvent1 = { boardId: 42, attributes: { source: 'fit-to-content', zoom: 1.0 }, eventId: 'camera_zoomed', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
+  const rawEvent2 = { boardId: 42, attributes: { source: 'toolbar' }, eventId: 'object_created_sticky', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
+  const rawEvent3 = { boardId: 42, attributes: { source: 'minimap' }, eventId: 'camera_panned', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
+
+  // Directly persist mixed data into storage
+  storage.setItem('questboard.analytics.mixed_test', JSON.stringify([rawEvent1, rawEvent2, rawEvent3]));
+
+  // Flush the queue again (this time queue is empty, but storage has 3 events)
+  await tracker.flush();
+
+  // Non-permitted events must be filtered out before fetch, so only permitted ones should be sent
+  assert.equal(calls.length, 1);
+  sentEvents = JSON.parse(calls[0].options.body).events;
+  assert.equal(sentEvents.length, 2); // 'camera_zoomed' and 'camera_panned'
+  assert.equal(sentEvents[0].eventId, 'camera_zoomed');
+  assert.equal(sentEvents[1].eventId, 'camera_panned');
+});
+
+
+
