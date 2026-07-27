@@ -1,5 +1,6 @@
 import type {ReactNode} from 'react';
 
+import ClientErrorBridge from '@/components/client-error-bridge';
 import QueryProvider from '@/components/query-provider';
 import {defaultLocale} from '@/i18n/routing';
 
@@ -16,6 +17,7 @@ export default function RootLayout({children}: {children: ReactNode}) {
     <html lang={defaultLocale}>
       <body>
         <QueryProvider>{children}</QueryProvider>
+        <ClientErrorBridge />
       </body>
     </html>
   );

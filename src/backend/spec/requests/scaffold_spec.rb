@@ -21,6 +21,18 @@ RSpec.describe "Backend scaffold", type: :request do
     expect(JSON.parse(response.body)).to eq("status" => "ok")
   end
 
+  it "reports the health check as unavailable when the database is down" do
+    allow(ActiveRecord::Base).to receive(:connection).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+    get "/healthz"
+
+    expect(response).to have_http_status(:service_unavailable)
+    expect(JSON.parse(response.body)).to eq(
+      "status" => "unhealthy",
+      "checks" => { "database" => "down" }
+    )
+  end
+
   it "requires basic auth for the admin namespace" do
     get "/admin"
 

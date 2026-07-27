@@ -641,6 +641,8 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 				return
 			}
 
+			syncStart := time.Now()
+
 			if op.Property == "presence" {
 				// Charge the rate limiter for the full wire message (raw), not just
 				// op.Value — objectId/clientId sit outside Value and are broadcast/relayed
@@ -697,6 +699,7 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 						return
 					}
 				}
+				h.metrics.ObserveSyncOperationDuration(time.Since(syncStart))
 				continue
 			}
 
@@ -802,6 +805,7 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 						return
 					}
 				}
+				h.metrics.ObserveSyncOperationDuration(time.Since(syncStart))
 				continue
 			}
 
@@ -823,6 +827,7 @@ func (h *Handler) ServeHTTP(ctx *gin.Context) {
 					return
 				}
 			}
+			h.metrics.ObserveSyncOperationDuration(time.Since(syncStart))
 		}
 	}
 }

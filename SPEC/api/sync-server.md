@@ -7,8 +7,14 @@
 | メソッド | パス | 説明 |
 |---|---|---|
 | GET | `/healthz` | 死活監視用 |
-| GET | `/metrics` | Prometheus形式のメトリクス（接続数、遅いクライアント切断数など） |
+| GET | `/metrics` | Prometheus形式のメトリクス（WebSocket接続数、sync処理遅延、遅いクライアント切断数など） |
 | GET | `/ws?boardId=:boardId` | WebSocket接続。同一boardIdの接続同士でopをブロードキャストする |
+
+## アラートの基準
+
+- `sync_server_websocket_connections` の急増/急減を監視する。
+- `histogram_quantile(0.95, rate(sync_server_sync_operation_duration_seconds_bucket[5m]))` が 250ms を超えたら通知する。
+- `/healthz` の失敗は即時通知する。
 
 ## `/ws` 接続
 

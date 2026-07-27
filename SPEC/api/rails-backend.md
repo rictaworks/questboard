@@ -6,7 +6,8 @@
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| GET | `/healthz` | 死活監視用 |
+| GET | `/healthz` | 死活監視用。DB接続が失敗すると 503 を返す |
+| POST | `/client_errors` | フロントエンドからの例外レポートを受け付け、ログに集約する |
 
 ## 認証・セッション
 
@@ -81,3 +82,9 @@
 | GET | `/admin` | 管理ダッシュボード。`ADMIN_BASIC_AUTH_USERNAME`/`ADMIN_BASIC_AUTH_PASSWORD` によるBasic認証。現状はステータス確認用のJSONスタブ |
 
 Basic認証情報は環境変数で渡し、リポジトリにはコミットしないこと（`CLAUDE.md` シークレット管理参照）。
+
+## 監視/アラート
+
+- `/healthz` は外形監視で定期ポーリングする。
+- 失敗が3回連続、または5分継続したら PagerDuty か同等の通知チャネルへ送る。
+- フロント/バックエンドの例外は `POST /client_errors` と Rails のエラーログを経由して集約する。Sentry を併用する場合は同じ通知先へ転送する。

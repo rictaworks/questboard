@@ -176,6 +176,33 @@ func TestMetricsExposeWebSocketConnections(t *testing.T) {
 		t.Fatalf("GET /metrics websocket_connections did not reach %d", want)
 	}
 
+	assertHistogramCount := func(want int64) {
+		t.Helper()
+
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			response, err := http.Get(httpServer.URL + "/metrics")
+			if err != nil {
+				t.Fatalf("GET /metrics error = %v", err)
+			}
+
+			body, readErr := io.ReadAll(response.Body)
+			_ = response.Body.Close()
+			if readErr != nil {
+				t.Fatalf("reading /metrics body failed: %v", readErr)
+			}
+
+			got, ok := parsePrometheusMetricValue(body, "sync_server_sync_operation_duration_seconds_count")
+			if ok && got == float64(want) {
+				return
+			}
+
+			time.Sleep(25 * time.Millisecond)
+		}
+
+		t.Fatalf("GET /metrics sync_operation_duration_count did not reach %d", want)
+	}
+
 	assertMetric(0)
 
 	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-123"
@@ -188,6 +215,23 @@ func TestMetricsExposeWebSocketConnections(t *testing.T) {
 	})
 
 	assertMetric(1)
+
+	op := map[string]any{
+		"boardId":    "board-123",
+		"objectId":   "object-1",
+		"property":   "geometry",
+		"value":      map[string]any{"x": 20, "y": 40},
+		"lamport_ts": 7,
+		"clientId":   "client-a",
+	}
+	if err := conn.WriteJSON(op); err != nil {
+		t.Fatalf("writing websocket op failed: %v", err)
+	}
+	if _, _, err := conn.ReadMessage(); err != nil {
+		t.Fatalf("reading websocket broadcast failed: %v", err)
+	}
+
+	assertHistogramCount(1)
 
 	if err := conn.Close(); err != nil {
 		t.Fatalf("closing websocket connection failed: %v", err)
