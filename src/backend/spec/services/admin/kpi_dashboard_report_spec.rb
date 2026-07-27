@@ -105,28 +105,31 @@ RSpec.describe Admin::KpiDashboardReport, type: :service do
   end
 
   describe "intensity_distribution and intensity_total" do
-    it "counts only each user's most recent intensity_changed event" do
-      intensity_def = create_event_def("intensity_changed", effect_code: "recolor_pulse")
-      board = create_board("Board")
-      user = create_user("sub-1")
-
+    it "counts persisted user settings directly" do
       IntensityMaster.upsert_all(
         [ { code: "full" }, { code: "subtle" }, { code: "off" } ],
         unique_by: :index_intensity_masters_on_code
       )
 
-      KpiEvent.create!(event_def: intensity_def, user: user, board: board, occurred_at: now - 1.hour, props: { intensity: "full" })
-      KpiEvent.create!(event_def: intensity_def, user: user, board: board, occurred_at: now, props: { intensity: "subtle" })
+      user_one = create_user("sub-1")
+      user_two = create_user("sub-2")
+      user_three = create_user("sub-3")
+
+      UserSetting.create!(user: user_one, intensity_master: IntensityMaster.find_by!(code: "full"))
+      UserSetting.create!(user: user_two, intensity_master: IntensityMaster.find_by!(code: "subtle"))
+      UserSetting.create!(user: user_three, intensity_master: IntensityMaster.find_by!(code: "subtle"))
 
       report = described_class.new(now: now).call
 
-      expect(report.fetch(:intensity_total)).to eq(1)
+      expect(report.fetch(:intensity_total)).to eq(3)
 
-      subtle_row = report.fetch(:intensity_distribution).find { |row| row.fetch(:code) == "subtle" }
       full_row = report.fetch(:intensity_distribution).find { |row| row.fetch(:code) == "full" }
+      subtle_row = report.fetch(:intensity_distribution).find { |row| row.fetch(:code) == "subtle" }
+      off_row = report.fetch(:intensity_distribution).find { |row| row.fetch(:code) == "off" }
 
-      expect(subtle_row).to include(count: 1, percentage: 100.0)
-      expect(full_row).to include(count: 0, percentage: 0.0)
+      expect(full_row).to include(count: 1, percentage: 33.33333333333333)
+      expect(subtle_row).to include(count: 2, percentage: 66.66666666666666)
+      expect(off_row).to include(count: 0, percentage: 0.0)
     end
   end
 

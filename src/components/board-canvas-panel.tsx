@@ -2,7 +2,7 @@
 
 import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faStar, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {useQueryClient} from '@tanstack/react-query';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
@@ -25,6 +25,8 @@ import {
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
+import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
+import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -169,6 +171,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
     () => readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full'
   );
+  const hasAppliedServerIntensityRef = useRef(false);
 
   const [prevUserGoogleSub, setPrevUserGoogleSub] = useState(userGoogleSub);
   if (userGoogleSub !== prevUserGoogleSub) {
@@ -187,6 +190,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   // 以前はこれらを自前で書いていたため、順序逆転・初回誤祝賀・再接続漏れといった
   // 不具合が繰り返し発生していた（PR #61 レビュー）。
   const questsQuery = useQuestsQuery({backendUrl, userGoogleSub});
+  const userSettingsQuery = useQuery({
+    queryKey: ['user-settings', userGoogleSub],
+    queryFn: ({signal}) => fetchUserSettings({backendUrl}, signal)
+  });
+  const queueUserSettingsUpdate = useMemo(
+    () => createSerialAsyncQueue((nextIntensity: FeedbackIntensityCode) => updateUserSettings({backendUrl}, nextIntensity)),
+    [backendUrl]
+  );
   // 祝賀判定には必ず生の data を渡す。プレースホルダを混ぜると、初回の実応答で
   // 「表示時点ですでに完了していたクエスト」を新規完了と誤認して祝ってしまう。
   const activeCelebration = useQuestCelebrations(questsQuery.data, intensity);
@@ -198,6 +209,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }, [boardState]);
 
   useEffect(() => {
+    hasAppliedServerIntensityRef.current = false;
+  }, [userGoogleSub]);
+
+  useEffect(() => {
     analyticsTrackerRef.current?.dispose();
     const tracker = new AnalyticsTracker({
       boardId: boardState.board.id,
@@ -206,23 +221,22 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     });
     analyticsTrackerRef.current = tracker;
 
-    // 初回利用時: localStorage にデフォルトの 'full' を保存し、初回イベントを送信する
-    const storageKey = `feedback_intensity:${userGoogleSub}`;
-    const savedIntensity = readIntensityFromStorage(storageKey);
-    if (!savedIntensity) {
-      writeIntensityToStorage(storageKey, 'full');
-      tracker.track({
-        eventId: 'intensity_changed',
-        attributes: { intensity: 'full' }
-      });
-      tracker.flush();
-    }
-
     return () => {
       analyticsTrackerRef.current?.dispose();
       analyticsTrackerRef.current = null;
     };
   }, [backendUrl, boardState.board.id, userGoogleSub]);
+
+  useEffect(() => {
+    const serverIntensity = userSettingsQuery.data?.intensity;
+    if (!serverIntensity || hasAppliedServerIntensityRef.current) {
+      return;
+    }
+
+    hasAppliedServerIntensityRef.current = true;
+    setIntensity(serverIntensity);
+    writeIntensityToStorage(`feedback_intensity:${userGoogleSub}`, serverIntensity);
+  }, [userGoogleSub, userSettingsQuery.data?.intensity]);
 
   useEffect(() => {
     analyticsTrackerRef.current?.setConnectionState(
@@ -1099,11 +1113,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
               value={intensity}
               onChange={(e) => {
                 const nextIntensity = e.target.value as FeedbackIntensityCode;
+                hasAppliedServerIntensityRef.current = true;
                 setIntensity(nextIntensity);
                 writeIntensityToStorage(`feedback_intensity:${userGoogleSub}`, nextIntensity);
                 analyticsTrackerRef.current?.track({
                   eventId: 'intensity_changed',
                   attributes: { intensity: nextIntensity }
+                });
+                void queueUserSettingsUpdate(nextIntensity).catch((error) => {
+                  enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
                 });
               }}
             >

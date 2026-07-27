@@ -3,6 +3,7 @@ class User < ApplicationRecord
   validates :display_name, presence: true
 
   has_many :user_quests, dependent: :destroy
+  has_one :user_setting, foreign_key: :user_id, dependent: :destroy, inverse_of: :user
 
   def self.upsert_from_google_identity!(google_sub:, display_name:)
     upsert(
