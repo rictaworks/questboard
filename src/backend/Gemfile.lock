@@ -251,6 +251,13 @@ GEM
       rubocop-rails (>= 2.30)
     ruby-progressbar (1.13.0)
     securerandom (0.4.1)
+    sentry-rails (6.6.2)
+      railties (>= 5.2.0)
+      sentry-ruby (~> 6.6.2)
+    sentry-ruby (6.6.2)
+      bigdecimal
+      concurrent-ruby (~> 1.0, >= 1.0.2)
+      logger
     sqlite3 (2.9.5-x86_64-linux-gnu)
     thor (1.5.0)
     thruster (0.1.23-x86_64-linux)
@@ -284,6 +291,8 @@ DEPENDENCIES
   redis (>= 5.0)
   rspec-rails (~> 8.0)
   rubocop-rails-omakase
+  sentry-rails (~> 6.6.2)
+  sentry-ruby (~> 6.6.2)
   sqlite3 (>= 2.1)
   thruster
 

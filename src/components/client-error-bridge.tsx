@@ -1,6 +1,22 @@
 'use client';
 
+import * as Sentry from '@sentry/nextjs';
 import {useEffect} from 'react';
+
+import {sentryEnabled} from '@/lib/sentry-config';
+
+function initSentry() {
+  if (!sentryEnabled()) {
+    return false;
+  }
+
+  Sentry.init({
+    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+    environment: process.env.NEXT_PUBLIC_ENV,
+    enabled: true
+  });
+  return true;
+}
 
 function sanitizeUrl(urlStr: string): string {
   try {
@@ -44,6 +60,10 @@ function sendClientError(payload: Record<string, unknown>) {
 
 export default function ClientErrorBridge() {
   useEffect(() => {
+    if (initSentry()) {
+      return;
+    }
+
     const reportError = (event: ErrorEvent) => {
       sendClientError({
         column: event.colno,
