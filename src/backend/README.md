@@ -27,7 +27,8 @@ API surface grows. Current endpoints:
 
 | Method | Endpoint   | Title            | Auth        |
 | ------ | ---------- | ---------------- | ----------- |
-| GET    | `/healthz` | Health check      | none        |
+| GET    | `/healthz` | Health check (DB ping included; 503 when unhealthy) | none        |
+| POST   | `/client_errors` | Client error intake log | none |
 | GET    | `/admin`   | Admin dashboard   | HTTP Basic  |
 | GET    | `/session` | Current session   | cookie      |
 | DELETE | `/session` | Logout            | cookie      |
@@ -45,6 +46,12 @@ API surface grows. Current endpoints:
 | POST   | `/boards/:share_token/objects/:id/lock` | Lock an object | cookie |
 | DELETE | `/boards/:share_token/objects/:id/lock` | Unlock an object | cookie |
 | DELETE | `/boards/:share_token/objects/:id` | Tombstone-delete an object | cookie |
+
+## Operational monitoring
+
+- Poll `/healthz` from an external uptime monitor.
+- Alert on 3 consecutive failures or any 5-minute outage.
+- The sync-server exports Prometheus metrics at `/metrics` for WebSocket connection count and sync-operation latency.
 
 ## Lint & security
 

@@ -1,5 +1,6 @@
 Rails.application.routes.draw do
   get "/healthz", to: "health#show"
+  post "/client_errors", to: "client_errors#create"
 
   namespace :admin do
     root to: "dashboard#show"
