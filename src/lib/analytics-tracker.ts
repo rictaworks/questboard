@@ -14,6 +14,8 @@ export const KPI_EVENT_DEFINITIONS = [
   'radial_opened',
   'camera_panned',
   'camera_zoomed',
+  'intensity_changed',
+  'quest_completed',
 ] as const;
 
 export type KpiEventDefinitionCode = (typeof KPI_EVENT_DEFINITIONS)[number];
@@ -127,7 +129,7 @@ export class AnalyticsTracker {
   }
 
   track(event: AnalyticsTrackerEvent): void {
-    const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened'];
+    const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened', 'intensity_changed'];
     if (!allowedClientEvents.includes(event.eventId)) {
       return;
     }
@@ -166,7 +168,7 @@ export class AnalyticsTracker {
     this.clearScheduledFlush();
 
     try {
-      const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened'];
+      const allowedClientEvents: KpiEventDefinitionCode[] = ['camera_panned', 'camera_zoomed', 'radial_opened', 'intensity_changed'];
       this.pendingQueue = [...this.readOfflineBuffer(), ...this.pendingQueue].filter((event) =>
         allowedClientEvents.includes(event.eventId)
       );

@@ -46,54 +46,69 @@ module Admin
     attr_reader :now
 
     def retention_rate(days:)
-      cohort = matured_user_event_dates
-      return 0.0 if cohort.empty?
+      cutoff_date = now.to_date - MATURITY_WINDOW_DAYS
 
-      retained = cohort.count { |first_date, dates| dates.include?(first_date + days) }
-      percentage(retained, cohort.size)
-    end
+      sql = <<~SQL
+        WITH user_first_dates AS (
+          SELECT user_id, MIN(occurred_at::date) AS first_date
+          FROM kpi_events
+          GROUP BY user_id
+        ),
+        matured_users AS (
+          SELECT user_id, first_date
+          FROM user_first_dates
+          WHERE first_date <= :cutoff_date
+        ),
+        retained_users AS (
+          SELECT DISTINCT mu.user_id
+          FROM matured_users mu
+          JOIN kpi_events ke ON ke.user_id = mu.user_id AND ke.occurred_at::date = mu.first_date + :days
+        )
+        SELECT 
+          (SELECT COUNT(*) FROM matured_users) AS cohort_size,
+          (SELECT COUNT(*) FROM retained_users) AS retained_size
+      SQL
 
-    def matured_user_event_dates
-      @matured_user_event_dates ||= begin
-        maturity_cutoff = now.to_date - MATURITY_WINDOW_DAYS
+      res = KpiEvent.connection.select_one(
+        ActiveRecord::Base.sanitize_sql_array([sql, cutoff_date: cutoff_date, days: days])
+      )
 
-        user_event_dates.values.filter_map do |dates|
-          unique_dates = dates.uniq.sort
-          next if unique_dates.empty?
+      cohort_size = res["cohort_size"].to_i
+      retained_size = res["retained_size"].to_i
 
-          first_date = unique_dates.first
-          next if first_date > maturity_cutoff
-
-          [ first_date, unique_dates ]
-        end
-      end
-    end
-
-    def user_event_dates
-      @user_event_dates ||= begin
-        dates_by_user = Hash.new { |hash, user_id| hash[user_id] = [] }
-
-        KpiEvent.select(:id, :user_id, :occurred_at).find_each do |event|
-          dates_by_user[event.user_id] << event.occurred_at.to_date
-        end
-
-        dates_by_user
-      end
+      return 0.0 if cohort_size.zero?
+      percentage(retained_size, cohort_size)
     end
 
     def concurrent_editors_per_board
-      peak_editors_by_board = Hash.new(0)
-      editors_by_board_and_bucket = Hash.new { |hash, board_id| hash[board_id] = Hash.new { |bucket_hash, bucket| bucket_hash[bucket] = Set.new } }
+      event_ids = editing_event_def_ids
+      return 0.0 if event_ids.empty?
 
-      editing_event_scope.select(:id, :board_id, :user_id, :occurred_at).find_each do |event|
-        bucket = event.occurred_at.change(sec: 0, usec: 0)
-        editors_by_board_and_bucket[event.board_id][bucket] << event.user_id
-        peak_editors_by_board[event.board_id] = [ peak_editors_by_board[event.board_id], editors_by_board_and_bucket[event.board_id][bucket].size ].max
-      end
+      sql = <<~SQL
+        WITH bucketed_editors AS (
+          SELECT 
+            board_id,
+            date_trunc('minute', occurred_at) AS bucket,
+            COUNT(DISTINCT user_id) AS editor_count
+          FROM kpi_events
+          WHERE event_def_id IN (:event_ids)
+          GROUP BY board_id, date_trunc('minute', occurred_at)
+        ),
+        board_peaks AS (
+          SELECT 
+            board_id,
+            MAX(editor_count) AS peak_count
+          FROM bucketed_editors
+          GROUP BY board_id
+        )
+        SELECT AVG(peak_count) AS avg_peak FROM board_peaks
+      SQL
 
-      return 0.0 if peak_editors_by_board.empty?
+      res = KpiEvent.connection.select_one(
+        ActiveRecord::Base.sanitize_sql_array([sql, event_ids: event_ids])
+      )
 
-      peak_editors_by_board.values.sum.to_f / peak_editors_by_board.size
+      res["avg_peak"] ? res["avg_peak"].to_f : 0.0
     end
 
     def radial_menu_reach_rate

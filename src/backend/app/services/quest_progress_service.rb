@@ -68,6 +68,17 @@ class QuestProgressService
           user_quest.achieved_at ||= Time.current
           user_quest.reward_granted_at ||= Time.current
           user_quest.completed_at ||= Time.current
+
+          event_def = EventDef.find_by(code: "quest_completed")
+          if event_def
+            KpiEvent.create!(
+              user: @user,
+              board: board,
+              event_def: event_def,
+              occurred_at: Time.current,
+              props: { quest_title: quest.title }
+            )
+          end
         end
 
         saved_quest = user_quest if user_quest.save
@@ -124,10 +135,27 @@ class QuestProgressService
       user_quest = find_user_quest_with_lock(quest_id)
       return false unless user_quest.state == "achieved" || user_quest.state == "completed"
 
+      was_completed = user_quest.state == "completed"
+
       user_quest.state = "completed"
       user_quest.reward_granted_at ||= Time.current
       user_quest.completed_at ||= Time.current
-      saved_quest = user_quest if user_quest.save
+
+      if !was_completed && user_quest.save
+        saved_quest = user_quest
+        event_def = EventDef.find_by(code: "quest_completed")
+        if event_def
+          KpiEvent.create!(
+            user: @user,
+            board: board,
+            event_def: event_def,
+            occurred_at: Time.current,
+            props: { quest_title: user_quest.quest.title }
+          )
+        end
+      elsif was_completed && user_quest.save
+        saved_quest = user_quest
+      end
     end
 
     return false unless saved_quest

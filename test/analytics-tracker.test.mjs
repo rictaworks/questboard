@@ -161,11 +161,11 @@ test('tracker covers the 3 × 2 × buffer-boundary matrix', async () => {
         });
       }, /PII-bearing attribute rejected/);
     } else {
-      const allowed = ['camera_panned', 'camera_zoomed', 'radial_opened'];
+      const allowed = ['camera_panned', 'camera_zoomed', 'radial_opened', 'intensity_changed'];
       for (let index = 0; index < scenario.count; index += 1) {
         tracker.track({
           eventId: allowed[index % allowed.length],
-          attributes: {source: 'toolbar', step: index, zoom: 1.0},
+          attributes: {source: 'toolbar', step: index, zoom: 1.0, intensity: 'full'},
         });
       }
 
@@ -283,14 +283,16 @@ test('tracker discards non-whitelisted client events defensively and does not lo
   // Should be ignored:
   tracker.track({eventId: 'object_created_sticky', attributes: {source: 'toolbar'}});
   tracker.track({eventId: 'camera_panned', attributes: {source: 'minimap'}});
+  tracker.track({eventId: 'intensity_changed', attributes: {intensity: 'subtle'}});
 
   // Verify that only whitelisted events are in the pending queue by flushing once
   await tracker.flush();
   assert.equal(calls.length, 1);
   let sentEvents = JSON.parse(calls[0].options.body).events;
-  assert.equal(sentEvents.length, 2); // 'camera_zoomed' and 'camera_panned'
+  assert.equal(sentEvents.length, 3); // 'camera_zoomed', 'camera_panned' and 'intensity_changed'
   assert.equal(sentEvents[0].eventId, 'camera_zoomed');
   assert.equal(sentEvents[1].eventId, 'camera_panned');
+  assert.equal(sentEvents[2].eventId, 'intensity_changed');
 
   // Reset fetch calls stub
   calls.length = 0;
@@ -300,19 +302,21 @@ test('tracker discards non-whitelisted client events defensively and does not lo
   const rawEvent1 = { boardId: 42, attributes: { source: 'fit-to-content', zoom: 1.0 }, eventId: 'camera_zoomed', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
   const rawEvent2 = { boardId: 42, attributes: { source: 'toolbar' }, eventId: 'object_created_sticky', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
   const rawEvent3 = { boardId: 42, attributes: { source: 'minimap' }, eventId: 'camera_panned', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
+  const rawEvent4 = { boardId: 42, attributes: { intensity: 'subtle' }, eventId: 'intensity_changed', timestamp: new Date().toISOString(), userId: 'google-sub-1' };
 
   // Directly persist mixed data into storage
-  storage.setItem('questboard.analytics.mixed_test', JSON.stringify([rawEvent1, rawEvent2, rawEvent3]));
+  storage.setItem('questboard.analytics.mixed_test', JSON.stringify([rawEvent1, rawEvent2, rawEvent3, rawEvent4]));
 
-  // Flush the queue again (this time queue is empty, but storage has 3 events)
+  // Flush the queue again (this time queue is empty, but storage has 4 events)
   await tracker.flush();
 
   // Non-permitted events must be filtered out before fetch, so only permitted ones should be sent
   assert.equal(calls.length, 1);
   sentEvents = JSON.parse(calls[0].options.body).events;
-  assert.equal(sentEvents.length, 2); // 'camera_zoomed' and 'camera_panned'
+  assert.equal(sentEvents.length, 3); // 'camera_zoomed', 'camera_panned' and 'intensity_changed'
   assert.equal(sentEvents[0].eventId, 'camera_zoomed');
   assert.equal(sentEvents[1].eventId, 'camera_panned');
+  assert.equal(sentEvents[2].eventId, 'intensity_changed');
 });
 
 

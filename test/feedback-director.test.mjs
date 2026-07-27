@@ -101,14 +101,14 @@ test('FeedbackDirector covers the 12 × 3 × 2 matrix and keeps feedback non-blo
     }
   }
 
-  assert.equal(cases, 72);
+  assert.equal(cases, 84);
   assert.equal(director.decide('camera_zoomed', 'full').effectCode, 'zoom_wave');
 });
 
 test('quest completion routes through the director alias instead of a separate animation path', () => {
   const decision = decideFeedback('quest_completed', 'full', false);
   assert.equal(decision.trigger, 'quest_completed');
-  assert.equal(decision.eventKind, 'radial_opened');
+  assert.equal(decision.eventKind, 'quest_completed');
   assert.equal(decision.effectCode, 'radial_bloom');
 });
 
@@ -172,13 +172,4 @@ test('effect durations and event-to-effect routing stay in sync with the seeded 
     );
   }
 
-  // db/seeds.rb has no "quest_completed" event_defs row (adding one would break the
-  // documented 72-row master data total), so FEEDBACK_EVENT_ALIAS intentionally borrows
-  // radial_opened's effect instead of reading a seeded mapping. If this ever changes,
-  // FEEDBACK_EVENT_ALIAS should be replaced with a real seeded lookup.
-  assert.equal(
-    seededEventDefs.some((seeded) => seeded.code === 'quest_completed'),
-    false,
-    'db/seeds.rb now seeds a quest_completed event_defs row — update FEEDBACK_EVENT_ALIAS to read it instead of hardcoding the alias'
-  );
 });

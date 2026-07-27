@@ -21,6 +21,12 @@ class KpiEventsController < ApplicationController
       required: %w[source zoom],
       types: { "source" => String, "zoom" => Numeric },
       max_lengths: { "source" => 30 }
+    },
+    "intensity_changed" => {
+      required: %w[intensity],
+      types: { "intensity" => String },
+      max_lengths: { "intensity" => 10 },
+      inclusion: { "intensity" => %w[full subtle off] }
     }
   }.freeze
 
@@ -163,6 +169,16 @@ class KpiEventsController < ApplicationController
         max_len = rules[:max_lengths][key_str]
         if max_len && value.bytesize > max_len
           raise KpiEventValidationError, "Attribute #{key} exceeds maximum length of #{max_len} bytes"
+        end
+      end
+    end
+
+    # inclusion (値の制限) のチェック
+    if rules[:inclusion]
+      rules[:inclusion].each do |attr_name, allowed_values|
+        val = attributes[attr_name] || attributes[attr_name.to_sym]
+        if val && !allowed_values.include?(val)
+          raise KpiEventValidationError, "Attribute #{attr_name} has invalid value: #{val}"
         end
       end
     end
