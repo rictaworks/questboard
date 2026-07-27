@@ -127,30 +127,7 @@ module Admin
     end
 
     def intensity_distribution
-      event_def = EventDef.find_by(code: "intensity_changed")
-      counts = {}
-
-      if event_def
-        sql = <<~SQL
-          WITH latest_settings AS (
-            SELECT DISTINCT ON (user_id) props->>'intensity' AS intensity_code
-            FROM kpi_events
-            WHERE event_def_id = :event_def_id
-            ORDER BY user_id, occurred_at DESC, id DESC
-          )
-          SELECT intensity_code, COUNT(*) AS count
-          FROM latest_settings
-          GROUP BY intensity_code
-        SQL
-
-        res = KpiEvent.connection.select_all(
-          ActiveRecord::Base.sanitize_sql_array([ sql, event_def_id: event_def.id ])
-        )
-        res.each do |row|
-          counts[row["intensity_code"]] = row["count"].to_i
-        end
-      end
-
+      counts = UserSetting.joins(:intensity_master).group("intensity_masters.code").count
       total = intensity_total
 
       IntensityMaster.order(:id).map do |intensity|
@@ -166,14 +143,7 @@ module Admin
     end
 
     def intensity_total
-      @intensity_total ||= begin
-        event_def = EventDef.find_by(code: "intensity_changed")
-        if event_def
-          kpi_event_scope.where(event_def_id: event_def.id).distinct.count(:user_id)
-        else
-          0
-        end
-      end
+      @intensity_total ||= UserSetting.count
     end
 
     def active_user_count
