@@ -105,6 +105,10 @@
     "questStateAchieved": "Achieved",
     "questStateRewardGranted": "Reward granted",
     "questStateCompleted": "Completed",
-    "questStateSkipped": "Skipped"
+    "questStateSkipped": "Skipped",
+    "intensityLabel": "演出强度",
+    "intensityFull": "完整",
+    "intensitySubtle": "微弱",
+    "intensityOff": "关闭"
   }
 }

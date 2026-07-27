@@ -135,11 +135,19 @@ export function decideFeedback(
   const eventKind = normalizeFeedbackTrigger(trigger);
   const effect = resolveFeedbackEffect(trigger);
   const resolvedIntensity: FeedbackIntensityCode = reducedMotion ? 'off' : intensity;
-  const durationMs = resolvedIntensity === 'full'
+  let durationMs = resolvedIntensity === 'full'
     ? effect.durationMs
     : resolvedIntensity === 'subtle'
       ? Math.min(Math.round(effect.durationMs * 0.75), 400)
       : Math.min(120, effect.durationMs);
+
+  if (trigger === 'quest_completed') {
+    durationMs = resolvedIntensity === 'full'
+      ? 2000
+      : resolvedIntensity === 'subtle'
+        ? 800
+        : 0;
+  }
 
   return {
     trigger,

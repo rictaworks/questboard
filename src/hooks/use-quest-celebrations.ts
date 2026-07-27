@@ -2,7 +2,7 @@
 
 import {useEffect, useRef, useState} from 'react';
 
-import {FeedbackDirector, type FeedbackDecision} from '@/lib/feedback-director';
+import {FeedbackDirector, type FeedbackDecision, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {
   QUEST_CELEBRATION_OVERLAY_MS,
   collectCompletedQuestIds,
@@ -16,7 +16,10 @@ import type {QuestSnapshot} from '@/lib/quest-engine';
  * 「読み込み時点ですでに完了していたクエスト」を新規完了と誤認して祝ってしまう。
  * これは PR #61 レビューで指摘された不具合そのもの。
  */
-export function useQuestCelebrations(quests: QuestSnapshot[] | undefined): FeedbackDecision | null {
+export function useQuestCelebrations(
+  quests: QuestSnapshot[] | undefined,
+  intensity: FeedbackIntensityCode
+): FeedbackDecision | null {
   const directorRef = useRef<FeedbackDirector | null>(null);
   if (directorRef.current === null) {
     directorRef.current = new FeedbackDirector();
@@ -46,18 +49,21 @@ export function useQuestCelebrations(quests: QuestSnapshot[] | undefined): Feedb
       throw new Error('FeedbackDirector is not initialised');
     }
 
-    const decisions = newlyCompleted.map(() => director.decide('quest_completed', 'full'));
+    const decisions = newlyCompleted
+      .map(() => director.decide('quest_completed', intensity))
+      .filter((decision) => decision.durationMs > 0);
     setPendingCelebrations((current) => [...current, ...decisions]);
-  }, [quests]);
+  }, [quests, intensity]);
 
   useEffect(() => {
     if (pendingCelebrations.length === 0) {
       return;
     }
 
+    const currentCelebration = pendingCelebrations[0];
     const timer = window.setTimeout(() => {
       setPendingCelebrations((current) => current.slice(1));
-    }, QUEST_CELEBRATION_OVERLAY_MS);
+    }, currentCelebration.durationMs);
 
     return () => window.clearTimeout(timer);
   }, [pendingCelebrations]);

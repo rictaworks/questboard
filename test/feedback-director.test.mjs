@@ -87,12 +87,24 @@ test('FeedbackDirector covers the 12 × 3 × 2 matrix and keeps feedback non-blo
         assert.equal(decision.modal, false);
         assert.equal(decision.blocksInput, false);
         assert.equal(decision.soundEnabled, false);
-        assert.ok(decision.durationMs <= 400);
+        if (trigger !== 'quest_completed') {
+          assert.ok(decision.durationMs <= 400);
+        } else {
+          if (reducedMotion || intensity === 'off') {
+            assert.equal(decision.durationMs, 0);
+          } else if (intensity === 'subtle') {
+            assert.equal(decision.durationMs, 800);
+          } else {
+            assert.equal(decision.durationMs, 2000);
+          }
+        }
 
         if (reducedMotion) {
           assert.equal(decision.resolvedIntensity, 'off');
           assert.equal(decision.motionMode, 'color-only');
-          assert.equal(decision.durationMs, 120);
+          if (trigger !== 'quest_completed') {
+            assert.equal(decision.durationMs, 120);
+          }
         } else {
           assert.equal(decision.resolvedIntensity, intensity);
           assert.equal(decision.motionMode, intensity === 'off' ? 'color-only' : 'motion');

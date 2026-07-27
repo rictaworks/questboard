@@ -24,6 +24,7 @@ import {
 } from '@/lib/board-realtime';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
+import type {FeedbackIntensityCode} from '@/lib/feedback-director';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -103,6 +104,34 @@ type PresenceEntry = {
 
 const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
 
+// localStorage が無効化されたブラウザや allow-same-origin のない sandbox iframe では
+// getItem/setItem が SecurityError を送出し、state 初期化中にボード全体がクラッシュする。
+// AnalyticsTracker の readBrowserStorage と同様に try/catch へ集約し、失敗時は
+// メモリ上の既定値にフォールバックする。
+function readIntensityFromStorage(storageKey: string): FeedbackIntensityCode | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(storageKey) as FeedbackIntensityCode | null;
+  } catch {
+    return null;
+  }
+}
+
+function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensityCode): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(storageKey, intensity);
+  } catch {
+    // ストレージ利用不可時は永続化を諦め、メモリ上の状態のみで継続する
+  }
+}
+
 export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -134,6 +163,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
   const [restoreGateOpen, setRestoreGateOpen] = useState(false);
+  const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
+    () => readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full'
+  );
+
+  const [prevUserGoogleSub, setPrevUserGoogleSub] = useState(userGoogleSub);
+  if (userGoogleSub !== prevUserGoogleSub) {
+    setPrevUserGoogleSub(userGoogleSub);
+    setIntensity(readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full');
+  }
   const cameraStateRef = useRef<CameraState>(cameraState);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
@@ -148,7 +186,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const questsQuery = useQuestsQuery({backendUrl, userGoogleSub});
   // 祝賀判定には必ず生の data を渡す。プレースホルダを混ぜると、初回の実応答で
   // 「表示時点ですでに完了していたクエスト」を新規完了と誤認して祝ってしまう。
-  const activeCelebration = useQuestCelebrations(questsQuery.data);
+  const activeCelebration = useQuestCelebrations(questsQuery.data, intensity);
   const placeholderQuests = useMemo(() => createPlaceholderQuestSnapshots(), []);
   const quests = questsQuery.data ?? placeholderQuests;
 
@@ -164,6 +202,18 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       userId: userGoogleSub
     });
     analyticsTrackerRef.current = tracker;
+
+    // 初回利用時: localStorage にデフォルトの 'full' を保存し、初回イベントを送信する
+    const storageKey = `feedback_intensity:${userGoogleSub}`;
+    const savedIntensity = readIntensityFromStorage(storageKey);
+    if (!savedIntensity) {
+      writeIntensityToStorage(storageKey, 'full');
+      tracker.track({
+        eventId: 'intensity_changed',
+        attributes: { intensity: 'full' }
+      });
+      tracker.flush();
+    }
 
     return () => {
       analyticsTrackerRef.current?.dispose();
@@ -1038,6 +1088,27 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
             </span>
             {pendingSyncCount > 0 ? <span>{t('queuedOps', {count: pendingSyncCount})}</span> : null}
           </div>
+          <div className="board-intensity-setting">
+            <label htmlFor="intensity-select" className="sr-only">{t('intensityLabel')}</label>
+            <select
+              id="intensity-select"
+              className="button button-secondary"
+              value={intensity}
+              onChange={(e) => {
+                const nextIntensity = e.target.value as FeedbackIntensityCode;
+                setIntensity(nextIntensity);
+                writeIntensityToStorage(`feedback_intensity:${userGoogleSub}`, nextIntensity);
+                analyticsTrackerRef.current?.track({
+                  eventId: 'intensity_changed',
+                  attributes: { intensity: nextIntensity }
+                });
+              }}
+            >
+              <option value="full">{t('intensityFull')}</option>
+              <option value="subtle">{t('intensitySubtle')}</option>
+              <option value="off">{t('intensityOff')}</option>
+            </select>
+          </div>
           <button className="button button-secondary" onClick={onReloadBoard} type="button">
             {t('refresh')}
           </button>
@@ -1274,7 +1345,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         <div
           className={`quest-celebration-overlay ${activeCelebration.motionMode === 'color-only' ? 'motion-color-only' : ''}`}
           style={{
-            animationDuration: `${QUEST_CELEBRATION_OVERLAY_MS}ms`,
+            animationDuration: `${activeCelebration.durationMs}ms`,
             animationTimingFunction: activeCelebration.easing,
           }}
         >

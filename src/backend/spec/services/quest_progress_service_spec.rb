@@ -1,6 +1,8 @@
 require "rails_helper"
 
 RSpec.describe QuestProgressService, type: :service do
+  self.use_transactional_tests = false
+
   let(:user_google_sub) { "test-sub-12345-#{SecureRandom.hex(4)}" }
   let(:board_title) { "Test Board-#{SecureRandom.hex(4)}" }
   let(:other_board_title) { "Other Board-#{SecureRandom.hex(4)}" }
@@ -28,6 +30,7 @@ RSpec.describe QuestProgressService, type: :service do
   end
 
   after do
+    KpiEvent.where(user_id: user.id).delete_all
     BoardMember.where(user_id: user.id).delete_all
     UserQuest.where(user_id: user.id).delete_all
     Board.where(title: [ board_title, other_board_title ]).delete_all

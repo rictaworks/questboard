@@ -129,7 +129,16 @@ class KpiEventsController < ApplicationController
   end
 
   def parse_timestamp!(value)
-    Time.iso8601(value.to_s)
+    t = Time.iso8601(value.to_s)
+    # 未来方向は5分後まで許容し、それを超える未来は現在時刻に正規化
+    if t > Time.current + 5.minutes
+      t = Time.current
+    end
+    # 過去方向は30日前まで許容し、それを超える過去は現在時刻に正規化
+    if t < 30.days.ago
+      t = Time.current
+    end
+    t
   rescue ArgumentError, TypeError
     raise KpiEventValidationError, "timestamp is invalid"
   end

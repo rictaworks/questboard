@@ -20,7 +20,7 @@ class QuestProgressService
   end
 
   def initialize(user)
-    @user = user
+    @user = user.respond_to?(:id) ? User.find_by(id: user.id) || user : user
   end
 
   # 行がまだ存在しない状態では SELECT ... FOR UPDATE が何もロックしないため、
@@ -51,7 +51,7 @@ class QuestProgressService
       saved_quest = nil
 
       UserQuest.transaction do
-        user_quest = @user.user_quests.lock.find_by(quest: quest)
+        user_quest = UserQuest.lock.find_by(user: @user, quest: quest)
         next unless user_quest
 
         # すでに完了している、またはスキップされている場合は進めない
@@ -63,25 +63,31 @@ class QuestProgressService
 
         user_quest.progress = [ user_quest.progress + 1, quest.condition_count ].min
 
+        should_create_event = false
         if user_quest.progress >= quest.condition_count
           user_quest.state = "completed"
           user_quest.achieved_at ||= Time.current
           user_quest.reward_granted_at ||= Time.current
           user_quest.completed_at ||= Time.current
-
-          event_def = EventDef.find_by(code: "quest_completed")
-          if event_def
-            KpiEvent.create!(
-              user: @user,
-              board: board,
-              event_def: event_def,
-              occurred_at: Time.current,
-              props: { quest_title: quest.title }
-            )
-          end
+          should_create_event = true
         end
 
-        saved_quest = user_quest if user_quest.save
+        if user_quest.save
+          saved_quest = user_quest
+
+          if should_create_event
+            event_def = EventDef.find_by(code: "quest_completed")
+            if event_def
+              KpiEvent.create!(
+                user: @user,
+                board: board,
+                event_def: event_def,
+                occurred_at: Time.current,
+                props: { quest_title: quest.title }
+              )
+            end
+          end
+        end
       end
 
       # コミット確定後にのみ配信する（トランザクション内配信だとロールバック時に未確定状態を通知してしまう）

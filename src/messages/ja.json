@@ -105,6 +105,10 @@
     "questStateAchieved": "達成",
     "questStateRewardGranted": "報酬付与",
     "questStateCompleted": "完了",
-    "questStateSkipped": "スキップ済み"
+    "questStateSkipped": "スキップ済み",
+    "intensityLabel": "演出強度",
+    "intensityFull": "フル",
+    "intensitySubtle": "控えめ",
+    "intensityOff": "オフ"
   }
 }

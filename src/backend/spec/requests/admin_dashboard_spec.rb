@@ -48,6 +48,15 @@ RSpec.describe "Admin KPI dashboard", type: :request do
     UserSetting.create!(user: user_one, intensity_master: full)
     UserSetting.create!(user: user_two, intensity_master: subtle)
 
+    quest_completed_def = EventDef.find_by!(code: "quest_completed")
+    KpiEvent.create!(event_def: quest_completed_def, user: user_one, board: board_one, occurred_at: Time.current, props: { quest_title: "Q1" })
+    KpiEvent.create!(event_def: quest_completed_def, user: user_one, board: board_one, occurred_at: Time.current, props: { quest_title: "Q2" })
+    KpiEvent.create!(event_def: quest_completed_def, user: user_one, board: board_one, occurred_at: Time.current, props: { quest_title: "Q3" })
+
+    intensity_changed_def = EventDef.find_by!(code: "intensity_changed")
+    KpiEvent.create!(event_def: intensity_changed_def, user: user_one, board: board_one, occurred_at: Time.current, props: { intensity: "full" })
+    KpiEvent.create!(event_def: intensity_changed_def, user: user_two, board: board_one, occurred_at: Time.current, props: { intensity: "subtle" })
+
     credentials = ActionController::HttpAuthentication::Basic.encode_credentials("admin", "secret")
     get "/admin", headers: { "Authorization" => credentials }
 
@@ -56,7 +65,7 @@ RSpec.describe "Admin KPI dashboard", type: :request do
     expect(response.body).to include("100.0%")
     expect(response.body).to include("50.0%")
     expect(response.body).to include("1.5人")
-    expect(response.body).to include("75.0%")
+    expect(response.body).to include("37.5%")
     expect(response.body).to include("フル")
     expect(response.body).to include("控えめ")
     expect(response.body).to include("オフ")
@@ -69,7 +78,9 @@ RSpec.describe "Admin KPI dashboard", type: :request do
       [
         { code: "creation_pop", duration_ms: 180 },
         { code: "radial_bloom", duration_ms: 180 },
-        { code: "comment_ping", duration_ms: 200 }
+        { code: "comment_ping", duration_ms: 200 },
+        { code: "zoom_wave", duration_ms: 240 },
+        { code: "recolor_pulse", duration_ms: 140 }
       ],
       unique_by: :index_effect_masters_on_code
     )
@@ -80,7 +91,9 @@ RSpec.describe "Admin KPI dashboard", type: :request do
       [
         { code: "object_created_sticky", effect_id: effect_ids.fetch("creation_pop") },
         { code: "radial_opened", effect_id: effect_ids.fetch("radial_bloom") },
-        { code: "comment_created", effect_id: effect_ids.fetch("comment_ping") }
+        { code: "comment_created", effect_id: effect_ids.fetch("comment_ping") },
+        { code: "quest_completed", effect_id: effect_ids.fetch("radial_bloom") },
+        { code: "intensity_changed", effect_id: effect_ids.fetch("recolor_pulse") }
       ],
       unique_by: :index_event_defs_on_code
     )

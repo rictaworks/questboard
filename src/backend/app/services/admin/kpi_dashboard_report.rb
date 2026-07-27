@@ -64,13 +64,13 @@ module Admin
           FROM matured_users mu
           JOIN kpi_events ke ON ke.user_id = mu.user_id AND ke.occurred_at::date = mu.first_date + :days
         )
-        SELECT 
+        SELECT#{' '}
           (SELECT COUNT(*) FROM matured_users) AS cohort_size,
           (SELECT COUNT(*) FROM retained_users) AS retained_size
       SQL
 
       res = KpiEvent.connection.select_one(
-        ActiveRecord::Base.sanitize_sql_array([sql, cutoff_date: cutoff_date, days: days])
+        ActiveRecord::Base.sanitize_sql_array([ sql, cutoff_date: cutoff_date, days: days ])
       )
 
       cohort_size = res["cohort_size"].to_i
@@ -86,7 +86,7 @@ module Admin
 
       sql = <<~SQL
         WITH bucketed_editors AS (
-          SELECT 
+          SELECT#{' '}
             board_id,
             date_trunc('minute', occurred_at) AS bucket,
             COUNT(DISTINCT user_id) AS editor_count
@@ -95,7 +95,7 @@ module Admin
           GROUP BY board_id, date_trunc('minute', occurred_at)
         ),
         board_peaks AS (
-          SELECT 
+          SELECT#{' '}
             board_id,
             MAX(editor_count) AS peak_count
           FROM bucketed_editors
@@ -105,7 +105,7 @@ module Admin
       SQL
 
       res = KpiEvent.connection.select_one(
-        ActiveRecord::Base.sanitize_sql_array([sql, event_ids: event_ids])
+        ActiveRecord::Base.sanitize_sql_array([ sql, event_ids: event_ids ])
       )
 
       res["avg_peak"] ? res["avg_peak"].to_f : 0.0
@@ -116,26 +116,64 @@ module Admin
     end
 
     def quest_completion_rate
-      percentage(UserQuest.where(state: "completed").count, UserQuest.count)
+      event_def = EventDef.find_by(code: "quest_completed")
+      return 0.0 unless event_def
+
+      completed_count = kpi_event_scope.where(event_def_id: event_def.id).count
+      total_possible = User.count * Quest.count
+      return 0.0 if total_possible.zero?
+
+      percentage(completed_count, total_possible)
     end
 
     def intensity_distribution
-      counts_by_intensity_id = UserSetting.group(:intensity_id).count
+      event_def = EventDef.find_by(code: "intensity_changed")
+      counts = {}
+
+      if event_def
+        sql = <<~SQL
+          WITH latest_settings AS (
+            SELECT DISTINCT ON (user_id) props->>'intensity' AS intensity_code
+            FROM kpi_events
+            WHERE event_def_id = :event_def_id
+            ORDER BY user_id, occurred_at DESC, id DESC
+          )
+          SELECT intensity_code, COUNT(*) AS count
+          FROM latest_settings
+          GROUP BY intensity_code
+        SQL
+
+        res = KpiEvent.connection.select_all(
+          ActiveRecord::Base.sanitize_sql_array([ sql, event_def_id: event_def.id ])
+        )
+        res.each do |row|
+          counts[row["intensity_code"]] = row["count"].to_i
+        end
+      end
+
+      total = intensity_total
 
       IntensityMaster.order(:id).map do |intensity|
-        count = counts_by_intensity_id[intensity.id].to_i
+        count = counts[intensity.code].to_i
 
         {
           code: intensity.code,
           label: INTENSITY_LABELS.fetch(intensity.code, intensity.code),
           count: count,
-          percentage: percentage(count, intensity_total)
+          percentage: percentage(count, total)
         }
       end
     end
 
     def intensity_total
-      @intensity_total ||= UserSetting.count
+      @intensity_total ||= begin
+        event_def = EventDef.find_by(code: "intensity_changed")
+        if event_def
+          kpi_event_scope.where(event_def_id: event_def.id).distinct.count(:user_id)
+        else
+          0
+        end
+      end
     end
 
     def active_user_count
