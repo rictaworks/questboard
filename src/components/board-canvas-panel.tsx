@@ -24,7 +24,7 @@ import {
 } from '@/lib/board-realtime';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
-import type {FeedbackIntensityCode} from '@/lib/feedback-director';
+import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -114,7 +114,10 @@ function readIntensityFromStorage(storageKey: string): FeedbackIntensityCode | n
   }
 
   try {
-    return window.localStorage.getItem(storageKey) as FeedbackIntensityCode | null;
+    const stored = window.localStorage.getItem(storageKey);
+    return FEEDBACK_INTENSITY_MASTERS.includes(stored as FeedbackIntensityCode)
+      ? (stored as FeedbackIntensityCode)
+      : null;
   } catch {
     return null;
   }

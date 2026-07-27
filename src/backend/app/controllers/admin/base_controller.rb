@@ -1,6 +1,7 @@
 module Admin
   class BaseController < ActionController::Base
     include ActionController::HttpAuthentication::Basic::ControllerMethods
+    include RequestOriginGuard
 
     layout "admin"
 

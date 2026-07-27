@@ -20,7 +20,7 @@ class QuestProgressService
   end
 
   def initialize(user)
-    @user = user.respond_to?(:id) ? User.find_by(id: user.id) || user : user
+    @user = user
   end
 
   # 行がまだ存在しない状態では SELECT ... FOR UPDATE が何もロックしないため、
