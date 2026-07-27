@@ -229,6 +229,14 @@ RSpec.describe "KPI events", type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/Request body size exceeds limit/i)
+
+    # 3. When URL path has a format suffix (e.g., .json)
+    post "/kpi_events.json",
+         params: large_payload,
+         headers: { "CONTENT_TYPE" => "application/json", "CONTENT_LENGTH" => large_payload.bytesize.to_s }
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body).fetch("error")).to match(/Request body size exceeds limit/i)
   end
 
   describe "rate limiting" do

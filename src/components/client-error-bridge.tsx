@@ -1,7 +1,18 @@
 'use client';
 
 import {useEffect} from 'react';
-import {sanitizeClientErrorUrl} from '@/lib/client-error-url';
+
+function sanitizeUrl(urlStr: string): string {
+  try {
+    const url = new URL(urlStr);
+    url.search = '';
+    url.hash = '';
+    url.pathname = url.pathname.replace(/(\/b\/)[^/]+/, '$1[redacted]');
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
 
 function sendClientError(payload: Record<string, unknown>) {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -40,7 +51,7 @@ export default function ClientErrorBridge() {
         message: event.message,
         source: event.filename,
         stack: event.error instanceof Error ? event.error.stack : null,
-        url: sanitizeClientErrorUrl(window.location.href),
+        url: sanitizeUrl(window.location.href),
         user_agent: navigator.userAgent
       });
     };
@@ -51,7 +62,7 @@ export default function ClientErrorBridge() {
         message: reason.message,
         source: 'unhandledrejection',
         stack: reason.stack,
-        url: sanitizeClientErrorUrl(window.location.href),
+        url: sanitizeUrl(window.location.href),
         user_agent: navigator.userAgent
       });
     };
