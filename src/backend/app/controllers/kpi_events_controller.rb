@@ -21,6 +21,12 @@ class KpiEventsController < ApplicationController
       required: %w[source zoom],
       types: { "source" => String, "zoom" => Numeric },
       max_lengths: { "source" => 30 }
+    },
+    "intensity_changed" => {
+      required: %w[intensity],
+      types: { "intensity" => String },
+      max_lengths: { "intensity" => 10 },
+      inclusion: { "intensity" => %w[full subtle off] }
     }
   }.freeze
 
@@ -123,7 +129,16 @@ class KpiEventsController < ApplicationController
   end
 
   def parse_timestamp!(value)
-    Time.iso8601(value.to_s)
+    t = Time.iso8601(value.to_s)
+    # 未来方向は5分後まで許容し、それを超える未来は現在時刻に正規化
+    if t > Time.current + 5.minutes
+      t = Time.current
+    end
+    # 過去方向は30日前まで許容し、それを超える過去は現在時刻に正規化
+    if t < 30.days.ago
+      t = Time.current
+    end
+    t
   rescue ArgumentError, TypeError
     raise KpiEventValidationError, "timestamp is invalid"
   end
@@ -163,6 +178,16 @@ class KpiEventsController < ApplicationController
         max_len = rules[:max_lengths][key_str]
         if max_len && value.bytesize > max_len
           raise KpiEventValidationError, "Attribute #{key} exceeds maximum length of #{max_len} bytes"
+        end
+      end
+    end
+
+    # inclusion (値の制限) のチェック
+    if rules[:inclusion]
+      rules[:inclusion].each do |attr_name, allowed_values|
+        val = attributes[attr_name] || attributes[attr_name.to_sym]
+        if val && !allowed_values.include?(val)
+          raise KpiEventValidationError, "Attribute #{attr_name} has invalid value: #{val}"
         end
       end
     end

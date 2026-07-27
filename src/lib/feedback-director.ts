@@ -12,9 +12,11 @@ export type FeedbackEventKind =
   | 'board_shared'
   | 'radial_opened'
   | 'camera_panned'
-  | 'camera_zoomed';
+  | 'camera_zoomed'
+  | 'quest_completed'
+  | 'intensity_changed';
 
-export type FeedbackTrigger = FeedbackEventKind | 'quest_completed' | 'comment_added';
+export type FeedbackTrigger = FeedbackEventKind | 'comment_added';
 
 export type FeedbackMotionMode = 'motion' | 'color-only';
 
@@ -70,6 +72,8 @@ export const FEEDBACK_EVENT_KINDS: readonly FeedbackEventKind[] = [
   'radial_opened',
   'camera_panned',
   'camera_zoomed',
+  'quest_completed',
+  'intensity_changed',
 ] as const;
 
 const FEEDBACK_EVENT_EFFECT_CODES: Record<FeedbackEventKind, string> = {
@@ -85,14 +89,11 @@ const FEEDBACK_EVENT_EFFECT_CODES: Record<FeedbackEventKind, string> = {
   radial_opened: 'radial_bloom',
   camera_panned: 'camera_swish',
   camera_zoomed: 'zoom_wave',
+  quest_completed: 'radial_bloom',
+  intensity_changed: 'recolor_pulse',
 };
 
-// effect_masters (db/seeds.rb) has no dedicated celebration effect, and event_defs has no
-// "quest_completed" row, so quest completion is routed onto the radial-menu bloom effect
-// instead of a 13th canonical event kind. If a dedicated celebration effect is ever added
-// to the seeded master data, update this alias (and event_defs) to point at it instead.
-const FEEDBACK_EVENT_ALIAS: Record<'quest_completed' | 'comment_added', FeedbackEventKind> = {
-  quest_completed: 'radial_opened',
+const FEEDBACK_EVENT_ALIAS: Record<'comment_added', FeedbackEventKind> = {
   comment_added: 'comment_created',
 };
 
@@ -107,10 +108,6 @@ export function detectPrefersReducedMotion(): boolean {
 }
 
 export function normalizeFeedbackTrigger(trigger: FeedbackTrigger): FeedbackEventKind {
-  if (trigger === 'quest_completed') {
-    return FEEDBACK_EVENT_ALIAS.quest_completed;
-  }
-
   if (trigger === 'comment_added') {
     return FEEDBACK_EVENT_ALIAS.comment_added;
   }
@@ -138,11 +135,19 @@ export function decideFeedback(
   const eventKind = normalizeFeedbackTrigger(trigger);
   const effect = resolveFeedbackEffect(trigger);
   const resolvedIntensity: FeedbackIntensityCode = reducedMotion ? 'off' : intensity;
-  const durationMs = resolvedIntensity === 'full'
+  let durationMs = resolvedIntensity === 'full'
     ? effect.durationMs
     : resolvedIntensity === 'subtle'
       ? Math.min(Math.round(effect.durationMs * 0.75), 400)
       : Math.min(120, effect.durationMs);
+
+  if (trigger === 'quest_completed') {
+    durationMs = resolvedIntensity === 'full'
+      ? 2000
+      : resolvedIntensity === 'subtle'
+        ? 800
+        : 0;
+  }
 
   return {
     trigger,

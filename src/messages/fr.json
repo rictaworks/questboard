@@ -105,6 +105,10 @@
     "questStateAchieved": "Achieved",
     "questStateRewardGranted": "Reward granted",
     "questStateCompleted": "Completed",
-    "questStateSkipped": "Skipped"
+    "questStateSkipped": "Skipped",
+    "intensityLabel": "Intensité",
+    "intensityFull": "Plein",
+    "intensitySubtle": "Subtil",
+    "intensityOff": "Désactivé"
   }
 }

@@ -125,6 +125,28 @@ RSpec.describe "KPI events", type: :request do
     expect(KpiEvent.count).to eq(0)
   end
 
+  it "rejects intensity_changed event with invalid intensity value" do
+    board = create_board
+
+    expect(Rails.logger).to receive(:warn).at_least(:once)
+
+    post "/kpi_events", params: {
+      events: [
+        {
+          eventId: "intensity_changed",
+          boardId: board.fetch("id"),
+          userId: user.google_sub,
+          timestamp: Time.current.iso8601,
+          attributes: { intensity: "invalid" }
+        }
+      ]
+    }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(JSON.parse(response.body).fetch("error")).to match(/invalid value/i)
+    expect(KpiEvent.count).to eq(0)
+  end
+
   it "rejects events whose userId does not match the signed-in user" do
     board = create_board
 

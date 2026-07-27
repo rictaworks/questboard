@@ -1,0 +1,55 @@
+<header class="hero">
+  <div>
+    <p class="eyebrow">管理ダッシュボード</p>
+    <h1>KPI開発者ダッシュボード</h1>
+    <p class="footnote">本デモは最小データセットでの検証結果</p>
+  </div>
+</header>
+
+<section class="grid" aria-label="KPIサマリー">
+  <article class="tile">
+    <div class="tile-label">D1継続率</div>
+    <div class="tile-value"><%= format("%.1f%%", @report.fetch(:d1_retention_rate)) %></div>
+    <div class="tile-subvalue">初回イベント翌日の再訪率</div>
+  </article>
+
+  <article class="tile">
+    <div class="tile-label">D7継続率</div>
+    <div class="tile-value"><%= format("%.1f%%", @report.fetch(:d7_retention_rate)) %></div>
+    <div class="tile-subvalue">初回イベント7日後の再訪率</div>
+  </article>
+
+  <article class="tile">
+    <div class="tile-label">ボードあたり同時編集人数</div>
+    <div class="tile-value"><%= format("%.1f人", @report.fetch(:concurrent_editors_per_board)) %></div>
+    <div class="tile-subvalue">編集イベントの1分バケット平均ピーク</div>
+  </article>
+
+  <article class="tile">
+    <div class="tile-label">ラジアルメニュー到達率</div>
+    <div class="tile-value"><%= format("%.1f%%", @report.fetch(:radial_menu_reach_rate)) %></div>
+    <div class="tile-subvalue">KPIイベント利用者に対する到達率</div>
+  </article>
+
+  <article class="tile">
+    <div class="tile-label">クエスト完了率</div>
+    <div class="tile-value"><%= format("%.1f%%", @report.fetch(:quest_completion_rate)) %></div>
+    <div class="tile-subvalue">完了済みクエスト / 全クエスト</div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-label">演出強度の設定分布</div>
+  <h2>演出強度の設定分布</h2>
+  <div class="bars" role="list" aria-label="演出強度の分布">
+    <% @report.fetch(:intensity_distribution).each do |row| %>
+      <div class="bar-row" role="listitem">
+        <div><%= row.fetch(:label) %></div>
+        <div class="bar-track" aria-hidden="true">
+          <div class="bar-fill" style="width: <%= [row.fetch(:percentage), 100.0].min %>%"></div>
+        </div>
+        <div class="bar-value"><%= format("%.1f%% (%d/%d)", row.fetch(:percentage), row.fetch(:count), @report.fetch(:intensity_total)) %></div>
+      </div>
+    <% end %>
+  </div>
+</section>

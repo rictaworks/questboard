@@ -136,7 +136,9 @@ seed_table(
     { code: "board_shared", effect_id: effect_ids.fetch("share_pulse") },
     { code: "radial_opened", effect_id: effect_ids.fetch("radial_bloom") },
     { code: "camera_panned", effect_id: effect_ids.fetch("camera_swish") },
-    { code: "camera_zoomed", effect_id: effect_ids.fetch("zoom_wave") }
+    { code: "camera_zoomed", effect_id: effect_ids.fetch("zoom_wave") },
+    { code: "quest_completed", effect_id: effect_ids.fetch("radial_bloom") },
+    { code: "intensity_changed", effect_id: effect_ids.fetch("recolor_pulse") }
   ],
   unique_by: :index_event_defs_on_code
 )
