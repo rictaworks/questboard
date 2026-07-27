@@ -67,6 +67,6 @@ RSpec.describe "User settings", type: :request do
 
     expect(response).to have_http_status(:unprocessable_entity)
     expect(JSON.parse(response.body)).to eq("error" => "Invalid intensity")
-    expect(UserSetting.find_by!(user_id: user.id).intensity_master.code).to eq("full")
+    expect(UserSetting.find_by(user_id: user.id)).to be_nil
   end
 end

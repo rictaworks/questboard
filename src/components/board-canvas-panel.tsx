@@ -2,7 +2,7 @@
 
 import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faStar, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query';
+import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
@@ -26,6 +26,7 @@ import {readGoogleAuthSettings} from '@/lib/google-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
+import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -193,9 +194,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     queryKey: ['user-settings', userGoogleSub],
     queryFn: ({signal}) => fetchUserSettings({backendUrl}, signal)
   });
-  const userSettingsMutation = useMutation({
-    mutationFn: (nextIntensity: FeedbackIntensityCode) => updateUserSettings({backendUrl}, nextIntensity)
-  });
+  const queueUserSettingsUpdate = useMemo(
+    () => createSerialAsyncQueue((nextIntensity: FeedbackIntensityCode) => updateUserSettings({backendUrl}, nextIntensity)),
+    [backendUrl]
+  );
   // 祝賀判定には必ず生の data を渡す。プレースホルダを混ぜると、初回の実応答で
   // 「表示時点ですでに完了していたクエスト」を新規完了と誤認して祝ってしまう。
   const activeCelebration = useQuestCelebrations(questsQuery.data, intensity);
@@ -1118,7 +1120,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
                   eventId: 'intensity_changed',
                   attributes: { intensity: nextIntensity }
                 });
-                userSettingsMutation.mutate(nextIntensity);
+                void queueUserSettingsUpdate(nextIntensity).catch((error) => {
+                  enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
+                });
               }}
             >
               <option value="full">{t('intensityFull')}</option>
