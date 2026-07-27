@@ -3,6 +3,7 @@
 import * as Sentry from '@sentry/nextjs';
 import {useEffect} from 'react';
 
+import {sanitizeClientErrorUrl} from '@/lib/sentry-sanitizer';
 import {sentryEnabled} from '@/lib/sentry-config';
 
 function initSentry() {
@@ -16,18 +17,6 @@ function initSentry() {
     enabled: true
   });
   return true;
-}
-
-function sanitizeUrl(urlStr: string): string {
-  try {
-    const url = new URL(urlStr);
-    url.search = '';
-    url.hash = '';
-    url.pathname = url.pathname.replace(/(\/b\/)[^/]+/, '$1[redacted]');
-    return url.toString();
-  } catch {
-    return '';
-  }
 }
 
 function sendClientError(payload: Record<string, unknown>) {
@@ -71,7 +60,7 @@ export default function ClientErrorBridge() {
         message: event.message,
         source: event.filename,
         stack: event.error instanceof Error ? event.error.stack : null,
-        url: sanitizeUrl(window.location.href),
+        url: sanitizeClientErrorUrl(window.location.href),
         user_agent: navigator.userAgent
       });
     };
@@ -82,7 +71,7 @@ export default function ClientErrorBridge() {
         message: reason.message,
         source: 'unhandledrejection',
         stack: reason.stack,
-        url: sanitizeUrl(window.location.href),
+        url: sanitizeClientErrorUrl(window.location.href),
         user_agent: navigator.userAgent
       });
     };
