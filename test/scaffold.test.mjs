@@ -41,7 +41,19 @@ async function loadRouting() {
   return moduleShim.exports;
 }
 
+async function loadSentryConfig() {
+  const source = await read('src/lib/sentry-config.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
+  return moduleShim.exports;
+}
+
 const {defaultLocale, locales} = await loadRouting();
+const {sentryEnabled} = await loadSentryConfig();
 const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
 
 test('design tokens keep expected values', async () => {
@@ -147,6 +159,8 @@ test('backend scaffold uses env vars for config and secrets', async () => {
   const database = await read('src/backend/config/database.yml');
   const routes = await read('src/backend/config/routes.rb');
   const envExample = await read('src/backend/.env.example');
+  const sentryInitializer = await read('src/backend/config/initializers/sentry.rb');
+  const backendSentryHelper = await read('src/backend/lib/error_tracking.rb');
   const backendFiles = (await walk('src/backend')).filter((file) => (
     /\.(rb|yml)$/.test(file)
     && (file.startsWith('src/backend/app/')
@@ -161,6 +175,9 @@ test('backend scaffold uses env vars for config and secrets', async () => {
   assert.match(database, /production:[\s\S]*url: <%= Rails\.env\.production\? \? ENV\.fetch\("DATABASE_URL"\) : ENV\.fetch\("DATABASE_URL", nil\) %>/);
   assert.match(routes, /get "\/healthz", to: "health#show"/);
   assert.match(routes, /namespace :admin do[\s\S]*root to: "dashboard#show"/);
+  assert.match(sentryInitializer, /ENV\.fetch\("SENTRY_DSN"\)/);
+  assert.match(sentryInitializer, /config\.environment = Rails\.env\.to_s/);
+  assert.match(backendSentryHelper, /def sentry_enabled\?\(env: Rails\.env, dsn: ENV\["SENTRY_DSN"\]\)/);
 
   for (const variable of [
     'RAILS_MASTER_KEY',
@@ -175,6 +192,22 @@ test('backend scaffold uses env vars for config and secrets', async () => {
 
   assert.equal(/ADMIN_BASIC_AUTH_(USERNAME|PASSWORD)\s*=\s*["'][^"']+["']/.test(backendSource), false);
   assert.equal(/http_basic_authenticate_with\s+name:\s*["'][^"']+["']/.test(backendSource), false);
+});
+
+test('frontend Sentry integration is environment-driven and does not hardcode a DSN', async () => {
+  const clientBridge = await read('src/components/client-error-bridge.tsx');
+  const sentryConfig = await read('src/lib/sentry-config.ts');
+
+  assert.equal(sentryEnabled('production', 'https://dsn.example/1'), true);
+  assert.equal(sentryEnabled('production', '   '), false);
+  assert.equal(sentryEnabled('development', 'https://dsn.example/1'), false);
+  assert.match(clientBridge, /sentryEnabled\(\)/);
+  assert.equal(/Sentry\.init\(/.test(clientBridge), false);
+  assert.match(clientBridge, /if \(sentryEnabled\(\)\) {\n\s+return;\n\s+}/);
+  assert.match(sentryConfig, /NEXT_PUBLIC_SENTRY_DSN/);
+  assert.match(sentryConfig, /env === 'production'/);
+  assert.equal(/dsn:\s*['"][^'"]+['"]/.test(clientBridge), false);
+  assert.equal(/NEXT_PUBLIC_SENTRY_DSN\s*=\s*['"][^'"]+['"]/.test(clientBridge), false);
 });
 
 test('sync server scaffold is workspace-enabled and board-shard aware', async () => {
