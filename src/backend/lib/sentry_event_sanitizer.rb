@@ -46,12 +46,13 @@ module SentryEventSanitizer
     return unless breadcrumbs.respond_to?(:each)
 
     breadcrumbs.each do |breadcrumb|
+      set_object_value(breadcrumb, :url, sanitize_url(object_value(breadcrumb, :url))) if object_value(breadcrumb, :url).is_a?(String)
+      set_object_value(breadcrumb, :message, sanitize_url(object_value(breadcrumb, :message))) if object_value(breadcrumb, :message).is_a?(String)
+
       data = object_value(breadcrumb, :data)
       next unless data
 
-      set_object_value(breadcrumb, :url, sanitize_url(object_value(breadcrumb, :url))) if object_value(breadcrumb, :url).is_a?(String)
       set_object_value(data, :url, sanitize_url(object_value(data, :url)))
-      set_object_value(breadcrumb, :message, sanitize_url(object_value(breadcrumb, :message))) if object_value(breadcrumb, :message).is_a?(String)
     end
   end
 
