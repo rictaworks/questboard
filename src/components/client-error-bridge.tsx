@@ -1,23 +1,10 @@
 'use client';
 
-import * as Sentry from '@sentry/nextjs';
 import {useEffect} from 'react';
 
 import {sanitizeClientErrorUrl} from '@/lib/sentry-sanitizer';
 import {sentryEnabled} from '@/lib/sentry-config';
 
-function initSentry() {
-  if (!sentryEnabled()) {
-    return false;
-  }
-
-  Sentry.init({
-    dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
-    environment: process.env.NEXT_PUBLIC_ENV,
-    enabled: true
-  });
-  return true;
-}
 
 function sendClientError(payload: Record<string, unknown>) {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
@@ -49,7 +36,7 @@ function sendClientError(payload: Record<string, unknown>) {
 
 export default function ClientErrorBridge() {
   useEffect(() => {
-    if (initSentry()) {
+    if (sentryEnabled()) {
       return;
     }
 

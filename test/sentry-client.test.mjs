@@ -71,3 +71,42 @@ test('instrumentation-client initializes Sentry immediately with a beforeSend sa
   assert.equal(typeof initCalls[0].beforeSend, 'function');
   assert.equal(initCalls[0].dsn, process.env.NEXT_PUBLIC_SENTRY_DSN);
 });
+
+test('ClientErrorBridge respects sentryEnabled and does not call Sentry.init or overwrite client settings', async () => {
+  let reactEffectCalled = false;
+  let initCalls = [];
+
+  const requireImpl = (specifier) => {
+    if (specifier === 'react') {
+      return {
+        useEffect: (effect) => {
+          reactEffectCalled = true;
+          effect();
+        }
+      };
+    }
+    if (specifier === '@/lib/sentry-sanitizer') {
+      return {
+        sanitizeClientErrorUrl: (url) => url
+      };
+    }
+    if (specifier === '@/lib/sentry-config') {
+      return {
+        sentryEnabled: () => true
+      };
+    }
+    if (specifier === '@sentry/nextjs') {
+      return {
+        init: (options) => initCalls.push(options)
+      };
+    }
+    throw new Error(`unexpected require: ${specifier}`);
+  };
+
+  const {default: ClientErrorBridge} = await loadModule('src/components/client-error-bridge.tsx', requireImpl);
+
+  ClientErrorBridge();
+  assert.equal(reactEffectCalled, true);
+  assert.equal(initCalls.length, 0);
+});
+

@@ -202,8 +202,8 @@ test('frontend Sentry integration is environment-driven and does not hardcode a 
   assert.equal(sentryEnabled('production', '   '), false);
   assert.equal(sentryEnabled('development', 'https://dsn.example/1'), false);
   assert.match(clientBridge, /sentryEnabled\(\)/);
-  assert.match(clientBridge, /Sentry\.init\(/);
-  assert.match(clientBridge, /if \(initSentry\(\)\) {\n\s+return;\n\s+}/);
+  assert.equal(/Sentry\.init\(/.test(clientBridge), false);
+  assert.match(clientBridge, /if \(sentryEnabled\(\)\) {\n\s+return;\n\s+}/);
   assert.match(sentryConfig, /NEXT_PUBLIC_SENTRY_DSN/);
   assert.match(sentryConfig, /env === 'production'/);
   assert.equal(/dsn:\s*['"][^'"]+['"]/.test(clientBridge), false);
