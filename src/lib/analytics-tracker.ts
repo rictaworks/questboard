@@ -57,6 +57,7 @@ type StoredAnalyticsEvent = {
 };
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
+type TimerHandle = ReturnType<typeof setTimeout>;
 
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 10_000;
@@ -80,15 +81,15 @@ export class AnalyticsTracker {
   private readonly flushIntervalMs: number;
   private readonly offlineBufferLimit: number;
   private readonly storageKey: string;
-  private readonly fetchImpl: typeof fetch;
-  private readonly setTimeoutImpl: typeof setTimeout;
-  private readonly clearTimeoutImpl: typeof clearTimeout;
+  private readonly fetchImpl: (input: string, init: RequestInit) => Promise<Response>;
+  private readonly setTimeoutImpl: (callback: () => void, ms: number) => TimerHandle;
+  private readonly clearTimeoutImpl: (timer: TimerHandle) => void;
   private readonly logger: Pick<Console, 'error' | 'warn'>;
   private readonly storage: StorageLike | null;
   private readonly listeners = new Set<(event: AnalyticsTrackerPublishedEvent) => void>();
   private pendingQueue: StoredAnalyticsEvent[] = [];
   private connectionState: AnalyticsConnectionState = 'connected';
-  private flushTimer: ReturnType<typeof setTimeout> | null = null;
+  private flushTimer: TimerHandle | null = null;
   private flushing = false;
 
   constructor(options: AnalyticsTrackerOptions) {
@@ -99,9 +100,21 @@ export class AnalyticsTracker {
     this.flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
     this.offlineBufferLimit = options.offlineBufferLimit ?? DEFAULT_OFFLINE_BUFFER_LIMIT;
     this.storageKey = options.storageKey ?? `questboard.analytics.${options.userId}.${options.boardId}`;
-    this.fetchImpl = options.fetchImpl ?? fetch;
-    this.setTimeoutImpl = options.setTimeoutImpl ?? setTimeout;
-    this.clearTimeoutImpl = options.clearTimeoutImpl ?? clearTimeout;
+    // fetch / setTimeout / clearTimeout are WebIDL operations that require the global object as
+    // their receiver. Storing them bare would call them with the tracker as `this` (Illegal invocation).
+    const injectedFetch = options.fetchImpl;
+    const injectedSetTimeout = options.setTimeoutImpl;
+    const injectedClearTimeout = options.clearTimeoutImpl;
+    this.fetchImpl = (input, init) => (injectedFetch ? injectedFetch(input, init) : globalThis.fetch(input, init));
+    this.setTimeoutImpl = (callback, ms) =>
+      injectedSetTimeout ? injectedSetTimeout(callback, ms) : globalThis.setTimeout(callback, ms);
+    this.clearTimeoutImpl = (timer) => {
+      if (injectedClearTimeout) {
+        injectedClearTimeout(timer);
+        return;
+      }
+      globalThis.clearTimeout(timer);
+    };
     this.logger = options.logger ?? console;
     this.storage = options.storage ?? readBrowserStorage();
   }
@@ -344,13 +357,9 @@ export class AnalyticsTracker {
       return [];
     }
 
-    const raw = this.storage.getItem(this.storageKey);
-    if (!raw) {
-      return [];
-    }
-
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const raw = this.storage.getItem(this.storageKey);
+      const parsed = raw ? JSON.parse(raw) as unknown : [];
       return Array.isArray(parsed) ? parsed as StoredAnalyticsEvent[] : [];
     } catch {
       return [];
@@ -363,7 +372,12 @@ export class AnalyticsTracker {
     }
 
     const next = events.slice(-this.offlineBufferLimit);
-    this.storage.setItem(this.storageKey, JSON.stringify(next));
+    try {
+      this.storage.setItem(this.storageKey, JSON.stringify(next));
+    } catch (error) {
+      // Quota exhaustion must not take down the board; KPI collection is auxiliary.
+      this.logger.warn('[AnalyticsTracker] offline buffer persist failed', error);
+    }
   }
 
   private async sendBatch(batch: StoredAnalyticsEvent[]): Promise<{kind: 'sent'} | {kind: 'discard'} | {kind: 'retry-later'; buffered: StoredAnalyticsEvent[]}> {
