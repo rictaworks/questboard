@@ -61,7 +61,7 @@ RSpec.describe "Admin KPI dashboard", type: :request do
     get "/admin", headers: { "Authorization" => credentials }
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("本デモは最小データセットでの検証結果")
+    expect(response.body).to include("継続率は初回イベントから7日以上経過した利用者のみを母数に集計")
     expect(response.body).to include("100.0%")
     expect(response.body).to include("50.0%")
     expect(response.body).to include("1.5人")
