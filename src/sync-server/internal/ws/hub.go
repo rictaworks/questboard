@@ -92,6 +92,21 @@ func (h *Hub) Broadcast(boardID string, payload []byte) {
 	}
 }
 
+func (h *Hub) CloseRoom(boardID string, code int, text string) {
+	h.mu.Lock()
+	room := h.rooms[boardID]
+	recipients := make([]*client, 0, len(room))
+	for c := range room {
+		recipients = append(recipients, c)
+	}
+	delete(h.rooms, boardID)
+	h.mu.Unlock()
+
+	for _, recipient := range recipients {
+		recipient.requestClose(code, text)
+	}
+}
+
 func (h *Hub) ConnectionCount() int64 {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

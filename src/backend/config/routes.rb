@@ -14,6 +14,7 @@ Rails.application.routes.draw do
   resources :kpi_events, only: :create
   resources :boards, only: :create
   get "/boards/:share_token", to: "boards#show"
+  delete "/boards/:share_token", to: "boards#destroy"
   post "/boards/:share_token/join", to: "boards#join"
   patch "/boards/:share_token/members/:user_id", to: "boards#update_member_role"
   post "/boards/:share_token/objects", to: "objects#create"

@@ -1,6 +1,8 @@
 class Board < ApplicationRecord
   has_secure_token :share_token
 
+  scope :active, -> { where(deleted_at: nil) }
+
   has_many :board_members, dependent: :destroy
   has_many :users, through: :board_members
   has_many :board_objects, class_name: "BoardObject", foreign_key: :board_id
@@ -26,5 +28,17 @@ class Board < ApplicationRecord
 
   def member_for!(user)
     board_members.includes(:role).find_by!(user:)
+  end
+
+  def tombstone!
+    deleted_at_time = deleted_at || Time.current
+
+    transaction do
+      update!(deleted_at: deleted_at_time)
+      board_members.destroy_all
+      board_objects.active.update_all(deleted_at: deleted_at_time)
+    end
+
+    deleted_at_time
   end
 end

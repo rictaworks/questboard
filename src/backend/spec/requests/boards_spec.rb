@@ -4,6 +4,7 @@ RSpec.describe "Boards", type: :request do
   let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
   let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
   let(:member) { User.create!(google_sub: "google-sub-member", display_name: "Member User") }
+  let(:viewer) { User.create!(google_sub: "google-sub-viewer", display_name: "Viewer User") }
 
   before do
     allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
@@ -40,6 +41,10 @@ RSpec.describe "Boards", type: :request do
 
     expect(response).to have_http_status(:created)
     JSON.parse(response.body)
+  end
+
+  def delete_board(share_token)
+    delete "/boards/#{share_token}", as: :json
   end
 
   it "creates a board and assigns the creator as owner" do
@@ -211,6 +216,71 @@ RSpec.describe "Boards", type: :request do
     expect(response).to have_http_status(:unprocessable_entity)
     expect(JSON.parse(response.body)).to eq("error" => "Cannot remove the last owner")
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: owner).role.code).to eq("owner")
+  end
+
+  it "deletes a board for the owner, tombstones its objects, and notifies sync-server" do
+    board_payload = create_board(title: "Disposable Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    board = Board.find_by!(share_token:)
+    color = ColorPalette.create!(hex: "#abcdef")
+    object_type = ObjectType.create!(code: "sticky")
+    BoardObject.create!(
+      board:,
+      object_type:,
+      color_palette: color,
+      geometry: { "x" => 1, "y" => 2, "w" => 3, "h" => 4, "rotation" => 0 },
+      deleted_at: nil
+    )
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    fake_relay = instance_double(SyncOpRelay)
+    allow(SyncOpRelay).to receive(:new).and_return(fake_relay)
+    expect(fake_relay).to receive(:publish) do |board_share_token:, object_op:|
+      expect(board_share_token).to eq(share_token)
+      expect(object_op).to have_attributes(property: "board_deleted", client_id: "legacy", value: {})
+    end
+
+    sign_in(owner)
+    delete_board(share_token)
+
+    expect(response).to have_http_status(:no_content)
+    expect(Board.active.find_by(share_token:)).to be_nil
+    expect(Board.find_by!(share_token:).deleted_at).to be_present
+    expect(BoardMember.where(board:).count).to eq(0)
+    expect(BoardObject.find_by!(board:, object_type:).deleted_at).to be_present
+  end
+
+  it "forbids editors and viewers from deleting the board" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    sign_in(viewer)
+    post "/boards/#{share_token}/join", params: { role_code: "viewer" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    sign_in(member)
+    delete_board(share_token)
+    expect(response).to have_http_status(:forbidden)
+
+    sign_in(viewer)
+    delete_board(share_token)
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "returns not found when a non-member tries to delete the board" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(viewer)
+    delete_board(share_token)
+
+    expect(response).to have_http_status(:not_found)
   end
 
   it "allows an owner to demote themselves once another owner exists" do
