@@ -31,3 +31,5 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#66](https://github.com/rictaworks/questboard/pull/66) | 死活監視・同期メトリクス・保守運用runbookの追加(issue #23対応) | [pr066.md](./pr066.md) |
 | [#68](https://github.com/rictaworks/questboard/pull/68) | UC11の演出強度設定をサーバーに永続化する | [pr068.md](./pr068.md) |
 | [#69](https://github.com/rictaworks/questboard/pull/69) | SentryによるエラートラッキングをRails/Next.jsに導入 | [pr069.md](./pr069.md) |
+| [#73](https://github.com/rictaworks/questboard/pull/73) | AnalyticsTrackerがグローバル関数を不正なレシーバで呼ぶ問題を修正 (#72) | [pr073.md](./pr073.md) |
+| [#74](https://github.com/rictaworks/questboard/pull/74) | board-create-panel の未使用コード（AnalyticsTracker 参照ほか）を削除 | [pr074.md](./pr074.md) |
