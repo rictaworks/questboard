@@ -57,6 +57,8 @@
     "editorRole": "Editor",
     "joinButton": "Join with this role",
     "joiningButton": "Joining...",
+    "notFoundHeading": "Board not found",
+    "notFoundDescription": "The share URL is invalid or this board no longer exists.",
     "successHeading": "You joined the board",
     "successDescription": "You joined “{title}” as {role}.",
     "errorMessage": "Unable to join the board"

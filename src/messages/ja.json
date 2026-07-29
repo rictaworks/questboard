@@ -57,6 +57,8 @@
     "editorRole": "編集者",
     "joinButton": "このロールで参加",
     "joiningButton": "参加しています",
+    "notFoundHeading": "ボードが見つかりません",
+    "notFoundDescription": "共有URLが無効か、このボードは削除されています。",
     "successHeading": "ボードに参加しました",
     "successDescription": "「{title}」に {role} として参加済みです。",
     "errorMessage": "ボードへの参加に失敗しました"
