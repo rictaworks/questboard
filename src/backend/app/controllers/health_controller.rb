@@ -10,7 +10,7 @@ class HealthController < ApplicationController
   private
 
   def database_healthy?
-    ActiveRecord::Base.connection.active?
+    ActiveRecord::Base.connection.select_value("SELECT 1").to_i == 1
   rescue ActiveRecord::ActiveRecordError
     false
   end
