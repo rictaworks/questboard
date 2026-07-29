@@ -319,5 +319,95 @@ test('tracker discards non-whitelisted client events defensively and does not lo
   assert.equal(sentEvents[2].eventId, 'intensity_changed');
 });
 
+// Regression for issue #72. Node accepts any receiver for setTimeout/clearTimeout/fetch, so the
+// browser behaviour is modelled here: WebIDL operations on the global reject a foreign `this`.
+function installWebIdlGlobals() {
+  const originals = {
+    clearTimeout: globalThis.clearTimeout,
+    fetch: globalThis.fetch,
+    setTimeout: globalThis.setTimeout,
+  };
+  const receivers = [];
 
+  const requireGlobalReceiver = (name, impl) =>
+    function (...args) {
+      if (this != null && this !== globalThis) {
+        throw new TypeError('Illegal invocation');
+      }
+      receivers.push(name);
+      return impl(...args);
+    };
+
+  globalThis.setTimeout = requireGlobalReceiver('setTimeout', () => 1);
+  globalThis.clearTimeout = requireGlobalReceiver('clearTimeout', () => undefined);
+  globalThis.fetch = requireGlobalReceiver('fetch', async () => ({ok: true, status: 204}));
+
+  return {
+    receivers,
+    restore() {
+      Object.assign(globalThis, originals);
+    },
+  };
+}
+
+test('tracker calls browser globals with a valid receiver when no impls are injected', async () => {
+  const storage = createStorage();
+  const logger = createLogger();
+  const bufferedEvent = {
+    boardId: 42,
+    attributes: {source: 'toolbar'},
+    eventId: 'camera_panned',
+    timestamp: new Date().toISOString(),
+    userId: 'google-sub-1',
+  };
+  storage.setItem('questboard.analytics.google-sub-1.42', JSON.stringify([bufferedEvent]));
+
+  const webIdl = installWebIdlGlobals();
+  try {
+    const tracker = new AnalyticsTracker({
+      boardId: 42,
+      endpointUrl: 'https://backend.test/kpi_events',
+      logger,
+      storage,
+      userId: 'google-sub-1',
+    });
+
+    // setConnectionState runs inside React's commit phase; a throw here crashes the whole board.
+    tracker.setConnectionState('connected');
+    await tracker.flush();
+  } finally {
+    webIdl.restore();
+  }
+
+  assert.deepEqual([...new Set(webIdl.receivers)].sort(), ['clearTimeout', 'fetch', 'setTimeout']);
+  assert.equal(logger.errors.length, 0);
+});
+
+test('tracker survives a storage quota failure instead of throwing into the caller', () => {
+  const logger = createLogger();
+  const storage = {
+    getItem: () => null,
+    setItem: () => {
+      throw new DOMException('exceeded the quota', 'QuotaExceededError');
+    },
+  };
+
+  const scheduler = createScheduler();
+  const tracker = new AnalyticsTracker({
+    boardId: 42,
+    endpointUrl: 'https://backend.test/kpi_events',
+    fetchImpl: async () => ({ok: true, status: 204}),
+    logger,
+    storage,
+    userId: 'google-sub-1',
+    setTimeoutImpl: scheduler.setTimeout,
+    clearTimeoutImpl: scheduler.clearTimeout,
+  });
+
+  tracker.setConnectionState('offline');
+  tracker.track({eventId: 'camera_panned', attributes: {source: 'toolbar'}});
+
+  assert.equal(logger.errors.length, 0);
+  assert.ok(logger.warns.length > 0);
+});
 
