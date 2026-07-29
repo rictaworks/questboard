@@ -445,6 +445,55 @@ func TestRedisRelayBroadcastsRemoteOps(t *testing.T) {
 	assertJSONField(t, got, "clientId", "remote-node")
 }
 
+func TestBoardDeletedRelayOpClosesAllConnections(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(noopStore{})
+
+	relay := newStubRelay()
+	handler.SetRelay(relay)
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	wsURL := "ws" + strings.TrimPrefix(httpServer.URL, "http") + "/ws?boardId=board-deleted"
+	connA := mustDialWebSocket(t, wsURL)
+	defer connA.Close()
+	connB := mustDialWebSocket(t, wsURL)
+	defer connB.Close()
+
+	waitForRelaySubscription(t, relay, "board-deleted")
+	relay.Emit("board-deleted", ws.Op{
+		BoardID:   "board-deleted",
+		ObjectID:  "board-deleted",
+		Property:  "board_deleted",
+		Value:     json.RawMessage(`{}`),
+		LamportTS: 1,
+		ClientID:  "legacy",
+	})
+
+	for _, conn := range []*websocket.Conn{connA, connB} {
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("SetReadDeadline() error = %v", err)
+		}
+		_, _, err := conn.ReadMessage()
+		var closeErr *websocket.CloseError
+		if !errors.As(err, &closeErr) || closeErr.Code != websocket.CloseNormalClosure {
+			t.Fatalf("conn read error = %v, want CloseError code %d (CloseNormalClosure)", err, websocket.CloseNormalClosure)
+		}
+	}
+}
+
 func TestPresenceOpsBroadcastWithoutPersistenceAndAreThrottled(t *testing.T) {
 	t.Parallel()
 

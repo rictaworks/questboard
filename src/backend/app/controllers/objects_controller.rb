@@ -339,7 +339,7 @@ class ObjectsController < ApplicationController
   end
 
   def find_board!
-    Board.find_by!(share_token: params.require(:share_token))
+    Board.active.find_by!(share_token: params.require(:share_token))
   end
 
   def find_board_object!(board = find_board!)

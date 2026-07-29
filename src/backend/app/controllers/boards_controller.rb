@@ -1,8 +1,20 @@
 class BoardsController < ApplicationController
   before_action :require_current_user!
 
+  class BoardDeletionRelayOp
+    attr_reader :relay_object_id, :property, :value, :lamport_ts, :client_id
+
+    def initialize(board_id:, deleted_at:)
+      @relay_object_id = board_id
+      @property = "board_deleted"
+      @value = {}
+      @lamport_ts = deleted_at.to_i
+      @client_id = "legacy"
+    end
+  end
+
   def show
-    board = Board.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params.require(:share_token))
     membership = board_membership_for(board)
     return unless authorize_board_view!(board:, membership:)
 
@@ -34,7 +46,7 @@ class BoardsController < ApplicationController
   end
 
   def join
-    board = Board.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params.require(:share_token))
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
@@ -53,7 +65,7 @@ class BoardsController < ApplicationController
   end
 
   def update_member_role
-    board = Board.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params.require(:share_token))
     actor_member = board.member_for!(current_user)
 
     unless PermissionService.new.authorize(actor_member.role.code, :change_role, {})
@@ -81,6 +93,23 @@ class BoardsController < ApplicationController
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+  end
+
+  def destroy
+    board = Board.active.find_by(share_token: params.require(:share_token))
+    return render json: { error: "Board not found" }, status: :not_found unless board
+
+    membership = board_membership_for(board)
+    return render json: { error: "Board not found" }, status: :not_found unless membership
+
+    unless PermissionService.new.authorize(membership.role.code, :delete_board, {})
+      head :forbidden
+      return
+    end
+
+    deleted_at = board.tombstone!
+    notify_board_deleted(board:, deleted_at:)
+    head :no_content
   end
 
   private
@@ -207,5 +236,14 @@ class BoardsController < ApplicationController
       body: comment.body,
       createdAt: comment.created_at.iso8601
     }
+  end
+
+  def notify_board_deleted(board:, deleted_at:)
+    SyncOpRelay.new.publish(
+      board_share_token: board.share_token,
+      object_op: BoardDeletionRelayOp.new(board_id: board.id, deleted_at:)
+    )
+  rescue SyncOpRelay::PublishError => e
+    Rails.logger.error("SyncOpRelay publish failed for board=#{board.id}: #{e.cause&.class || e.class}")
   end
 end

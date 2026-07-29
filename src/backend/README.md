@@ -35,7 +35,8 @@ API surface grows. Current endpoints:
 | POST   | `/auth/google_sessions` | Google login callback | none |
 | POST   | `/boards` | Create a board | cookie |
 | GET    | `/boards/:share_token` | Load board canvas state | cookie |
-| POST   | `/boards/:share_token/join` | Join a board by share token | cookie |
+| DELETE | `/boards/:share_token` | Delete a board | cookie |
+| POST | `/boards/:share_token/join` | Join a board by share token | cookie |
 | PATCH  | `/boards/:share_token/members/:user_id` | Update a board member role | cookie |
 | POST   | `/boards/:share_token/objects` | Create an object (sticky/shape/text/connector/image/frame) | cookie |
 | PATCH  | `/boards/:share_token/objects/:id/move` | Move an object | cookie |

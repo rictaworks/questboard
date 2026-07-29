@@ -906,6 +906,11 @@ func (h *Handler) ensureRelaySubscription(boardID string) error {
 					continue
 				}
 
+				if op.Property == "board_deleted" {
+					h.hub.CloseRoom(boardID, websocket.CloseNormalClosure, "board deleted")
+					return
+				}
+
 				payload, err := op.MarshalJSON()
 				if err != nil {
 					continue
