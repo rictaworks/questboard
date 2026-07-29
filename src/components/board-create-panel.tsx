@@ -2,10 +2,9 @@
 
 import {faSpinner} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
-import {FormEvent, useEffect, useMemo, useRef, useState} from 'react';
+import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
-import {AnalyticsTracker} from '@/lib/analytics-tracker';
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 
 type SessionState = {
@@ -32,7 +31,6 @@ export default function BoardCreatePanel() {
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
   const [creating, setCreating] = useState(false);
-  const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
