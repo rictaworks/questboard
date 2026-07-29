@@ -15,6 +15,91 @@ type SessionState = {
   googleSub?: string;
 };
 
+type BoardInviteRoleCode = 'viewer' | 'commenter' | 'editor';
+
+type BoardInviteTranslations = {
+  heading: string;
+  description: string;
+  roleLabel: string;
+  viewerRole: string;
+  commenterRole: string;
+  editorRole: string;
+  joinButton: string;
+  joiningButton: string;
+  notFoundHeading: string;
+  notFoundDescription: string;
+  errorMessage: string;
+};
+
+type BoardInviteContentProps = {
+  boardNotFound: boolean;
+  errorMessage: string | null;
+  joining: boolean;
+  onJoin: (event: FormEvent<HTMLFormElement>) => void;
+  onRoleCodeChange: (roleCode: BoardInviteRoleCode) => void;
+  roleCode: BoardInviteRoleCode;
+  t: (key: keyof BoardInviteTranslations) => string;
+};
+
+export function isBoardNotFoundStatus(status: number) {
+  return status === 404;
+}
+
+export function BoardInviteContent({
+  boardNotFound,
+  errorMessage,
+  joining,
+  onJoin,
+  onRoleCodeChange,
+  roleCode,
+  t
+}: BoardInviteContentProps) {
+  if (boardNotFound) {
+    return (
+      <section className="board-panel">
+        <h1>{t('notFoundHeading')}</h1>
+        <p className="board-copy">{t('notFoundDescription')}</p>
+      </section>
+    );
+  }
+
+  const roleOptions = [
+    {code: 'viewer' as const, label: t('viewerRole')},
+    {code: 'commenter' as const, label: t('commenterRole')},
+    {code: 'editor' as const, label: t('editorRole')}
+  ];
+
+  return (
+    <section className="board-panel">
+      <h1>{t('heading')}</h1>
+      <p className="board-copy">{t('description')}</p>
+      {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
+      <form className="board-form" onSubmit={onJoin}>
+        <fieldset className="field">
+          <legend className="field-label">{t('roleLabel')}</legend>
+          <div className="role-options">
+            {roleOptions.map((option) => (
+              <label className="role-option" key={option.code}>
+                <input
+                  checked={roleCode === option.code}
+                  name="role_code"
+                  onChange={() => onRoleCodeChange(option.code)}
+                  type="radio"
+                  value={option.code}
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button className="button button-primary auth-button" disabled={joining} type="submit">
+          <span>{joining ? t('joiningButton') : t('joinButton')}</span>
+        </button>
+      </form>
+    </section>
+  );
+}
+
 export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const t = useTranslations('BoardInvite');
   const authT = useTranslations('Auth');
@@ -25,9 +110,10 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [roleCode, setRoleCode] = useState<'viewer' | 'commenter' | 'editor'>('viewer');
+  const [roleCode, setRoleCode] = useState<BoardInviteRoleCode>('viewer');
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
+  const [boardNotFound, setBoardNotFound] = useState(false);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -77,10 +163,6 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     };
   }, [authT]);
 
-  const handleBoardData = useCallback((nextBoardData: BoardCanvasData) => {
-    setBoardData(nextBoardData);
-  }, []);
-
   const reloadBoard = useCallback(async () => {
     const {backendUrl} = readGoogleAuthSettings();
     const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
@@ -91,8 +173,9 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       throw new Error(t('errorMessage'));
     }
 
-    handleBoardData(await response.json() as BoardCanvasData);
-  }, [handleBoardData, shareToken, t]);
+    setBoardNotFound(false);
+    setBoardData(await response.json() as BoardCanvasData);
+  }, [shareToken, t]);
 
   useEffect(() => {
     if (!sessionState?.authenticated) {
@@ -114,8 +197,17 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           return;
         }
 
-        if (response.status === 403 || response.status === 404) {
+        if (response.status === 403) {
+          setBoardNotFound(false);
           setBoardData(null);
+          setErrorMessage(null);
+          return;
+        }
+
+        if (isBoardNotFoundStatus(response.status)) {
+          setBoardNotFound(true);
+          setBoardData(null);
+          setErrorMessage(null);
           return;
         }
 
@@ -123,10 +215,12 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           throw new Error(t('errorMessage'));
         }
 
-        handleBoardData(await response.json() as BoardCanvasData);
+        setBoardNotFound(false);
+        setBoardData(await response.json() as BoardCanvasData);
         setErrorMessage(null);
       } catch (error) {
         if (!abortController.signal.aborted) {
+          setBoardNotFound(false);
           setBoardData(null);
           setErrorMessage(error instanceof Error ? error.message : t('errorMessage'));
         }
@@ -136,7 +230,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return () => {
       abortController.abort();
     };
-  }, [handleBoardData, sessionState?.authenticated, shareToken, t]);
+  }, [sessionState?.authenticated, shareToken, t]);
 
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -158,6 +252,13 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         throw new Error(authT('loginHeading'));
       }
 
+      if (isBoardNotFoundStatus(response.status)) {
+        setBoardNotFound(true);
+        setBoardData(null);
+        setErrorMessage(null);
+        return;
+      }
+
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as {error?: string};
         throw new Error(payload.error ?? t('errorMessage'));
@@ -170,6 +271,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
       setBoardData(null);
       setErrorMessage(null);
+      setBoardNotFound(false);
       const boardResponse = await fetch(`${backendUrl}/boards/${encodeURIComponent(payload.board.shareToken)}`, {
         credentials: 'include'
       });
@@ -206,14 +308,6 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     );
   }
 
-  function roleOptions(t: (key: 'viewerRole' | 'commenterRole' | 'editorRole') => string) {
-    return [
-      {code: 'viewer' as const, label: t('viewerRole')},
-      {code: 'commenter' as const, label: t('commenterRole')},
-      {code: 'editor' as const, label: t('editorRole')}
-    ];
-  }
-
   if (boardData) {
     return (
       <BoardCanvasPanel
@@ -226,32 +320,14 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   }
 
   return (
-    <section className="board-panel">
-      <h1>{t('heading')}</h1>
-      <p className="board-copy">{t('description')}</p>
-      {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
-      <form className="board-form" onSubmit={(event) => void handleJoin(event)}>
-        <fieldset className="field">
-          <legend className="field-label">{t('roleLabel')}</legend>
-          <div className="role-options">
-            {roleOptions(t).map((option) => (
-              <label className="role-option" key={option.code}>
-                <input
-                  checked={roleCode === option.code}
-                  name="role_code"
-                  onChange={() => setRoleCode(option.code)}
-                  type="radio"
-                  value={option.code}
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <button className="button button-primary auth-button" disabled={joining} type="submit">
-          <span>{joining ? t('joiningButton') : t('joinButton')}</span>
-        </button>
-      </form>
-    </section>
+    <BoardInviteContent
+      boardNotFound={boardNotFound}
+      errorMessage={errorMessage}
+      joining={joining}
+      onJoin={(event) => void handleJoin(event)}
+      onRoleCodeChange={setRoleCode}
+      roleCode={roleCode}
+      t={t}
+    />
   );
 }
