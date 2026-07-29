@@ -383,10 +383,12 @@ test('tracker calls browser globals with a valid receiver when no impls are inje
   assert.equal(logger.errors.length, 0);
 });
 
-test('tracker survives a storage quota failure instead of throwing into the caller', () => {
+test('tracker survives storage failures instead of throwing into the caller', () => {
   const logger = createLogger();
   const storage = {
-    getItem: () => null,
+    getItem: () => {
+      throw new DOMException('storage is not available', 'SecurityError');
+    },
     setItem: () => {
       throw new DOMException('exceeded the quota', 'QuotaExceededError');
     },

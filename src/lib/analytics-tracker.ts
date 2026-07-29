@@ -357,13 +357,9 @@ export class AnalyticsTracker {
       return [];
     }
 
-    const raw = this.storage.getItem(this.storageKey);
-    if (!raw) {
-      return [];
-    }
-
     try {
-      const parsed = JSON.parse(raw) as unknown;
+      const raw = this.storage.getItem(this.storageKey);
+      const parsed = raw ? JSON.parse(raw) as unknown : [];
       return Array.isArray(parsed) ? parsed as StoredAnalyticsEvent[] : [];
     } catch {
       return [];
