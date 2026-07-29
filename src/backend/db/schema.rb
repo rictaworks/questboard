@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_26_143000) do
+ActiveRecord::Schema[8.0].define(version: 2026_07_29_130600) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
@@ -23,6 +23,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_26_143000) do
     t.string "title", null: false
     t.string "share_token", null: false
     t.datetime "created_at", null: false
+    t.datetime "deleted_at"
+    t.index ["deleted_at"], name: "index_boards_on_deleted_at"
     t.index ["share_token"], name: "index_boards_on_share_token", unique: true
   end
 
