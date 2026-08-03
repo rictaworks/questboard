@@ -52,6 +52,7 @@
     "heading": "[TODO] translate",
     "description": "[TODO] translate",
     "roleLabel": "[TODO] translate",
+    "ownerRole": "[TODO] translate",
     "viewerRole": "[TODO] translate",
     "commenterRole": "[TODO] translate",
     "editorRole": "[TODO] translate",
@@ -61,6 +62,7 @@
     "notFoundDescription": "[TODO] translate",
     "successHeading": "[TODO] translate",
     "successDescription": "[TODO] translate",
+    "successDismiss": "[TODO] translate",
     "errorMessage": "[TODO] translate"
   },
   "BoardCanvas": {

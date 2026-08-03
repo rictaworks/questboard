@@ -195,6 +195,35 @@ a {
   margin: 0;
 }
 
+/* 共有URLからの参加直後にキャンバスの上へ差し込む成功メッセージ（Issue #89）。
+   参加できたことと確定したロール名を、キャンバスへ遷移したあとも確認できるようにする。 */
+.board-join-success {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: var(--border-width) solid rgba(134, 239, 172, 0.45);
+  border-radius: var(--radius-md);
+  background: rgba(34, 197, 94, 0.14);
+}
+
+.board-join-success-body {
+  display: grid;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.board-join-success-dismiss {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  cursor: pointer;
+}
+
 .board-form {
   display: grid;
   gap: var(--space-3);

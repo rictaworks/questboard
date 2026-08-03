@@ -37,7 +37,7 @@ async function loadModule() {
     }
 
     if (specifier === '@fortawesome/free-solid-svg-icons') {
-      return {faSpinner: {}};
+      return {faSpinner: {}, faXmark: {}};
     }
 
     if (specifier === '@fortawesome/react-fontawesome') {
@@ -51,7 +51,7 @@ async function loadModule() {
   return moduleShim.exports;
 }
 
-const {BoardInviteContent, isBoardNotFoundStatus} = await loadModule();
+const {BoardInviteContent, BoardJoinSuccessBanner, isBoardNotFoundStatus, resolveRoleLabelKey} = await loadModule();
 const {renderToStaticMarkup} = await import('react-dom/server');
 const React = await import('react');
 
@@ -66,6 +66,9 @@ const t = (key) => ({
   joiningButton: 'Joining...',
   notFoundHeading: 'Board not found',
   notFoundDescription: 'The share URL is invalid or this board no longer exists.',
+  ownerRole: 'Owner',
+  successHeading: 'You joined the board',
+  successDismiss: 'Dismiss this message',
   errorMessage: 'Unable to join the board'
 })[key];
 
@@ -106,4 +109,27 @@ test('board invite content keeps the join form for forbidden boards', () => {
   assert.match(markup, /Join with this role/);
   assert.match(markup, /Invite role/);
   assert.match(markup, /<form/);
+});
+
+test('role codes map to their own label key and unknown codes stay unmapped', () => {
+  assert.equal(resolveRoleLabelKey('owner'), 'ownerRole');
+  assert.equal(resolveRoleLabelKey('editor'), 'editorRole');
+  assert.equal(resolveRoleLabelKey('commenter'), 'commenterRole');
+  assert.equal(resolveRoleLabelKey('viewer'), 'viewerRole');
+  assert.equal(resolveRoleLabelKey('unknown-role'), null);
+  assert.equal(resolveRoleLabelKey(''), null);
+});
+
+test('join success banner announces the outcome and the confirmed role', () => {
+  const markup = renderToStaticMarkup(React.createElement(BoardJoinSuccessBanner, {
+    description: 'You joined "Sprint board" as Commenter.',
+    dismissLabel: 'Dismiss this message',
+    heading: 'You joined the board',
+    onDismiss: () => {}
+  }));
+
+  assert.match(markup, /role="status"/);
+  assert.match(markup, /You joined the board/);
+  assert.match(markup, /as Commenter\./);
+  assert.match(markup, /aria-label="Dismiss this message"/);
 });

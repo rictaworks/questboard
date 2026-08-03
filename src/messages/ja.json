@@ -52,6 +52,7 @@
     "heading": "ボードに参加",
     "description": "共有URLから参加し、ロールを選択できます。",
     "roleLabel": "参加ロール",
+    "ownerRole": "オーナー",
     "viewerRole": "閲覧者",
     "commenterRole": "コメント可",
     "editorRole": "編集者",
@@ -61,6 +62,7 @@
     "notFoundDescription": "共有URLが無効か、このボードは削除されています。",
     "successHeading": "ボードに参加しました",
     "successDescription": "「{title}」に {role} として参加済みです。",
+    "successDismiss": "メッセージを閉じる",
     "errorMessage": "ボードへの参加に失敗しました"
   },
   "BoardCanvas": {
