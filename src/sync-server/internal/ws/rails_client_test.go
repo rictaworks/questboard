@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/rictaworks/questboard/src/sync-server/internal/ws"
@@ -333,5 +334,98 @@ func TestRailsStoreTranslatesConflictIntoErrDeletedObjectEdit(t *testing.T) {
 	_, _, err := store.SaveConfirmedOp(context.Background(), op)
 	if !errors.Is(err, ws.ErrDeletedObjectEdit) {
 		t.Fatalf("SaveConfirmedOp() error = %v, want ErrDeletedObjectEdit", err)
+	}
+}
+
+// railsSessionCookieValue mimics a Rails encrypted session cookie: standard (non-URL-safe)
+// Base64 payloads joined by "--", so it contains "+", "/" and "=".
+const railsSessionCookieValue = "aB+c/dE=--fG+h/iJ=--kL+m/nO="
+
+// rackUnescape mimics Rack::Utils.parse_cookies_header's decoding of a cookie value
+// (URI.decode_www_form_component), which turns "+" into a space. Go's url.QueryUnescape
+// has the same semantics.
+func rackUnescape(t *testing.T, value string) string {
+	t.Helper()
+	decoded, err := url.QueryUnescape(value)
+	if err != nil {
+		t.Fatalf("url.QueryUnescape(%q) error = %v", value, err)
+	}
+	return decoded
+}
+
+func TestRailsStoreEncodesSessionCookieSoRackDecodesItUnchanged(t *testing.T) {
+	t.Parallel()
+
+	var gotRawCookie string
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cookie, err := r.Cookie("_questboard_session"); err == nil {
+			gotRawCookie = cookie.Value
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"property":"geometry","value":{"x":10},"lamportTs":1,"clientId":"client-a"}`))
+	}))
+	t.Cleanup(backend.Close)
+
+	store := ws.NewRailsStore(backend.URL)
+	ctx := ws.ContextWithToken(context.Background(), railsSessionCookieValue)
+
+	op := ws.Op{
+		BoardID:   "board-1",
+		ObjectID:  "object-1",
+		Property:  "geometry",
+		Value:     json.RawMessage(`{"x":10}`),
+		LamportTS: 1,
+		ClientID:  "client-a",
+	}
+
+	if _, _, err := store.SaveConfirmedOp(ctx, op); err != nil {
+		t.Fatalf("SaveConfirmedOp() error = %v, want nil", err)
+	}
+
+	if gotRawCookie == railsSessionCookieValue {
+		t.Fatalf("cookie was sent verbatim (%q); Rack would decode %q into %q and Rails would reject the session",
+			gotRawCookie, gotRawCookie, rackUnescape(t, gotRawCookie))
+	}
+
+	if got := rackUnescape(t, gotRawCookie); got != railsSessionCookieValue {
+		t.Fatalf("cookie after Rack-style decode = %q, want %q", got, railsSessionCookieValue)
+	}
+}
+
+func TestRailsAPIClientEncodesSessionCookieSoRackDecodesItUnchanged(t *testing.T) {
+	t.Parallel()
+
+	gotRawCookies := map[string]string{}
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cookie, err := r.Cookie("_questboard_session"); err == nil {
+			gotRawCookies[r.URL.Path] = cookie.Value
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		switch r.URL.Path {
+		case "/session":
+			_, _ = w.Write([]byte(`{"authenticated":true,"user":{"id":1,"displayName":"Tester"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"membership":{"userId":1,"role":{"code":"owner"}}}`))
+		}
+	}))
+	t.Cleanup(backend.Close)
+
+	client := ws.NewRailsAPIClient(backend.URL)
+	if _, err := client.Authenticate(context.Background(), "board-1", railsSessionCookieValue); err != nil {
+		t.Fatalf("Authenticate() error = %v, want nil", err)
+	}
+
+	for _, path := range []string{"/session", "/boards/board-1"} {
+		raw, ok := gotRawCookies[path]
+		if !ok {
+			t.Fatalf("no session cookie forwarded to %s", path)
+		}
+		if got := rackUnescape(t, raw); got != railsSessionCookieValue {
+			t.Fatalf("%s: cookie after Rack-style decode = %q, want %q", path, got, railsSessionCookieValue)
+		}
 	}
 }

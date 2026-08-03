@@ -40,6 +40,21 @@ const (
 	railsSessionCookieName = "_questboard_session"
 )
 
+// railsSessionCookieHeader builds the Cookie header used for every request this service
+// makes to the Rails backend on behalf of a connected client.
+//
+// The token is held in *decoded* form internally: gin's Context.Cookie percent-decodes the
+// value it reads off the wire, and Bearer tokens arrive unencoded by definition. Rack
+// percent-decodes cookie values again on receipt (Rack::Utils.parse_cookies_header), and
+// that decode turns "+" into a space. Rails' encrypted session cookie is standard Base64,
+// so it contains "+" for all but the shortest values — forwarding the decoded token
+// verbatim corrupts it, Rails silently falls back to an empty session, and every
+// authenticated WebSocket handshake fails with 401 even though a perfectly valid cookie
+// was presented. Re-encode here so what Rack decodes is byte-identical to the original.
+func railsSessionCookieHeader(token string) string {
+	return railsSessionCookieName + "=" + url.QueryEscape(token)
+}
+
 // ErrStaleOp indicates the backend rejected an operation because a newer (or the same)
 // Lamport-ordered operation was already recorded for the target object. Callers must not
 // broadcast or relay an op that failed with ErrStaleOp, since doing so would let other
@@ -147,7 +162,7 @@ func (c *RailsAPIClient) Authenticate(ctx context.Context, boardID string, token
 	}
 
 	if token != "" {
-		req.Header.Set("Cookie", railsSessionCookieName+"="+token)
+		req.Header.Set("Cookie", railsSessionCookieHeader(token))
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -182,7 +197,7 @@ func (c *RailsAPIClient) Authenticate(ctx context.Context, boardID string, token
 		return nil, err
 	}
 	if token != "" {
-		boardReq.Header.Set("Cookie", railsSessionCookieName+"="+token)
+		boardReq.Header.Set("Cookie", railsSessionCookieHeader(token))
 	}
 
 	boardResp, err := client.Do(boardReq)
@@ -283,7 +298,7 @@ func (s *RailsStore) SaveConfirmedOp(ctx context.Context, op Op) (Op, bool, erro
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
-		req.Header.Set("Cookie", railsSessionCookieName+"="+token)
+		req.Header.Set("Cookie", railsSessionCookieHeader(token))
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
