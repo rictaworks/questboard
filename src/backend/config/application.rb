@@ -40,9 +40,12 @@ module Backend
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+    # 上位ドメイン（rictaworks.jp）を指定すると無関係なデモサイトにも cookie が送信される。
+    # 必ず questboard.rictaworks.jp に限定すること。
     config.session_store :cookie_store,
       key: "_questboard_session",
-      same_site: Rails.env.production? ? :none : :lax,
+      domain: Rails.env.production? ? "questboard.rictaworks.jp" : nil,
+      same_site: :lax,
       secure: Rails.env.production?
 
     config.middleware.use ActionDispatch::Cookies
