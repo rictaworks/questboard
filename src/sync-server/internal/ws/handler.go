@@ -861,6 +861,20 @@ func (h *Handler) writePump(conn *websocket.Conn, client *client, done chan<- st
 			}
 			return
 		case <-client.done:
+			// requestClose() は closeCh へ送ってから戻り、その後に呼び出し元の
+			// defer が client.done を閉じる。writePump がまだ select に入って
+			// いなければ両方が同時に ready になり、select はランダムに選ぶため
+			// 明示的なクローズコード（例: サーバー停止時の 1001）が 1000 に
+			// 化けることがあった。done 側でも先に closeCh を拾う。
+			select {
+			case req, ok := <-client.closeCh:
+				if ok {
+					_ = writeClose(conn, req.code, req.text)
+					return
+				}
+			default:
+			}
+
 			_ = writeClose(conn, websocket.CloseNormalClosure, "connection closed")
 			return
 		case payload, ok := <-client.send:
