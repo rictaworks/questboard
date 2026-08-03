@@ -6,9 +6,18 @@ class Board < ApplicationRecord
   has_many :board_members, dependent: :destroy
   has_many :users, through: :board_members
   has_many :board_objects, class_name: "BoardObject", foreign_key: :board_id
+  has_many :object_ops, foreign_key: :board_id, inverse_of: :board
   has_many :comments, -> { where(objects: { deleted_at: nil }) }, through: :board_objects
 
   validates :title, presence: true
+
+  # このボードで記録済みの Lamport 論理時刻の最大値。クライアントはボード取得時に
+  # 自分のカウンタをこの値まで進めてから編集を送る。0 から再開すると、op 履歴のある
+  # プロパティに対する最初の N 回の編集が LWW 判定で StaleOpError になり、
+  # ユーザーには「操作が巻き戻る」ようにしか見えない（Issue #86）。
+  def latest_lamport_ts
+    object_ops.maximum(:lamport_ts) || 0
+  end
 
   def self.create_with_owner!(title:, owner:)
     transaction do

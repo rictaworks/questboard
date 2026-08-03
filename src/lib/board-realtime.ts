@@ -212,6 +212,21 @@ export function isNewerRealtimeOp(candidate: BoardRealtimeOp, current: BoardReal
   return candidate.clientId < current.clientId;
 }
 
+// ボード取得レスポンスの lamportTs までクライアントの Lamport カウンタを進める。
+// 初回ロードと resync 後の再取得の両方で使う。
+//
+// - 巻き戻さない（Math.max）。既に送信済みの op より小さい値を採番すると、
+//   自分の次の編集がサーバーの LWW 判定で stale として拒否される。
+// - lamportTs 欠落・非数値・負値は 0 として扱う。0 から採番すると、op 履歴のある
+//   プロパティへの最初の N 回の編集がすべて拒否される（Issue #86）。
+export function resumeLamportTs(current: number, serverLamportTs: unknown): number {
+  const parsed = typeof serverLamportTs === 'number' && Number.isFinite(serverLamportTs)
+    ? Math.floor(serverLamportTs)
+    : 0;
+
+  return Math.max(current, parsed, 0);
+}
+
 export function opKey(op: BoardRealtimeOp) {
   return [op.boardId, op.objectId, op.property, op.lamport_ts, op.clientId, JSON.stringify(op.value)].join(':');
 }

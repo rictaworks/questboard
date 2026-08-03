@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_07_29_130600) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
@@ -88,6 +88,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_07_29_130600) do
     t.jsonb "value", default: {}, null: false
     t.bigint "lamport_ts", null: false
     t.string "client_id", null: false
+    t.index ["board_id", "lamport_ts"], name: "index_object_ops_on_board_id_and_lamport_ts"
     t.index ["board_id"], name: "index_object_ops_on_board_id"
     t.index ["object_id", "client_id", "lamport_ts"], name: "index_object_ops_on_object_id_and_client_id_and_lamport_ts", unique: true
     t.index ["object_id", "property", "id"], name: "index_object_ops_on_object_id_and_property_and_id"

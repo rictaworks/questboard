@@ -143,3 +143,24 @@ test('parseRealtimeMessage accepts a payload-free quest_state_changed signal but
   // value: null は従来どおり捨てる。このガードは applyRealtimeOp も守っているため緩めない。
   assert.equal(realtime.parseRealtimeMessage(JSON.stringify({...base, value: null})), null);
 });
+
+test('resumeLamportTs resumes the client counter from the board-wide lamport_ts', () => {
+  // 再読み込み直後は 0 スタート。サーバーが返した最大値まで一気に進める。
+  // ここで 0 のままだと、op 履歴のあるプロパティへの最初の N 回の編集が
+  // サーバーの LWW 判定で拒否され、操作が巻き戻る（Issue #86）。
+  assert.equal(realtime.resumeLamportTs(0, 12), 12);
+
+  // 既に自分が進めたカウンタは巻き戻さない。巻き戻すと自分の次の op が stale になる。
+  assert.equal(realtime.resumeLamportTs(30, 12), 30);
+
+  // lamportTs を返さない古いサーバー応答・不正値でも例外にせず現在値を保つ。
+  assert.equal(realtime.resumeLamportTs(5, undefined), 5);
+  assert.equal(realtime.resumeLamportTs(5, null), 5);
+  assert.equal(realtime.resumeLamportTs(5, 'abc'), 5);
+  assert.equal(realtime.resumeLamportTs(5, Number.NaN), 5);
+  assert.equal(realtime.resumeLamportTs(5, -1), 5);
+  assert.equal(realtime.resumeLamportTs(0, -1), 0);
+
+  // 小数は切り捨てる。lamport_ts は整数であることをサーバーが検証している。
+  assert.equal(realtime.resumeLamportTs(0, 7.9), 7);
+});
