@@ -170,8 +170,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   if (boardData !== prevBoardData) {
     setPrevBoardData(boardData);
     setBoardState(boardData);
-    // resync 後の再取得でもカウンタを引き上げる（巻き戻さない）。
-    lamportRef.current = resumeLamportTs(lamportRef.current, boardData.lamportTs);
   }
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
@@ -216,6 +214,12 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   useEffect(() => {
     boardStateRef.current = boardState;
   }, [boardState]);
+
+  // resync 後の再取得でもカウンタを引き上げる（巻き戻さない）。op の採番は
+  // すべてイベントハンドラ側で行うため、コミット後に反映されれば十分。
+  useEffect(() => {
+    lamportRef.current = resumeLamportTs(lamportRef.current, boardData.lamportTs);
+  }, [boardData.lamportTs]);
 
   useEffect(() => {
     hasAppliedServerIntensityRef.current = false;
