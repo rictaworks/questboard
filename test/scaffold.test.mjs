@@ -73,10 +73,11 @@ test('design tokens keep expected values', async () => {
 test('all locale files exist and placeholder locales stay scaffolded', async () => {
   for (const locale of locales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
+    assert.ok(json.Metadata, `${locale} metadata namespace missing`);
     assert.ok(json.Home, `${locale} message namespace missing`);
     assert.ok(json.Auth, `${locale} auth namespace missing`);
     assert.ok(json.BoardInvite, `${locale} board invite namespace missing`);
-    assert.ok(json.Home.headline, `${locale} headline missing`);
+    assert.ok(json.Home.title, `${locale} home title missing`);
     assert.ok(json.Home.authSectionTitle, `${locale} auth section title missing`);
     assert.ok(json.BoardInvite.notFoundHeading, `${locale} board invite notFoundHeading missing`);
     assert.ok(json.BoardInvite.notFoundDescription, `${locale} board invite notFoundDescription missing`);
@@ -84,13 +85,50 @@ test('all locale files exist and placeholder locales stay scaffolded', async () 
 
   const ja = JSON.parse(await read('src/messages/ja.json'));
   const en = JSON.parse(await read('src/messages/en.json'));
-  assert.doesNotMatch(ja.Home.headline, /^\[TODO]/);
-  assert.doesNotMatch(en.Home.headline, /^\[TODO]/);
+  assert.doesNotMatch(ja.Metadata.description, /^\[TODO]/);
+  assert.doesNotMatch(en.Metadata.description, /^\[TODO]/);
 
   for (const locale of pendingLocales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.match(json.Home.headline, /^\[TODO] translate$/);
+    assert.match(json.Home.authSectionTitle, /^\[TODO] translate$/);
   }
+});
+
+// 製品名はどのロケールでも同じ表記なので、翻訳待ちのロケールでも
+// プレースホルダのままにしない。ブラウザのタブに [TODO] translate と出る（Issue #100）。
+test('the product name is not left untranslated in any locale', async () => {
+  for (const locale of locales) {
+    const json = JSON.parse(await read(`src/messages/${locale}.json`));
+    assert.equal(json.Metadata.title, 'Questboard', `${locale} metadata title differs`);
+    assert.equal(json.Home.title, 'Questboard', `${locale} home title differs`);
+  }
+});
+
+// トップページはアプリの入口であって製品紹介の LP ではない。開発用の雛形説明も
+// キャッチコピーも置かない（Issue #99）。消したキーが復活していないことを検査する。
+test('the home page keeps no scaffold copy and no landing page catchphrase', async () => {
+  const removedKeys = [
+    'eyebrow',
+    'headline',
+    'description',
+    'primaryAction',
+    'secondaryAction',
+    'designTokensTitle',
+    'designTokensDescription',
+    'localesTitle',
+    'localesDescription'
+  ];
+
+  for (const locale of locales) {
+    const json = JSON.parse(await read(`src/messages/${locale}.json`));
+    for (const key of removedKeys) {
+      assert.equal(key in json.Home, false, `${locale} still defines Home.${key}`);
+    }
+  }
+
+  const page = await read('src/app/[locale]/page.tsx');
+  assert.equal(page.includes('design-tokens'), false);
+  assert.equal(page.includes('#locales'), false);
 });
 
 test('UI source does not contain hardcoded JSX text', async () => {

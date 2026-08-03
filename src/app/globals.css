@@ -40,7 +40,6 @@ a {
 }
 
 .hero-card,
-.panel,
 .dev-auth-banner,
 .auth-panel {
   border: var(--border-width) solid var(--border-default);
@@ -54,25 +53,10 @@ a {
   padding: var(--space-8);
 }
 
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-4);
-  color: var(--color-purple-light);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.78rem;
-}
-
-.hero-card h1,
-.panel h2 {
+.home-title {
   margin: 0;
   font-family: var(--font-display);
-}
-
-.hero-card h1 {
-  font-size: clamp(2.5rem, 5vw, 4.75rem);
+  font-size: clamp(1.75rem, 3vw, 2.5rem);
   line-height: var(--lh-tight);
 }
 
@@ -80,13 +64,6 @@ a {
   max-width: 40rem;
   margin: var(--space-4) 0 0;
   color: rgba(247, 244, 255, 0.88);
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin-top: var(--space-6);
 }
 
 .button {
@@ -109,13 +86,6 @@ a {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: var(--space-4);
-}
-
-.panel,
 .dev-auth-banner,
 .auth-panel {
   padding: var(--space-5);

@@ -1,3 +1,4 @@
+import type {Metadata} from 'next';
 import type {ReactNode} from 'react';
 
 import ClientErrorBridge from '@/components/client-error-bridge';
@@ -5,6 +6,14 @@ import QueryProvider from '@/components/query-provider';
 import {defaultLocale} from '@/i18n/routing';
 
 import './globals.css';
+
+// タイトルが未設定だとブラウザのタブが生の URL 表示になり、複数タブを開いたときに
+// どれが questboard か分からない（Issue #100）。/b/[shareToken] と
+// /auth/google/callback は [locale] セグメントの外にあり、そちらの
+// generateMetadata が効かないため、既定値はルート側に置く。
+export const metadata: Metadata = {
+  title: 'Questboard'
+};
 
 // QueryProvider は [locale]/layout.tsx ではなくルートに置く。
 // src/app/auth/google/callback と src/app/b/[shareToken] は [locale] セグメントの
