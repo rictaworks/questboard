@@ -1,6 +1,6 @@
 "use client";
 
-import {faSpinner} from '@fortawesome/free-solid-svg-icons';
+import {faSpinner, faXmark} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {FormEvent, useCallback, useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
@@ -28,7 +28,16 @@ type BoardInviteTranslations = {
   joiningButton: string;
   notFoundHeading: string;
   notFoundDescription: string;
+  ownerRole: string;
+  successHeading: string;
+  successDescription: string;
+  successDismiss: string;
   errorMessage: string;
+};
+
+type BoardJoinSuccess = {
+  title: string;
+  roleCode: string;
 };
 
 type BoardInviteContentProps = {
@@ -43,6 +52,54 @@ type BoardInviteContentProps = {
 
 export function isBoardNotFoundStatus(status: number) {
   return status === 404;
+}
+
+// サーバーが返したロールコードを翻訳キーへ変換する。未知のコードは null を返し、
+// 呼び出し側でコードをそのまま表示する。既知のロールへ丸めてしまうと、
+// 実際とは違うロール名を見せることになり Issue #89 の目的（ロールの取り違えに
+// 気づけるようにする）に反する。
+export function resolveRoleLabelKey(roleCode: string): keyof BoardInviteTranslations | null {
+  switch (roleCode) {
+    case 'owner':
+      return 'ownerRole';
+    case 'editor':
+      return 'editorRole';
+    case 'commenter':
+      return 'commenterRole';
+    case 'viewer':
+      return 'viewerRole';
+    default:
+      return null;
+  }
+}
+
+export function BoardJoinSuccessBanner({
+  description,
+  dismissLabel,
+  heading,
+  onDismiss
+}: {
+  description: string;
+  dismissLabel: string;
+  heading: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="board-join-success" role="status">
+      <div className="board-join-success-body">
+        <strong>{heading}</strong>
+        <span>{description}</span>
+      </div>
+      <button
+        aria-label={dismissLabel}
+        className="board-join-success-dismiss"
+        onClick={onDismiss}
+        type="button"
+      >
+        <FontAwesomeIcon icon={faXmark} />
+      </button>
+    </div>
+  );
 }
 
 export function BoardInviteContent({
@@ -114,6 +171,9 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
   const [boardNotFound, setBoardNotFound] = useState(false);
+  // 参加直後に表示する成功メッセージ。ロールはサーバーが確定したものを使う
+  // （既存メンバーは再参加してもロールが変わらないため、選択値とは一致しない）。
+  const [joinSuccess, setJoinSuccess] = useState<BoardJoinSuccess | null>(null);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -272,6 +332,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       setBoardData(null);
       setErrorMessage(null);
       setBoardNotFound(false);
+      setJoinSuccess({title: payload.board.title, roleCode: payload.membership.role.code});
       const boardResponse = await fetch(`${backendUrl}/boards/${encodeURIComponent(payload.board.shareToken)}`, {
         credentials: 'include'
       });
@@ -309,13 +370,28 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   }
 
   if (boardData) {
+    const roleLabelKey = joinSuccess ? resolveRoleLabelKey(joinSuccess.roleCode) : null;
+
     return (
-      <BoardCanvasPanel
-        boardData={boardData}
-        key={boardData.board.shareToken}
-        onReloadBoard={reloadBoard}
-        userGoogleSub={sessionState.googleSub ?? 'development-google-sub'}
-      />
+      <>
+        {joinSuccess ? (
+          <BoardJoinSuccessBanner
+            description={t('successDescription', {
+              role: roleLabelKey ? t(roleLabelKey) : joinSuccess.roleCode,
+              title: joinSuccess.title
+            })}
+            dismissLabel={t('successDismiss')}
+            heading={t('successHeading')}
+            onDismiss={() => setJoinSuccess(null)}
+          />
+        ) : null}
+        <BoardCanvasPanel
+          boardData={boardData}
+          key={boardData.board.shareToken}
+          onReloadBoard={reloadBoard}
+          userGoogleSub={sessionState.googleSub ?? 'development-google-sub'}
+        />
+      </>
     );
   }
 

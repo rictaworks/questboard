@@ -52,6 +52,7 @@
     "heading": "Join a board",
     "description": "Open the share URL and choose the role you want to join with.",
     "roleLabel": "Invite role",
+    "ownerRole": "Owner",
     "viewerRole": "Viewer",
     "commenterRole": "Commenter",
     "editorRole": "Editor",
@@ -61,6 +62,7 @@
     "notFoundDescription": "The share URL is invalid or this board no longer exists.",
     "successHeading": "You joined the board",
     "successDescription": "You joined “{title}” as {role}.",
+    "successDismiss": "Dismiss this message",
     "errorMessage": "Unable to join the board"
   },
   "BoardCanvas": {
