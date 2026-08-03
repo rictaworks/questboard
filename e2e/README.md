@@ -2,6 +2,10 @@
 
 questboard の全マージ済みPRのユーザーテスト手順をPR本文から抽出し、PR番号順に集約したもの。各ファイルの内容は該当PR本文からの転記（要約・改変なし）。
 
+実施結果のレポート:
+
+- [manual-user-test-report_20260803.md](./manual-user-test-report_20260803.md) — 本番環境での実施結果（2026-08-03）
+
 | PR | タイトル | 手順 |
 |---|---|---|
 | [#25](https://github.com/rictaworks/questboard/pull/25) | 脅威モデル・QA・UI原則のエージェント運用ドキュメントを追加 | [pr025.md](./pr025.md) |
