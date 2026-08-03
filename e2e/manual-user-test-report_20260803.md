@@ -141,11 +141,22 @@ RuboCop / Brakeman / Frontend build & test (node --test) / go test / RSpec / ESL
 本番のログインは `src/lib/google-auth.ts` の reCAPTCHA v3 トークン取得を経由し、Rails 側 `Auth::RecaptchaVerifier` で検証される経路のみのため、ログイン成功をもって手順の合格とみなす。
 手順書のローカル `.env` 設定・`rails server` / `npm run dev` 起動は本番確認では該当なし。
 
-## 未実施項目（2つ目のGoogleアカウントが必要）
+## 未実施項目（2ユーザー目としてのログインが必要）
 
 - PR #41 手順2（招待URLからの参加・ロール選択）
 - PR #51 手順13（他ユーザーがロックした図形を操作できないこと）
 - PR #52 手順7〜12（閲覧者／コメント可ロールでの権限制御）
 - PR #61 テスト5（他ユーザーのクエストが見えないこと）
 
-いずれも権限・ロール周りの確認であり、RSpec の権限マトリクステスト（PR #39 / #41 / #52 相当）は CI で green。実地確認は2つ目のアカウント準備後に別途行う。
+未実施の理由は「2つ目の Google アカウントが存在しないこと」ではない。検証端末の Chrome には
+`takizawa@rictaworks.jp`（authuser=0）と `chart.design.lab@gmail.com`（authuser=1）の2アカウントが
+ログイン済みである。詰まっているのは次の2点。
+
+1. 同一 Chrome プロファイルは Cookie ジャーが1つのため、2タブで別ユーザーのセッションを
+   同時に保持できない。questboard の認証は `src/lib/google-auth.ts` の OAuth リダイレクト（PKCE）で、
+   セッションはオリジン単位で全タブ共有される。したがって上記4項目は
+   「ログアウト → 別アカウントでログイン」を往復する逐次実行になる。
+2. そのログイン操作（Google のアカウント選択と OAuth 同意付与）は本人が行う運用としている。
+
+いずれも権限・ロール周りの確認であり、RSpec の権限マトリクステスト（PR #39 / #41 / #52 相当）は CI で green。
+実地確認は2ユーザー目のログインを行ったうえで別途実施する。
