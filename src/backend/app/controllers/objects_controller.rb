@@ -256,7 +256,14 @@ class ObjectsController < ApplicationController
             raise StaleOpError, "op #{lamport_ts}/#{client_id} is not newer than recorded #{latest.lamport_ts}/#{latest.client_id} for property #{property}"
           end
 
-          baseline = latest&.lamport_ts || 0
+          # ベースラインは「このオブジェクト・プロパティの最新値」ではなくボード全体の
+          # 最大値を採る。Lamport カウンタはクライアント単位でボード全体を通して単調増加
+          # するため（board-canvas-panel.tsx の lamportRef、および #86 で追加した
+          # lamportTs 初期化）、履歴の長いボードに新しく作られたオブジェクトは
+          # プロパティ単位のベースラインが常に 0 で、正当な op が跳躍として弾かれる。
+          # 極端な値でプロパティを永久に固定させない、というガード本来の意図は
+          # ボード全体の時計を基準にしても変わらない。
+          baseline = [ latest&.lamport_ts || 0, object.board.latest_lamport_ts ].max
           if lamport_ts - baseline > MAX_LAMPORT_JUMP
             raise ImplausibleLamportJumpError, "lamport_ts #{lamport_ts} jumps #{lamport_ts - baseline} ahead of #{baseline} for property #{property}, exceeding the max allowed jump of #{MAX_LAMPORT_JUMP}"
           end

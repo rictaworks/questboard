@@ -16,6 +16,7 @@ import {
   isNewerRealtimeOp,
   parseRealtimeMessage,
   readRealtimeSettings,
+  resumeLamportTs,
   type BoardPresenceCursor,
   type BoardPresenceMessage,
   type BoardRealtimeOp,
@@ -69,6 +70,9 @@ export interface BoardCanvasComment {
 export interface BoardCanvasData {
   board: {id: number; title: string; shareToken: string};
   membership: {userId: number; role: {id: number; code: BoardRoleCode}};
+  // ボードに記録済みの Lamport 論理時刻の最大値。クライアントはこの値から採番を再開する。
+  // 省略時（古いサーバー応答）は 0 として扱う。
+  lamportTs?: number;
   objectTypes: Array<{id: number; code: string}>;
   colorPalettes: Array<{id: number; hex: string}>;
   objects: BoardCanvasObject[];
@@ -150,7 +154,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const pendingPresenceRef = useRef<BoardPresenceCursor | null>(null);
   const pendingOpsRef = useRef<BoardRealtimeOp[]>([]);
   const clientIdRef = useRef<string>(createClientId());
-  const lamportRef = useRef(0);
+  // 0 から始めると、サーバーに op 履歴のあるプロパティへの最初の N 回の編集が LWW 判定で
+  // 拒否され、ユーザーには操作が巻き戻るようにしか見えない（Issue #86）。ボード取得時に
+  // サーバーが返す最大 lamport_ts から採番を再開する。
+  const lamportRef = useRef(resumeLamportTs(0, boardData.lamportTs));
   const disposedRef = useRef(false);
   const [viewport, setViewport] = useState({width: 0, height: 0});
   const [cameraState, setCameraState] = useState<CameraState>(createCameraState);
@@ -163,6 +170,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   if (boardData !== prevBoardData) {
     setPrevBoardData(boardData);
     setBoardState(boardData);
+    // resync 後の再取得でもカウンタを引き上げる（巻き戻さない）。
+    lamportRef.current = resumeLamportTs(lamportRef.current, boardData.lamportTs);
   }
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);

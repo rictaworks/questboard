@@ -1076,6 +1076,35 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  it "bounds the lamport_ts jump against the board clock so a newly created object is not rejected" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    old_object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    # ボードの時計を MAX_LAMPORT_JUMP より先へ進める（1回あたりの跳躍は上限内に収める）。
+    apply_op(share_token:, object_id: old_object_id, property: "geometry", value: { x: 1, y: 1 }, lamport_ts: 100_000, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    apply_op(share_token:, object_id: old_object_id, property: "geometry", value: { x: 2, y: 2 }, lamport_ts: 200_000, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    # Lamport カウンタはクライアント単位でボード全体を通して単調増加するため、
+    # 直後に作られたオブジェクトへの最初の op もボードの時計の続きから採番される。
+    # ベースラインをプロパティ単位（この時点で 0）で取ると、この正当な op が跳躍として
+    # 弾かれ、履歴の長いボードでは新しいオブジェクトだけ編集できなくなる。
+    new_object_id = create_object(share_token:, geometry: { x: 9, y: 9, w: 3, h: 4, rotation: 0 }).fetch("id")
+    apply_op(share_token:, object_id: new_object_id, property: "geometry", value: { x: 5, y: 5 }, lamport_ts: 200_001, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(new_object_id).geometry).to include("x" => 5, "y" => 5)
+
+    # ボードの時計を基準にしても、極端な値でプロパティを永久に固定させないガードは効く。
+    apply_op(share_token:, object_id: new_object_id, property: "geometry", value: { x: 6, y: 6 }, lamport_ts: 9_223_372_036_854_775_807, client_id: "attacker")
+    expect(response).to have_http_status(:unprocessable_entity)
+  end
+
   it "accepts a large but plausible lamport_ts jump within the allowed bound" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")

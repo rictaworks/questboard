@@ -106,6 +106,54 @@ RSpec.describe "Boards", type: :request do
     )
   end
 
+  it "returns the board-wide latest lamport_ts so a reloaded client does not restart its counter at 0" do
+    seed_object_support
+    board_payload = create_board(title: "Canvas Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+    expect(response).to have_http_status(:created)
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    # op が1件も無いボードでは 0。クライアントはここから ++ して 1 を送れる。
+    expect(JSON.parse(response.body).fetch("lamportTs")).to eq(0)
+
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    }, as: :json
+    expect(response).to have_http_status(:created)
+    object_id = JSON.parse(response.body).fetch("id")
+
+    [ 1, 2, 3 ].each do |ts|
+      post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+        property: "geometry",
+        value: { x: ts * 10, y: 0 },
+        lamport_ts: ts,
+        client_id: "client-a"
+      }, as: :json
+      expect(response).to have_http_status(:ok)
+    end
+
+    get "/boards/#{share_token}", as: :json
+    expect(response).to have_http_status(:ok)
+    latest_lamport_ts = JSON.parse(response.body).fetch("lamportTs")
+    expect(latest_lamport_ts).to eq(3)
+
+    # 再読み込み直後のクライアント（別 client_id）がこの値の次から採番すれば、
+    # 履歴のあるプロパティへの最初の編集が LWW で拒否されない（Issue #86）。
+    post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+      property: "geometry",
+      value: { x: 777, y: 0 },
+      lamport_ts: latest_lamport_ts + 1,
+      client_id: "client-b"
+    }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).geometry).to include("x" => 777)
+  end
+
   it "returns a text_crdt revision from the board endpoint that a client can use as ref_revision" do
     seed_object_support
     board_payload = create_board(title: "Canvas Board")

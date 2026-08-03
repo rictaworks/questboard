@@ -164,6 +164,10 @@ class BoardsController < ApplicationController
     {
       board: serialize_board_attributes(board),
       membership: serialize_membership(membership),
+      # クライアントの Lamport カウンタの初期値。これを返さないと再読み込み直後の
+      # クライアントが 0 から採番し、履歴のあるプロパティへの編集が LWW で拒否される
+      # （Issue #86）。
+      lamportTs: board.latest_lamport_ts,
       objectTypes: ObjectType.order(:id).map { |type| { id: type.id, code: type.code } },
       colorPalettes: ColorPalette.order(:id).map { |color| { id: color.id, hex: color.hex } },
       comments: comments.map { |comment| serialize_comment(comment) },
