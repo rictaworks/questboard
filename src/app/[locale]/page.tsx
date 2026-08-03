@@ -1,42 +1,17 @@
-import {faLanguage} from '@fortawesome/free-solid-svg-icons';
-import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {getTranslations} from 'next-intl/server';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCreatePanel from '@/components/board-create-panel';
 
+// このページは製品紹介の LP ではなく、アプリの入口（ログインし、ボードを作る場所）である。
+// 製品紹介は rictaworks.jp 側の役割なので、キャッチコピーも開発用の雛形説明もここには置かない
+// （Issue #99）。h1 は製品名のみとし、見出し階層の最上位を画面の機能に譲る。
 export default async function LocaleHomePage() {
   const t = await getTranslations('Home');
 
   return (
     <main className="home-shell">
-      <section className="hero-card">
-        <p className="eyebrow">
-          <FontAwesomeIcon icon={faLanguage} />
-          <span>{t('eyebrow')}</span>
-        </p>
-        <h1>{t('headline')}</h1>
-        <p className="hero-copy">{t('description')}</p>
-        <div className="hero-actions">
-          <a className="button button-primary" href="#design-tokens">
-            {t('primaryAction')}
-          </a>
-          <a className="button button-secondary" href="#locales">
-            {t('secondaryAction')}
-          </a>
-        </div>
-      </section>
-
-      <section className="grid" id="design-tokens">
-        <article className="panel">
-          <h2>{t('designTokensTitle')}</h2>
-          <p>{t('designTokensDescription')}</p>
-        </article>
-        <article className="panel" id="locales">
-          <h2>{t('localesTitle')}</h2>
-          <p>{t('localesDescription')}</p>
-        </article>
-      </section>
+      <h1 className="home-title">{t('title')}</h1>
 
       <section className="auth-section" aria-labelledby="auth-heading">
         <h2 id="auth-heading">{t('authSectionTitle')}</h2>
