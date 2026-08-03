@@ -3,11 +3,12 @@
 import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faStar, faTrashCan, faUnlock} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
-import {useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
 import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
+import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
   applyRealtimeOp,
@@ -1158,7 +1159,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
               <article
                 className={`board-object board-object-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''} ${object.locked && object.lockedByUserId !== currentUserId ? 'is-locked' : ''}`}
                 key={object.id}
-                style={objectStyle(object.geometry)}
+                style={{...objectStyle(object.geometry), ...objectColorStyle(boardState.colorPalettes, object.colorId)} as CSSProperties}
                 onPointerDown={(event) => handleObjectPointerDown(object, event)}
               >
                 {object.objectTypeCode === 'connector' ? <svg className="connector-line" viewBox="0 0 100 100"><line x1="10" y1="50" x2="90" y2="50" /></svg> : null}
