@@ -12,7 +12,8 @@ async function read(relativePath) {
 test('board canvas shell is constrained to the viewport and sidebar panels can scroll independently', async () => {
   const styles = await read('src/app/globals.css');
 
-  assert.match(styles, /\.home-shell:has\(\.board-canvas-shell\) \{[\s\S]*height: 100dvh;/);
+  assert.match(styles, /\.home-shell:has\(\.board-canvas-shell\):has\(\.board-join-success\) \{[\s\S]*height: 100dvh;/);
+  assert.match(styles, /\.home-shell:has\(\.board-canvas-shell\):not\(:has\(\.board-join-success\)\) \{[\s\S]*height: 100dvh;/);
   assert.match(styles, /\.board-canvas-shell \{[\s\S]*height: 100%;/);
   assert.match(styles, /\.board-canvas-shell \{[\s\S]*grid-template-rows: auto minmax\(0, 1fr\);/);
   assert.match(styles, /\.board-canvas-body \{[\s\S]*flex: 1;[\s\S]*min-height: 0;[\s\S]*align-items: start;/);

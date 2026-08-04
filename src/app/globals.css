@@ -39,11 +39,22 @@ a {
   margin: 0 auto;
 }
 
-.home-shell:has(.board-canvas-shell) {
+.home-shell:has(.board-canvas-shell):has(.board-join-success) {
   height: 100dvh;
   box-sizing: border-box;
   overflow: hidden;
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+.home-shell:has(.board-canvas-shell):not(:has(.board-join-success)) {
+  height: 100dvh;
+  box-sizing: border-box;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.home-shell:has(.board-canvas-shell) .board-stage {
+  min-height: 0;
 }
 
 .hero-card,
@@ -673,9 +684,11 @@ a {
 }
 
 @media (max-width: 960px) {
-  .home-shell:has(.board-canvas-shell) {
+  .home-shell:has(.board-canvas-shell):has(.board-join-success),
+  .home-shell:has(.board-canvas-shell):not(:has(.board-join-success)) {
     height: auto;
     overflow: visible;
+    grid-template-rows: auto;
   }
 
   .board-canvas-shell {
@@ -685,6 +698,10 @@ a {
 
   .board-canvas-body {
     grid-template-columns: 1fr;
+  }
+
+  .home-shell:has(.board-canvas-shell) .board-stage {
+    min-height: 36rem;
   }
 }
 
