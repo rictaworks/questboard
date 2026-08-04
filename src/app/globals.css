@@ -364,11 +364,7 @@ a {
   padding: var(--space-3);
   border: 2px solid transparent;
   border-radius: var(--radius-md);
-  /* --object-color はオブジェクトの colorId から解決したパレット色（インラインで付与）。
-     解決できないときは種別ごとの --object-color-default に fallback するため、
-     色を選んでいないオブジェクトの見た目は従来どおり。 */
-  --object-color-default: rgba(255, 255, 255, 0.5);
-  background: color-mix(in srgb, var(--object-color, var(--object-color-default)) 16%, transparent);
+  background: color-mix(in srgb, var(--object-color) 16%, transparent);
   color: var(--color-text);
   user-select: none;
 }
@@ -379,33 +375,6 @@ a {
 
 .board-object.is-locked {
   opacity: 0.85;
-}
-
-/* 種別ごとの既定色。background を直接指定せず fallback 値だけを差し替えることで、
-   colorId が設定されているオブジェクトは常にパレット色が優先される。
-   16% で合成されるため、従来の背景と同じ見え方になるよう alpha を割り戻してある。 */
-.board-object-frame {
-  --object-color-default: rgba(147, 197, 253, 0.75);
-}
-
-.board-object-sticky {
-  --object-color-default: rgb(253, 230, 138);
-}
-
-.board-object-shape {
-  --object-color-default: rgb(196, 181, 253);
-}
-
-.board-object-text {
-  --object-color-default: rgba(255, 255, 255, 0.75);
-}
-
-.board-object-connector {
-  --object-color-default: rgba(103, 232, 249, 0.75);
-}
-
-.board-object-image {
-  --object-color-default: rgba(252, 165, 165, 0.75);
 }
 
 .board-object-label {

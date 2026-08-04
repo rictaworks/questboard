@@ -40,7 +40,16 @@ RSpec.describe "Objects", type: :request do
 
     ColorPalette.upsert_all(
       [
-        { hex: "#FDE68A" }
+        { hex: "#FDE68A" },
+        { hex: "#FCA5A5" },
+        { hex: "#FDBA74" },
+        { hex: "#86EFAC" },
+        { hex: "#93C5FD" },
+        { hex: "#C4B5FD" },
+        { hex: "#F9A8D4" },
+        { hex: "#67E8F9" },
+        { hex: "#D1D5DB" },
+        { hex: "#1F2937" }
       ],
       unique_by: :index_color_palettes_on_hex
     )
@@ -89,6 +98,14 @@ RSpec.describe "Objects", type: :request do
 
     join_board(share_token:, user: editor, role_code: "editor")
     supported_types = %w[sticky shape text connector image frame]
+    expected_colors = {
+      "sticky" => "#FDE68A",
+      "shape" => "#C4B5FD",
+      "text" => "#D1D5DB",
+      "connector" => "#67E8F9",
+      "image" => "#FCA5A5",
+      "frame" => "#93C5FD"
+    }
 
     sign_in(editor)
     supported_types.each do |object_type_code|
@@ -101,6 +118,7 @@ RSpec.describe "Objects", type: :request do
       payload = JSON.parse(response.body)
 
       expect(payload.fetch("objectTypeCode")).to eq(object_type_code)
+      expect(payload.fetch("colorId")).to eq(ColorPalette.find_by!(hex: expected_colors.fetch(object_type_code)).id)
       expect(payload.fetch("geometry")).to include(
         "x" => 10,
         "y" => 20,
@@ -324,6 +342,33 @@ RSpec.describe "Objects", type: :request do
     sign_in(editor)
     patch "/boards/#{share_token}/objects/#{child_id}/move", params: { geometry: { x: 99, y: 99 } }, as: :json
     expect(response).to have_http_status(:forbidden)
+  end
+
+  it "returns type-specific default colors for untouched new objects" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+
+    sticky_response = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 0, y: 0, w: 50, h: 50, rotation: 0 }
+    )
+    shape_response = create_object(
+      share_token:,
+      object_type_code: "shape",
+      geometry: { x: 60, y: 0, w: 50, h: 50, rotation: 0 }
+    )
+    frame_response = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 120, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+
+    expect(sticky_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#FDE68A").id)
+    expect(shape_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#C4B5FD").id)
+    expect(frame_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#93C5FD").id)
   end
 
   it "freezes a user's own direct lock release while an ancestor frame is locked by someone else" do

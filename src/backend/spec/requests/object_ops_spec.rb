@@ -26,12 +26,31 @@ RSpec.describe "Object ops", type: :request do
 
   def seed_object_support
     ObjectType.upsert_all(
-      [ { code: "sticky" }, { code: "text" } ],
+      [
+        { code: "sticky" },
+        { code: "shape" },
+        { code: "text" },
+        { code: "connector" },
+        { code: "image" },
+        { code: "frame" }
+      ],
       unique_by: :index_object_types_on_code
     )
 
     ColorPalette.upsert_all(
-      [ { hex: "#FDE68A" }, { hex: "#111111" } ],
+      [
+        { hex: "#FDE68A" },
+        { hex: "#FCA5A5" },
+        { hex: "#FDBA74" },
+        { hex: "#86EFAC" },
+        { hex: "#93C5FD" },
+        { hex: "#C4B5FD" },
+        { hex: "#F9A8D4" },
+        { hex: "#67E8F9" },
+        { hex: "#111111" },
+        { hex: "#D1D5DB" },
+        { hex: "#1F2937" }
+      ],
       unique_by: :index_color_palettes_on_hex
     )
   end

@@ -41,7 +41,16 @@ RSpec.describe "Comments", type: :request do
 
     ColorPalette.upsert_all(
       [
-        { hex: "#FDE68A" }
+        { hex: "#FDE68A" },
+        { hex: "#FCA5A5" },
+        { hex: "#FDBA74" },
+        { hex: "#86EFAC" },
+        { hex: "#93C5FD" },
+        { hex: "#C4B5FD" },
+        { hex: "#F9A8D4" },
+        { hex: "#67E8F9" },
+        { hex: "#D1D5DB" },
+        { hex: "#1F2937" }
       ],
       unique_by: :index_color_palettes_on_hex
     )
