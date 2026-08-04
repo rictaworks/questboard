@@ -12,7 +12,6 @@ async function loadModule() {
   const {outputText} = ts.transpileModule(source, {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
   });
-
   const moduleShim = {exports: {}};
   const require = createRequire(import.meta.url);
   new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
@@ -30,6 +29,7 @@ const {
   onMinimapClick,
   panCamera,
   startInertia,
+  resolveNewObjectGeometry,
 } = loadedModule;
 
 const viewport = {width: 200, height: 200};
@@ -288,6 +288,40 @@ test('resolveCameraRange locks camera position to content center when viewport e
   // Camera should be softened towards center (500), not allowed at x = 4000
   assert.ok(ticked.x < 4000, 'Camera x position should be constrained towards content center');
   assert.ok(ticked.y < 4000, 'Camera y position should be constrained towards content center');
+});
+
+test('resolveNewObjectGeometry centers new objects and offsets overlaps', () => {
+  const camera = {x: 100, y: 200, zoom: 2};
+  const viewport = {width: 400, height: 300};
+  const base = resolveNewObjectGeometry(camera, viewport, []);
+  assert.deepEqual(base, {
+    x: 200,
+    y: 225,
+    w: 160,
+    h: 120,
+    rotation: 0,
+  });
+
+  const objects = [
+    {geometry: {x: 200, y: 225}},
+    {geometry: {x: 216, y: 241}},
+  ].map((entry, index) => ({
+    id: index + 1,
+    boardId: 1,
+    objectTypeCode: 'sticky',
+    colorId: 1,
+    geometry: {...entry.geometry, w: 160, h: 120, rotation: 0},
+    locked: false,
+  }));
+
+  const offset = resolveNewObjectGeometry(camera, viewport, objects);
+  assert.deepEqual(offset, {
+    x: 232,
+    y: 257,
+    w: 160,
+    h: 120,
+    rotation: 0,
+  });
 });
 
 function activeRange(zoom) {

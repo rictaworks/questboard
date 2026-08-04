@@ -998,13 +998,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       }
 
       const {backendUrl} = readGoogleAuthSettings();
-      const nextGeometry = {
-        x: Math.max(cameraStateRef.current.x - DEFAULT_OBJECT_SIZE.w / 2, 0),
-        y: Math.max(cameraStateRef.current.y - DEFAULT_OBJECT_SIZE.h / 2, 0),
-        w: DEFAULT_OBJECT_SIZE.w,
-        h: DEFAULT_OBJECT_SIZE.h,
-        rotation: 0,
-      };
+      const nextGeometry = resolveNewObjectGeometry(
+        cameraStateRef.current,
+        viewport,
+        boardStateRef.current.objects.filter((object) => object.deletedAt == null)
+      );
 
       const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(boardState.board.shareToken)}/objects`, {
         body: JSON.stringify({object_type_code: objectTypeCode, geometry: nextGeometry}),
@@ -1485,6 +1483,39 @@ function objectStyle(geometry: BoardCanvasObject['geometry']) {
     height: `${geometry.h}px`,
     transform: `rotate(${geometry.rotation}deg)`,
   } as const;
+}
+
+export function resolveNewObjectGeometry(
+  camera: CameraState,
+  viewport: {width: number; height: number},
+  objects: BoardCanvasObject[]
+) {
+  const centerX = camera.x + (viewport.width / 2) / Math.max(camera.zoom, 0.01);
+  const centerY = camera.y + (viewport.height / 2) / Math.max(camera.zoom, 0.01);
+  const baseGeometry = {
+    x: Math.max(Math.round(centerX - DEFAULT_OBJECT_SIZE.w / 2), 0),
+    y: Math.max(Math.round(centerY - DEFAULT_OBJECT_SIZE.h / 2), 0),
+    w: DEFAULT_OBJECT_SIZE.w,
+    h: DEFAULT_OBJECT_SIZE.h,
+    rotation: 0,
+  };
+
+  const occupied = new Set(objects.map((object) => `${object.geometry.x}:${object.geometry.y}`));
+  const offsetStep = 16;
+
+  for (let index = 0; index < objects.length + 1; index += 1) {
+    const nextGeometry = {
+      ...baseGeometry,
+      x: baseGeometry.x + index * offsetStep,
+      y: baseGeometry.y + index * offsetStep,
+    };
+
+    if (!occupied.has(`${nextGeometry.x}:${nextGeometry.y}`)) {
+      return nextGeometry;
+    }
+  }
+
+  return baseGeometry;
 }
 
 function normalizeRect(x1: number, y1: number, x2: number, y2: number) {
