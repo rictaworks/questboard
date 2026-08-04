@@ -17,7 +17,9 @@ const SELECTOR = {
   stage: '.board-stage',
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
-  sidebarPanels: '.board-minimap, .board-details, .board-quest-panel'
+  sidebarPanels: '.board-minimap, .board-details, .board-quest-panel',
+  minimap: '.board-minimap',
+  minimapSurface: '.board-minimap-surface'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
 // デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。
@@ -25,6 +27,9 @@ const MOBILE_MEDIA = '(max-width: 960px)';
 // サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
 // できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
 const PANEL_MIN_HEIGHT = '8rem';
+// ミニマップは俯瞰が目的なので、内部スクロールが出ると意味を失う。
+// 盤面（.board-minimap-surface）+ ヘッダ + padding が収まる下限を別に持たせる。
+const MINIMAP_MIN_HEIGHT = '15rem';
 // 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
 const STAGE_MIN_HEIGHT = '36rem';
 
@@ -64,12 +69,18 @@ function splitTopLevelAndMedia(css) {
   const mediaBlocks = new Map();
   let cursor = 0;
 
+  // `@` は宣言値（`content: "@"` や url 内）にも現れうるので、行頭の `@` だけを
+  // at-rule の開始とみなす。
+  const atRulePattern = /(?:^|\n)[ \t]*@/g;
+
   while (cursor < css.length) {
-    const atRule = css.indexOf('@', cursor);
-    if (atRule === -1) {
+    atRulePattern.lastIndex = cursor;
+    const found = atRulePattern.exec(css);
+    if (!found) {
       topLevelChunks.push(css.slice(cursor));
       break;
     }
+    const atRule = found.index + found[0].length - 1;
 
     topLevelChunks.push(css.slice(cursor, atRule));
 
@@ -171,8 +182,14 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   assertDeclaration(rules, SELECTOR.sidebar, 'min-height', '0');
 
   assertDeclaration(rules, SELECTOR.sidebarPanels, 'overflow', 'auto');
-  // パネル端でのスクロール連鎖がキャンバス側に波及しないようにする。
-  assertDeclaration(rules, SELECTOR.sidebarPanels, 'overscroll-behavior', 'contain');
+  // overscroll-behavior: contain は付けない。.board-stage はパネルの祖先ではなく
+  // 兄弟なのでキャンバスへは元々連鎖せず、逆にパネル末端から .board-sidebar への
+  // ホイール伝播を止めてしまい、サイドバーがスクロールできなくなる。
+  assert.equal(
+    declarationsOf(rules, SELECTOR.sidebarPanels).has('overscroll-behavior'),
+    false,
+    'overscroll-behavior はサイドバーへのスクロール伝播を止めるため指定しない'
+  );
 });
 
 test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {
@@ -184,6 +201,14 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   assertDeclaration(rules, SELECTOR.sidebarPanels, 'min-height', PANEL_MIN_HEIGHT);
   // 下限の合計がサイドバーを超えたときの受け皿。
   assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
+
+  // ミニマップは共通の下限では盤面が入りきらず、常に内部スクロールしてしまう。
+  assertDeclaration(rules, SELECTOR.minimap, 'min-height', MINIMAP_MIN_HEIGHT);
+  const surfaceMinHeight = declarationsOf(rules, SELECTOR.minimapSurface).get('min-height');
+  assert.ok(
+    Number.parseFloat(MINIMAP_MIN_HEIGHT) > Number.parseFloat(surfaceMinHeight),
+    `ミニマップの下限 ${MINIMAP_MIN_HEIGHT} は盤面 ${surfaceMinHeight} にヘッダと padding を足した高さを上回る必要があります`
+  );
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は

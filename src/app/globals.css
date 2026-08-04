@@ -470,14 +470,23 @@ a {
 }
 
 /* 下限を置かないと、低いビューポートで各パネルが 1 行分まで潰れる。
-   .home-shell が overflow: hidden なので、潰れた先に逃げ道が無くなる。 */
+   .home-shell が overflow: hidden なので、潰れた先に逃げ道が無くなる。
+   overscroll-behavior は指定しない：.board-stage はパネルの祖先ではなく兄弟なので
+   キャンバスへは元々連鎖せず、contain を付けるとパネル末端から .board-sidebar への
+   ホイール伝播まで止めてしまう。 */
 .board-minimap,
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
   min-height: 8rem;
   overflow: auto;
-  overscroll-behavior: contain;
+}
+
+/* ミニマップは俯瞰が目的で、内部スクロールが出ると役目を果たさない。
+   盤面（.board-minimap-surface の 10rem）にヘッダと padding を足した高さを
+   共通の下限では賄えないため、ここだけ下限を上げる。 */
+.board-minimap {
+  min-height: 15rem;
 }
 
 .board-minimap-header {
