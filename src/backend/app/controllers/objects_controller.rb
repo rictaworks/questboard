@@ -1,4 +1,13 @@
 class ObjectsController < ApplicationController
+  DEFAULT_OBJECT_COLOR_HEX_BY_TYPE = {
+    "sticky" => "#FDE68A",
+    "shape" => "#C4B5FD",
+    "text" => "#D1D5DB",
+    "connector" => "#67E8F9",
+    "image" => "#FCA5A5",
+    "frame" => "#93C5FD"
+  }.freeze
+
   class UnsupportedOpPropertyError < StandardError; end
   class StaleOpError < StandardError; end
   class ConflictingOpError < StandardError; end
@@ -427,17 +436,9 @@ class ObjectsController < ApplicationController
   end
 
   def default_color_palette_for(object_type)
-    palette_hex =
-      case object_type.code
-      when "frame" then "#93C5FD"
-      when "sticky" then "#FDE68A"
-      when "shape" then "#C4B5FD"
-      when "text" then "#FFFFFF"
-      when "connector" then "#67E8F9"
-      when "image" then "#FCA5A5"
-      else
-        raise ArgumentError, "Unsupported object type: #{object_type.code}"
-      end
+    palette_hex = DEFAULT_OBJECT_COLOR_HEX_BY_TYPE.fetch(object_type.code) do
+      raise ArgumentError, "Unsupported object type: #{object_type.code}"
+    end
 
     ColorPalette.find_by!(hex: palette_hex)
   end
