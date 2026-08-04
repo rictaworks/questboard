@@ -7,7 +7,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, t
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
-import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
+import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -109,7 +109,7 @@ type PresenceEntry = {
   updatedAt: number;
 };
 
-const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
+
 
 // localStorage が無効化されたブラウザや allow-same-origin のない sandbox iframe では
 // getItem/setItem が SecurityError を送出し、state 初期化中にボード全体がクラッシュする。
@@ -998,13 +998,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       }
 
       const {backendUrl} = readGoogleAuthSettings();
-      const nextGeometry = {
-        x: Math.max(cameraStateRef.current.x - DEFAULT_OBJECT_SIZE.w / 2, 0),
-        y: Math.max(cameraStateRef.current.y - DEFAULT_OBJECT_SIZE.h / 2, 0),
-        w: DEFAULT_OBJECT_SIZE.w,
-        h: DEFAULT_OBJECT_SIZE.h,
-        rotation: 0,
-      };
+      const nextGeometry = resolveNewObjectGeometry(
+        cameraStateRef.current,
+        viewport,
+        boardStateRef.current.objects.filter((object) => object.deletedAt == null)
+      );
 
       const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(boardState.board.shareToken)}/objects`, {
         body: JSON.stringify({object_type_code: objectTypeCode, geometry: nextGeometry}),
@@ -1486,6 +1484,8 @@ function objectStyle(geometry: BoardCanvasObject['geometry']) {
     transform: `rotate(${geometry.rotation}deg)`,
   } as const;
 }
+
+
 
 function normalizeRect(x1: number, y1: number, x2: number, y2: number) {
   return {

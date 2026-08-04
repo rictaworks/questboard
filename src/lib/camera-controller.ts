@@ -455,3 +455,45 @@ function easeOutCubic(value: number): number {
   const inverted = 1 - value;
   return 1 - inverted * inverted * inverted;
 }
+
+export const DEFAULT_OBJECT_SIZE = { w: 160, h: 120 };
+
+export interface GeometryPositionLike {
+  geometry: {
+    x: number;
+    y: number;
+  };
+}
+
+export function resolveNewObjectGeometry(
+  camera: CameraState,
+  viewport: { width: number; height: number },
+  objects: GeometryPositionLike[]
+) {
+  const centerX = camera.x;
+  const centerY = camera.y;
+  const baseGeometry = {
+    x: Math.max(Math.round(centerX - DEFAULT_OBJECT_SIZE.w / 2), 0),
+    y: Math.max(Math.round(centerY - DEFAULT_OBJECT_SIZE.h / 2), 0),
+    w: DEFAULT_OBJECT_SIZE.w,
+    h: DEFAULT_OBJECT_SIZE.h,
+    rotation: 0,
+  };
+
+  const occupied = new Set(objects.map((object) => `${object.geometry.x}:${object.geometry.y}`));
+  const offsetStep = 16;
+
+  for (let index = 0; index < objects.length + 1; index += 1) {
+    const nextGeometry = {
+      ...baseGeometry,
+      x: baseGeometry.x + index * offsetStep,
+      y: baseGeometry.y + index * offsetStep,
+    };
+
+    if (!occupied.has(`${nextGeometry.x}:${nextGeometry.y}`)) {
+      return nextGeometry;
+    }
+  }
+
+  return baseGeometry;
+}
