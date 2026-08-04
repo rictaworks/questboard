@@ -39,6 +39,16 @@ a {
   margin: 0 auto;
 }
 
+.home-shell:has(.board-canvas-shell) {
+  height: 100dvh;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.home-shell:has(.board-canvas-shell):has(.board-join-success) {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .hero-card,
 .dev-auth-banner,
 .auth-panel {
@@ -251,6 +261,9 @@ a {
 .board-canvas-shell {
   display: grid;
   gap: var(--space-4);
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .board-canvas-header {
@@ -331,7 +344,7 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18rem;
   gap: var(--space-4);
-  min-height: 36rem;
+  min-height: 0;
 }
 
 .board-stage,
@@ -345,10 +358,13 @@ a {
   box-shadow: var(--shadow-glow-md);
 }
 
+/* .board-scene は position: absolute; inset: 0 なので、.board-stage には内在高さがない。
+   min-height: 0 にできるのは .home-shell の 100dvh 制約がグリッド行の高さを与えている前提で、
+   その制約を外す分岐（下部の max-width: 960px）では必ず最低高さを戻すこと。 */
 .board-stage {
   position: relative;
   overflow: hidden;
-  min-height: 36rem;
+  min-height: 0;
 }
 
 .board-scene {
@@ -443,16 +459,34 @@ a {
   pointer-events: none;
 }
 
+/* 各パネルの min-height が積み上がってサイドバーに収まらなくなったときの受け皿。
+   パネル側の下限を優先し、あふれた分はサイドバーごとスクロールさせる。 */
 .board-sidebar {
   display: grid;
   gap: var(--space-4);
   padding: var(--space-4);
+  min-height: 0;
+  overflow: auto;
 }
 
+/* 下限を置かないと、低いビューポートで各パネルが 1 行分まで潰れる。
+   .home-shell が overflow: hidden なので、潰れた先に逃げ道が無くなる。
+   overscroll-behavior は指定しない：.board-stage はパネルの祖先ではなく兄弟なので
+   キャンバスへは元々連鎖せず、contain を付けるとパネル末端から .board-sidebar への
+   ホイール伝播まで止めてしまう。 */
 .board-minimap,
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
+  min-height: 8rem;
+  overflow: auto;
+}
+
+/* ミニマップは俯瞰が目的で、内部スクロールが出ると役目を果たさない。
+   盤面（.board-minimap-surface の 10rem）にヘッダと padding を足した高さを
+   共通の下限では賄えないため、ここだけ下限を上げる。 */
+.board-minimap {
+  min-height: 15rem;
 }
 
 .board-minimap-header {
@@ -651,8 +685,42 @@ a {
 }
 
 @media (max-width: 960px) {
+  .home-shell:has(.board-canvas-shell) {
+    height: auto;
+    overflow: visible;
+    grid-template-rows: auto;
+  }
+
+  /* メディアクエリは詳細度を上げない。バナー版（:has が 1 つ多く詳細度が高い）を
+     書き漏らすと、上の grid-template-rows: auto がトップレベルの
+     `auto minmax(0, 1fr)` に負けて効かなくなる。 */
+  .home-shell:has(.board-canvas-shell):has(.board-join-success) {
+    grid-template-rows: auto;
+  }
+
+  .board-canvas-shell {
+    height: auto;
+    min-height: auto;
+  }
+
+  /* 縦積みになるモバイルではサイドバー自体の高さ制約が無いため、
+     パネルは内容なりに伸ばす（内部スクロールを二重に作らない）。 */
+  .board-sidebar {
+    overflow: visible;
+  }
+
+  .board-minimap,
+  .board-details,
+  .board-quest-panel {
+    overflow: visible;
+  }
+
   .board-canvas-body {
     grid-template-columns: 1fr;
+  }
+
+  .home-shell:has(.board-canvas-shell) .board-stage {
+    min-height: 36rem;
   }
 }
 
