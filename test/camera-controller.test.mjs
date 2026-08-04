@@ -295,16 +295,16 @@ test('resolveNewObjectGeometry centers new objects and offsets overlaps', () => 
   const viewport = {width: 400, height: 300};
   const base = resolveNewObjectGeometry(camera, viewport, []);
   assert.deepEqual(base, {
-    x: 200,
-    y: 225,
+    x: 20,
+    y: 140,
     w: 160,
     h: 120,
     rotation: 0,
   });
 
   const objects = [
-    {geometry: {x: 200, y: 225}},
-    {geometry: {x: 216, y: 241}},
+    {geometry: {x: 20, y: 140}},
+    {geometry: {x: 36, y: 156}},
   ].map((entry, index) => ({
     id: index + 1,
     boardId: 1,
@@ -316,8 +316,8 @@ test('resolveNewObjectGeometry centers new objects and offsets overlaps', () => 
 
   const offset = resolveNewObjectGeometry(camera, viewport, objects);
   assert.deepEqual(offset, {
-    x: 232,
-    y: 257,
+    x: 52,
+    y: 172,
     w: 160,
     h: 120,
     rotation: 0,

@@ -7,7 +7,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, t
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
-import {CameraController, createCameraState, type CameraBounds, type CameraState} from '@/lib/camera-controller';
+import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -109,7 +109,7 @@ type PresenceEntry = {
   updatedAt: number;
 };
 
-const DEFAULT_OBJECT_SIZE = {w: 160, h: 120};
+
 
 // localStorage が無効化されたブラウザや allow-same-origin のない sandbox iframe では
 // getItem/setItem が SecurityError を送出し、state 初期化中にボード全体がクラッシュする。
@@ -1485,38 +1485,7 @@ function objectStyle(geometry: BoardCanvasObject['geometry']) {
   } as const;
 }
 
-export function resolveNewObjectGeometry(
-  camera: CameraState,
-  viewport: {width: number; height: number},
-  objects: BoardCanvasObject[]
-) {
-  const centerX = camera.x + (viewport.width / 2) / Math.max(camera.zoom, 0.01);
-  const centerY = camera.y + (viewport.height / 2) / Math.max(camera.zoom, 0.01);
-  const baseGeometry = {
-    x: Math.max(Math.round(centerX - DEFAULT_OBJECT_SIZE.w / 2), 0),
-    y: Math.max(Math.round(centerY - DEFAULT_OBJECT_SIZE.h / 2), 0),
-    w: DEFAULT_OBJECT_SIZE.w,
-    h: DEFAULT_OBJECT_SIZE.h,
-    rotation: 0,
-  };
 
-  const occupied = new Set(objects.map((object) => `${object.geometry.x}:${object.geometry.y}`));
-  const offsetStep = 16;
-
-  for (let index = 0; index < objects.length + 1; index += 1) {
-    const nextGeometry = {
-      ...baseGeometry,
-      x: baseGeometry.x + index * offsetStep,
-      y: baseGeometry.y + index * offsetStep,
-    };
-
-    if (!occupied.has(`${nextGeometry.x}:${nextGeometry.y}`)) {
-      return nextGeometry;
-    }
-  }
-
-  return baseGeometry;
-}
 
 function normalizeRect(x1: number, y1: number, x2: number, y2: number) {
   return {
