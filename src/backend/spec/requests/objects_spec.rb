@@ -326,6 +326,33 @@ RSpec.describe "Objects", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "returns type-specific default colors for untouched new objects" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+
+    sticky_response = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 0, y: 0, w: 50, h: 50, rotation: 0 }
+    )
+    shape_response = create_object(
+      share_token:,
+      object_type_code: "shape",
+      geometry: { x: 60, y: 0, w: 50, h: 50, rotation: 0 }
+    )
+    frame_response = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 120, y: 0, w: 200, h: 200, rotation: 0 }
+    )
+
+    expect(sticky_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#FDE68A").id)
+    expect(shape_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#C4B5FD").id)
+    expect(frame_response.fetch("colorId")).to eq(ColorPalette.find_by!(hex: "#93C5FD").id)
+  end
+
   it "freezes a user's own direct lock release while an ancestor frame is locked by someone else" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")

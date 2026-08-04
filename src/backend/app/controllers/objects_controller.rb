@@ -58,9 +58,10 @@ class ObjectsController < ApplicationController
 
     object = nil
     Board.transaction do
+      object_type = ObjectType.find_by!(code: object_type_code_param)
       object = board.board_objects.create!(
-        object_type: ObjectType.find_by!(code: object_type_code_param),
-        color_palette: ColorPalette.first!,
+        object_type: object_type,
+        color_palette: default_color_palette_for(object_type),
         parent_frame_id: create_params[:parent_frame_id],
         geometry: create_geometry,
         deleted_at: nil
@@ -423,6 +424,22 @@ class ObjectsController < ApplicationController
 
   def board_membership_for(board)
     board.board_members.includes(:role).find_by(user: current_user)
+  end
+
+  def default_color_palette_for(object_type)
+    palette_hex =
+      case object_type.code
+      when "frame" then "#93C5FD"
+      when "sticky" then "#FDE68A"
+      when "shape" then "#C4B5FD"
+      when "text" then "#FFFFFF"
+      when "connector" then "#67E8F9"
+      when "image" then "#FCA5A5"
+      else
+        raise ArgumentError, "Unsupported object type: #{object_type.code}"
+      end
+
+    ColorPalette.find_by!(hex: palette_hex)
   end
 
   def serialize_object(object)
