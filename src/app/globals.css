@@ -251,6 +251,7 @@ a {
 .board-canvas-shell {
   display: grid;
   gap: var(--space-4);
+  min-height: calc(100dvh - 2rem);
 }
 
 .board-canvas-header {
@@ -331,7 +332,9 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18rem;
   gap: var(--space-4);
-  min-height: 36rem;
+  flex: 1;
+  min-height: 0;
+  align-items: start;
 }
 
 .board-stage,
@@ -447,12 +450,21 @@ a {
   display: grid;
   gap: var(--space-4);
   padding: var(--space-4);
+  align-self: stretch;
+  min-height: 0;
 }
 
 .board-minimap,
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
+}
+
+.board-quest-panel,
+.board-minimap,
+.board-details {
+  min-height: 0;
+  overflow: auto;
 }
 
 .board-minimap-header {
@@ -651,6 +663,10 @@ a {
 }
 
 @media (max-width: 960px) {
+  .board-canvas-shell {
+    min-height: auto;
+  }
+
   .board-canvas-body {
     grid-template-columns: 1fr;
   }
