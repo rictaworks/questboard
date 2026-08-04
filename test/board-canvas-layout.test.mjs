@@ -8,6 +8,7 @@ const root = process.cwd();
 // 検査対象のセレクタとメディアクエリ条件。CSS 側の記述と 1 文字でもずれたら
 // テストが「見つからない」で落ちるように、文字列はここに集約する。
 const STYLESHEET = 'src/app/globals.css';
+const CANVAS_COMPONENT = 'src/components/board-canvas-panel.tsx';
 const SELECTOR = {
   boardShell: '.home-shell:has(.board-canvas-shell)',
   boardShellWithBanner: '.home-shell:has(.board-canvas-shell):has(.board-join-success)',
@@ -16,11 +17,16 @@ const SELECTOR = {
   stage: '.board-stage',
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
-  sidebarPanels: '.board-quest-panel, .board-minimap, .board-details'
+  sidebarPanels: '.board-minimap, .board-details, .board-quest-panel'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
 // デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。
 const MOBILE_MEDIA = '(max-width: 960px)';
+// サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
+// できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
+const PANEL_MIN_HEIGHT = '8rem';
+// 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
+const STAGE_MIN_HEIGHT = '36rem';
 
 // セレクタ抽出は直前の文字（`}` `;` または先頭）を手がかりにするため、
 // コメントが残っているとその手がかりが崩れる。解析前に必ず剥がす。
@@ -32,88 +38,177 @@ async function readStylesheet(relativePath) {
   return stripComments(await readFile(path.join(root, relativePath), 'utf8'));
 }
 
-function escapeSelector(selector) {
-  return selector.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+// 対応する閉じ波括弧の位置を返す。`@keyframes` のように入れ子を持つ
+// ブロックがあるため、単純な `indexOf('}')` では切り出せない。
+function findBlockEnd(css, blockStart) {
+  let depth = 0;
+
+  for (let scan = blockStart; scan < css.length; scan += 1) {
+    if (css[scan] === '{') depth += 1;
+    else if (css[scan] === '}') {
+      depth -= 1;
+      if (depth === 0) return scan;
+    }
+  }
+
+  throw new Error(`ブロックが閉じていません: ${css.slice(blockStart, blockStart + 40)}`);
 }
 
-// `@media` ブロックをトップレベルの規則から切り離す。
-// これを分けないと、同じセレクタがメディアクエリ内で真逆の値
+// at-rule をトップレベルの規則から切り離す。
+// `@media` を分けないと、同じセレクタがメディアクエリ内で真逆の値
 // （`height: auto` 等）を持つため、どちらを検査しているのか保証できない。
+// `@import`（ブロック無し）や `@keyframes`（入れ子あり）を残すと、
+// 後段の規則パースがセレクタ境界を見失うので同時に取り除く。
 function splitTopLevelAndMedia(css) {
   const topLevelChunks = [];
   const mediaBlocks = new Map();
   let cursor = 0;
 
   while (cursor < css.length) {
-    const atMedia = css.indexOf('@media', cursor);
-    if (atMedia === -1) {
+    const atRule = css.indexOf('@', cursor);
+    if (atRule === -1) {
       topLevelChunks.push(css.slice(cursor));
       break;
     }
 
-    topLevelChunks.push(css.slice(cursor, atMedia));
+    topLevelChunks.push(css.slice(cursor, atRule));
 
-    const blockStart = css.indexOf('{', atMedia);
-    if (blockStart === -1) throw new Error(`@media の開き波括弧が見つかりません: ${css.slice(atMedia, atMedia + 40)}`);
-    const condition = css.slice(atMedia + '@media'.length, blockStart).trim();
-
-    let depth = 0;
-    let scan = blockStart;
-    for (; scan < css.length; scan += 1) {
-      if (css[scan] === '{') depth += 1;
-      else if (css[scan] === '}') {
-        depth -= 1;
-        if (depth === 0) break;
-      }
+    const blockStart = css.indexOf('{', atRule);
+    const statementEnd = css.indexOf(';', atRule);
+    // `@import ...;` のようにブロックを持たない at-rule は行ごと捨てる。
+    if (blockStart === -1 || (statementEnd !== -1 && statementEnd < blockStart)) {
+      if (statementEnd === -1) throw new Error(`at-rule が終端していません: ${css.slice(atRule, atRule + 40)}`);
+      cursor = statementEnd + 1;
+      continue;
     }
-    if (depth !== 0) throw new Error(`@media ${condition} が閉じていません`);
 
-    mediaBlocks.set(condition, css.slice(blockStart + 1, scan));
-    cursor = scan + 1;
+    const prelude = css.slice(atRule, blockStart);
+    const blockEnd = findBlockEnd(css, blockStart);
+    if (prelude.trimStart().startsWith('@media')) {
+      mediaBlocks.set(prelude.slice(prelude.indexOf('@media') + '@media'.length).trim(), css.slice(blockStart + 1, blockEnd));
+    }
+    cursor = blockEnd + 1;
   }
 
   return {topLevel: topLevelChunks.join(''), mediaBlocks};
 }
 
-// 指定セレクタの宣言ブロックを取り出す。同じスコープ内に同一セレクタが
-// 複数あると、どれが有効か不定になるため一致は 1 件に限定する。
-function declarationsOf(css, selector) {
-  const escaped = escapeSelector(selector.trim())
-    .replace(/\s*,\s*/g, '\\s*,\\s*')
-    .replace(/ +/g, '\\s+');
-
-  const pattern = new RegExp(`(?:^|[};])\\s*${escaped}\\s*\\{([^{}]*)\\}`, 'g');
-  const matches = [...css.matchAll(pattern)];
-  if (matches.length === 0) throw new Error(`セレクタが見つかりません: ${selector}`);
-  if (matches.length > 1) throw new Error(`セレクタが同一スコープに ${matches.length} 件あります: ${selector}`);
-  return matches[0][1];
+// セレクタ群を「並び順と空白に依存しない」キーに正規化する。
+// 整形やセレクタの並べ替えだけでテストが落ちると、挙動不変の変更まで
+// ブロックされてしまうため、比較対象は意味のある単位だけに絞る。
+function selectorKey(selector) {
+  return selector
+    .split(',')
+    .map((part) => part.trim().replace(/\s+/g, ' '))
+    .sort()
+    .join(',');
 }
 
-function selectorsIn(css) {
-  return [...css.matchAll(/(?:^|[};])\s*([^{};]+?)\s*\{/g)].map((matched) => matched[1].trim());
+function normalizeValue(value) {
+  return value.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ', ').trim();
+}
+
+// スコープ内の全規則を「正規化セレクタ → 宣言 Map」の索引にする。
+// 同一セレクタが 2 回現れると後勝ちで挙動が読めなくなるため出現数も持つ。
+function indexRules(css) {
+  const index = new Map();
+
+  // at-rule 除去済みの平坦な `セレクタ { 宣言 }` 列を前提に走査する。
+  // 直前の `}` を手がかりにすると、その `}` を消費して次の規則を
+  // 取りこぼす（1 つおきに見えなくなる）ので、括弧以外の連なりで区切る。
+  for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const key = selectorKey(rule[1]);
+    const declarations = new Map();
+
+    for (const declaration of rule[2].split(';')) {
+      const separator = declaration.indexOf(':');
+      if (separator === -1) continue;
+      declarations.set(declaration.slice(0, separator).trim(), normalizeValue(declaration.slice(separator + 1)));
+    }
+
+    const existing = index.get(key);
+    index.set(key, {declarations, count: existing ? existing.count + 1 : 1});
+  }
+
+  return index;
+}
+
+// 宣言を取り出す。同一スコープに同じセレクタが重複していたら、
+// どちらが効くか読めないので明示的に失敗させる。
+function declarationsOf(index, selector) {
+  const found = index.get(selectorKey(selector));
+  if (!found) throw new Error(`セレクタが見つかりません: ${selector}`);
+  if (found.count > 1) throw new Error(`セレクタが同一スコープに ${found.count} 件あります: ${selector}`);
+  return found.declarations;
+}
+
+function assertDeclaration(index, selector, property, expected) {
+  const actual = declarationsOf(index, selector).get(property);
+  assert.equal(actual, expected, `${selector} の ${property} が想定と異なります（実際: ${actual ?? 'なし'}）`);
 }
 
 test('ボードキャンバスはビューポートに収まり、サイドバーの各パネルが個別にスクロールする', async () => {
   const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
 
-  const boardShell = declarationsOf(topLevel, SELECTOR.boardShell);
-  assert.match(boardShell, /height: 100dvh;/);
-  assert.match(boardShell, /box-sizing: border-box;/);
-  assert.match(boardShell, /overflow: hidden;/);
-  assert.match(boardShell, /grid-template-rows: minmax\(0, 1fr\);/);
+  assertDeclaration(rules, SELECTOR.boardShell, 'height', '100dvh');
+  assertDeclaration(rules, SELECTOR.boardShell, 'overflow', 'hidden');
+  assertDeclaration(rules, SELECTOR.boardShell, 'grid-template-rows', 'minmax(0, 1fr)');
+  // `* { box-sizing: border-box }` が全体に効いているので再指定しない。
+  // 冗長な宣言をテストで固定すると、後から消せなくなる。
+  assert.equal(
+    declarationsOf(rules, SELECTOR.boardShell).has('box-sizing'),
+    false,
+    'box-sizing はグローバルの `*` 指定と重複するため書かない'
+  );
 
-  assert.match(declarationsOf(topLevel, SELECTOR.boardShellWithBanner), /grid-template-rows: auto minmax\(0, 1fr\);/);
+  assertDeclaration(rules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto minmax(0, 1fr)');
 
-  const canvasShell = declarationsOf(topLevel, SELECTOR.canvasShell);
-  assert.match(canvasShell, /height: 100%;/);
-  assert.match(canvasShell, /grid-template-rows: auto minmax\(0, 1fr\);/);
+  assertDeclaration(rules, SELECTOR.canvasShell, 'height', '100%');
+  assertDeclaration(rules, SELECTOR.canvasShell, 'grid-template-rows', 'auto minmax(0, 1fr)');
 
-  assert.match(declarationsOf(topLevel, SELECTOR.canvasBody), /min-height: 0;/);
-  assert.match(declarationsOf(topLevel, SELECTOR.sidebar), /min-height: 0;/);
+  assertDeclaration(rules, SELECTOR.canvasBody, 'min-height', '0');
+  assertDeclaration(rules, SELECTOR.sidebar, 'min-height', '0');
 
-  const sidebarPanels = declarationsOf(topLevel, SELECTOR.sidebarPanels);
-  assert.match(sidebarPanels, /min-height: 0;/);
-  assert.match(sidebarPanels, /overflow: auto;/);
+  assertDeclaration(rules, SELECTOR.sidebarPanels, 'overflow', 'auto');
+  // パネル端でのスクロール連鎖がキャンバス側に波及しないようにする。
+  assertDeclaration(rules, SELECTOR.sidebarPanels, 'overscroll-behavior', 'contain');
+});
+
+test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  // 下限が無いと、低いビューポートで各パネルが 1 行分（約 50px）まで潰れ、
+  // `overflow: hidden` の .home-shell 内なので逃げ道が無くなる。
+  assertDeclaration(rules, SELECTOR.sidebarPanels, 'min-height', PANEL_MIN_HEIGHT);
+  // 下限の合計がサイドバーを超えたときの受け皿。
+  assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
+});
+
+// スクロール領域をキーボードで到達できるようにするための属性。Chrome は
+// スクロールコンテナを自動でフォーカス可能にするが、Firefox / Safari はしない。
+const PANEL_CLASSES = ['board-quest-panel', 'board-minimap', 'board-details'];
+
+function openingTagOf(source, className) {
+  const pattern = new RegExp(`<section[^>]*className="${className}"[^>]*>`);
+  const matched = source.match(pattern);
+  if (!matched) throw new Error(`className="${className}" の section が見つかりません`);
+  return matched[0];
+}
+
+test('スクロールするサイドバーパネルはキーボードで到達でき、名前を持つ', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+
+  for (const className of PANEL_CLASSES) {
+    const tag = openingTagOf(source, className);
+    assert.match(tag, /tabIndex=\{0\}/, `${className} がキーボードフォーカスを受け取れません`);
+    assert.match(
+      tag,
+      /aria-labelledby="[^"]+"|aria-label=/,
+      `${className} のスクロール領域に読み上げ用の名前がありません`
+    );
+  }
 });
 
 test('高さ制約の解除はモバイル幅の分岐だけに限定され、そこでは .board-stage の最低高さが戻る', async () => {
@@ -122,10 +217,10 @@ test('高さ制約の解除はモバイル幅の分岐だけに限定され、�
   // .board-scene は position: absolute; inset: 0 なので .board-stage には内在高さがない。
   // トップレベルで min-height を 0 にできるのは、100dvh 制約が行高さを与えているからで、
   // 制約を外すメディアクエリは必ず最低高さを戻さなければならない。
-  assert.match(declarationsOf(topLevel, SELECTOR.stage), /min-height: 0;/);
+  assertDeclaration(indexRules(topLevel), SELECTOR.stage, 'min-height', '0');
 
   const releasingMedia = [...mediaBlocks.entries()]
-    .filter(([, block]) => selectorsIn(block).includes(SELECTOR.boardShell))
+    .filter(([, block]) => indexRules(block).has(selectorKey(SELECTOR.boardShell)))
     .map(([condition]) => condition);
   assert.deepEqual(
     releasingMedia,
@@ -135,10 +230,15 @@ test('高さ制約の解除はモバイル幅の分岐だけに限定され、�
 
   const mobile = mediaBlocks.get(MOBILE_MEDIA);
   assert.ok(mobile, `${MOBILE_MEDIA} のメディアクエリが見つかりません`);
+  const mobileRules = indexRules(mobile);
 
-  const mobileShell = declarationsOf(mobile, SELECTOR.boardShell);
-  assert.match(mobileShell, /height: auto;/);
-  assert.match(mobileShell, /overflow: visible;/);
+  assertDeclaration(mobileRules, SELECTOR.boardShell, 'height', 'auto');
+  assertDeclaration(mobileRules, SELECTOR.boardShell, 'overflow', 'visible');
 
-  assert.match(declarationsOf(mobile, SELECTOR.constrainedStage), /min-height: 36rem;/);
+  // メディアクエリは詳細度を上げない。バナー版（:has が 1 つ多い）を書き漏らすと
+  // トップレベルの `auto minmax(0, 1fr)` が勝ち、この宣言は死ぬ。
+  assertDeclaration(mobileRules, SELECTOR.boardShell, 'grid-template-rows', 'auto');
+  assertDeclaration(mobileRules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto');
+
+  assertDeclaration(mobileRules, SELECTOR.constrainedStage, 'min-height', STAGE_MIN_HEIGHT);
 });

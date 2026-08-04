@@ -1252,7 +1252,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
 
         <aside className="board-sidebar">
           {isQuestPanelVisible(quests) ? (
-            <section className="board-quest-panel" aria-labelledby="quest-panel-heading">
+            <section className="board-quest-panel" aria-labelledby="quest-panel-heading" tabIndex={0}>
               <div className="board-minimap-header">
                 <h2 id="quest-panel-heading">{t('questHeading')}</h2>
                 <span>{countActiveQuests(quests)}</span>
@@ -1299,9 +1299,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
             </section>
           ) : null}
 
-          <section className="board-minimap">
+          <section className="board-minimap" aria-labelledby="minimap-heading" tabIndex={0}>
             <div className="board-minimap-header">
-              <h2>{t('minimapHeading')}</h2>
+              <h2 id="minimap-heading">{t('minimapHeading')}</h2>
               <span>{selectedObjects.length}</span>
             </div>
             <button className="board-minimap-surface" onClick={focusMinimap} type="button">
@@ -1317,8 +1317,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           </section>
 
           {selectedObject ? (
-            <section className="board-details">
-              <h2>{t('selectionHeading')}</h2>
+            <section className="board-details" aria-labelledby="details-heading" tabIndex={0}>
+              <h2 id="details-heading">{t('selectionHeading')}</h2>
               <p>{selectedObject.objectTypeCode}</p>
               <div className="board-color-grid">
                 {boardState.colorPalettes.map((color) => (

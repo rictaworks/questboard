@@ -41,7 +41,6 @@ a {
 
 .home-shell:has(.board-canvas-shell) {
   height: 100dvh;
-  box-sizing: border-box;
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr);
 }
@@ -460,24 +459,25 @@ a {
   pointer-events: none;
 }
 
+/* 各パネルの min-height が積み上がってサイドバーに収まらなくなったときの受け皿。
+   パネル側の下限を優先し、あふれた分はサイドバーごとスクロールさせる。 */
 .board-sidebar {
   display: grid;
   gap: var(--space-4);
   padding: var(--space-4);
   min-height: 0;
+  overflow: auto;
 }
 
+/* 下限を置かないと、低いビューポートで各パネルが 1 行分まで潰れる。
+   .home-shell が overflow: hidden なので、潰れた先に逃げ道が無くなる。 */
 .board-minimap,
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
-}
-
-.board-quest-panel,
-.board-minimap,
-.board-details {
-  min-height: 0;
+  min-height: 8rem;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .board-minimap-header {
@@ -682,9 +682,28 @@ a {
     grid-template-rows: auto;
   }
 
+  /* メディアクエリは詳細度を上げない。バナー版（:has が 1 つ多く詳細度が高い）を
+     書き漏らすと、上の grid-template-rows: auto がトップレベルの
+     `auto minmax(0, 1fr)` に負けて効かなくなる。 */
+  .home-shell:has(.board-canvas-shell):has(.board-join-success) {
+    grid-template-rows: auto;
+  }
+
   .board-canvas-shell {
     height: auto;
     min-height: auto;
+  }
+
+  /* 縦積みになるモバイルではサイドバー自体の高さ制約が無いため、
+     パネルは内容なりに伸ばす（内部スクロールを二重に作らない）。 */
+  .board-sidebar {
+    overflow: visible;
+  }
+
+  .board-minimap,
+  .board-details,
+  .board-quest-panel {
+    overflow: visible;
   }
 
   .board-canvas-body {
