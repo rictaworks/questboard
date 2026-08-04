@@ -9,8 +9,8 @@ export interface BoardColorPaletteLike {
 const HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
 // colorId に対応するパレット色を返す。見つからない場合・不正な hex の場合は null。
-// null のときは CSS 側で種別ごとの既定色（`var(--object-color, ...)` の fallback）が
-// そのまま使われるため、色未設定のオブジェクトの見た目は変わらない。
+// colorId は DB 制約により常に解決される想定であり、万が一解決できない場合は
+// CSS 側でフォールバックされず、背景等が透明（無色）になる。
 export function resolveObjectColorHex(
   palettes: ReadonlyArray<BoardColorPaletteLike> | null | undefined,
   colorId: number | null | undefined
@@ -29,7 +29,8 @@ export function resolveObjectColorHex(
 }
 
 // オブジェクト要素に渡す CSS カスタムプロパティ。
-// colorId が解決できないときは空オブジェクトを返し、CSS の fallback に委ねる。
+// colorId は DB 制約により常に解決される想定であり、解決できない場合は
+// 空オブジェクトを返す（CSS カスタムプロパティを設定しない）。
 export function objectColorStyle(
   palettes: ReadonlyArray<BoardColorPaletteLike> | null | undefined,
   colorId: number | null | undefined
