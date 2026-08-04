@@ -47,6 +47,7 @@ RSpec.describe "Object ops", type: :request do
         { hex: "#C4B5FD" },
         { hex: "#F9A8D4" },
         { hex: "#67E8F9" },
+        { hex: "#111111" },
         { hex: "#D1D5DB" },
         { hex: "#1F2937" }
       ],
