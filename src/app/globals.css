@@ -359,6 +359,9 @@ a {
   box-shadow: var(--shadow-glow-md);
 }
 
+/* .board-scene は position: absolute; inset: 0 なので、.board-stage には内在高さがない。
+   min-height: 0 にできるのは .home-shell の 100dvh 制約がグリッド行の高さを与えている前提で、
+   その制約を外す分岐（下部の max-width: 960px）では必ず最低高さを戻すこと。 */
 .board-stage {
   position: relative;
   overflow: hidden;
@@ -690,18 +693,6 @@ a {
 
   .home-shell:has(.board-canvas-shell) .board-stage {
     min-height: 36rem;
-  }
-}
-
-@media (max-height: 640px) {
-  .home-shell:has(.board-canvas-shell) {
-    height: auto;
-    overflow: visible;
-  }
-
-  .board-canvas-shell {
-    height: auto;
-    min-height: auto;
   }
 }
 
