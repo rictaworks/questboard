@@ -39,6 +39,13 @@ a {
   margin: 0 auto;
 }
 
+.home-shell:has(.board-canvas-shell) {
+  height: 100dvh;
+  box-sizing: border-box;
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .hero-card,
 .dev-auth-banner,
 .auth-panel {
@@ -251,7 +258,9 @@ a {
 .board-canvas-shell {
   display: grid;
   gap: var(--space-4);
-  min-height: calc(100dvh - 2rem);
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .board-canvas-header {
@@ -352,6 +361,7 @@ a {
   position: relative;
   overflow: hidden;
   min-height: 36rem;
+  align-self: stretch;
 }
 
 .board-scene {
@@ -663,7 +673,13 @@ a {
 }
 
 @media (max-width: 960px) {
+  .home-shell:has(.board-canvas-shell) {
+    height: auto;
+    overflow: visible;
+  }
+
   .board-canvas-shell {
+    height: auto;
     min-height: auto;
   }
 
