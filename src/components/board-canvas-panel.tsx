@@ -377,28 +377,52 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }, []);
 
   useEffect(() => {
-    const target = sceneRef.current;
+    const target = canvasRef.current;
     if (!target) {
       return undefined;
     }
 
     const controller = new CanvasInputController({
       onIntent(intent, event) {
-        if (intent.kind === 'zoom' && intent.source === 'wheel') {
-          const wheelEvent = event as WheelEvent;
+        if ((intent.kind === 'zoom' && intent.source === 'pinch') || (intent.kind === 'pan' && intent.source === 'touch')) {
+          if (interactionRef.current) {
+            interactionRef.current = null;
+            setInteraction(null);
+            setPreviewGeometry({});
+          }
+        }
+
+        if (intent.kind === 'zoom') {
           const stageRect = canvasRef.current?.getBoundingClientRect();
           if (!stageRect) {
             return;
           }
 
           hasAppliedInitialCameraRef.current = true;
+
+          let clientX: number;
+          let clientY: number;
+          let deltaY: number;
+
+          if (intent.source === 'wheel') {
+            const wheelEvent = event as WheelEvent;
+            clientX = wheelEvent.clientX - stageRect.left;
+            clientY = wheelEvent.clientY - stageRect.top;
+            deltaY = wheelEvent.deltaY;
+          } else {
+            // pinch
+            clientX = (intent.centerX ?? 0) - stageRect.left;
+            clientY = (intent.centerY ?? 0) - stageRect.top;
+            deltaY = -intent.amount * 3;
+          }
+
           analyticsTrackerRef.current?.track({
             eventId: 'camera_zoomed',
             attributes: {
-              source: 'wheel',
+              source: intent.source,
               zoom: controllerRef.current.zoomAtCursor({
-                deltaY: wheelEvent.deltaY,
-                cursor: {x: wheelEvent.clientX - stageRect.left, y: wheelEvent.clientY - stageRect.top},
+                deltaY,
+                cursor: {x: clientX, y: clientY},
                 viewport,
                 precision: intent.precision,
               }).zoom
@@ -417,7 +441,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           if (intent.source === 'wheel') {
             controllerRef.current.panBy(intent.deltaX, intent.deltaY);
           } else {
-            controllerRef.current.startInertia(intent.deltaX, intent.deltaY);
+            if (intent.phase === 'change') {
+              controllerRef.current.panBy(intent.deltaX, intent.deltaY);
+            } else if (intent.phase === 'end') {
+              if (intent.velocityX !== undefined && intent.velocityY !== undefined) {
+                controllerRef.current.startInertia(intent.velocityX, intent.velocityY);
+              }
+            }
           }
           setCameraState({...controllerRef.current.getState()});
         }
@@ -1281,7 +1311,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       </header>
 
       <div className="board-canvas-body">
-        <div className="board-stage" ref={canvasRef}>
+        <div className="board-stage" ref={canvasRef} style={{ touchAction: 'none' }}>
           <div
             aria-label={t('canvasLabel')}
             className="board-scene"

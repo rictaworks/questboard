@@ -35,6 +35,10 @@ export interface PointerInput {
   touchCount: number;
   movementX: number;
   movementY: number;
+  deltaX?: number;
+  deltaY?: number;
+  velocityX?: number;
+  velocityY?: number;
   elapsedTimeMs: number;
   hitTarget: HitTarget;
   modifiers: InputModifiers;
@@ -42,6 +46,10 @@ export interface PointerInput {
   palmContactAreaPx2?: number;
   activeTool?: 'default' | 'lasso';
   pinchDistanceDeltaPx?: number;
+  pinchDeltaPx?: number;
+  pinchCenterX?: number;
+  pinchCenterY?: number;
+  pinchZoomApplied?: boolean;
 }
 
 export interface WheelInput {
@@ -66,8 +74,16 @@ export interface KeyInput {
 export type CanvasInput = PointerInput | WheelInput | KeyInput;
 
 export type CanvasIntent =
-  | {kind: 'zoom'; source: 'wheel' | 'pinch'; amount: number; precision: boolean}
-  | {kind: 'pan'; source: 'wheel' | 'space' | 'button' | 'touch'; deltaX: number; deltaY: number}
+  | {kind: 'zoom'; source: 'wheel' | 'pinch'; amount: number; precision: boolean; centerX?: number; centerY?: number}
+  | {
+      kind: 'pan';
+      source: 'wheel' | 'space' | 'button' | 'touch';
+      phase?: InputPhase;
+      deltaX: number;
+      deltaY: number;
+      velocityX?: number;
+      velocityY?: number;
+    }
   | {kind: 'radial-menu'; source: 'contextmenu' | 'longpress'}
   | {kind: 'resize'; mode: 'resize' | 'rotate'}
   | {kind: 'connect'}
@@ -176,11 +192,27 @@ export function resolveCanvasIntent(
   }
 
   if (input.modifiers.spaceKey && input.buttons === PRIMARY_BUTTON_BITMASK) {
-    return {kind: 'pan', source: 'space', deltaX: input.movementX, deltaY: input.movementY};
+    return {
+      kind: 'pan',
+      source: 'space',
+      phase: input.phase,
+      deltaX: input.deltaX ?? input.movementX,
+      deltaY: input.deltaY ?? input.movementY,
+      velocityX: input.velocityX,
+      velocityY: input.velocityY,
+    };
   }
 
   if (input.buttons === AUXILIARY_BUTTON_BITMASK || input.buttons === SECONDARY_BUTTON_BITMASK) {
-    return {kind: 'pan', source: 'button', deltaX: input.movementX, deltaY: input.movementY};
+    return {
+      kind: 'pan',
+      source: 'button',
+      phase: input.phase,
+      deltaX: input.deltaX ?? input.movementX,
+      deltaY: input.deltaY ?? input.movementY,
+      velocityX: input.velocityX,
+      velocityY: input.velocityY,
+    };
   }
 
   if (input.hitTarget.kind === 'handle' && input.buttons === PRIMARY_BUTTON_BITMASK) {
@@ -327,7 +359,14 @@ export class CanvasInputController {
 
     if (event.type === 'pointercancel' || state.canceled) {
       this.resetLongPress();
+      this.dragButtons = 0;
+      this.dragPanApplied = false;
       return;
+    }
+
+    if (state.first) {
+      this.dragButtons = state.buttons;
+      this.dragPanApplied = false;
     }
 
     const pointerInput = this.buildPointerInput(state, event, state.last ? 'end' : state.first ? 'start' : 'change');
@@ -338,23 +377,39 @@ export class CanvasInputController {
 
     if (state.touches > MAX_SUPPORTED_TOUCH_COUNT) {
       this.resetLongPress();
+      this.dragButtons = 0;
       return;
     }
 
     if (this.longPressTriggered) {
       if (state.last) {
         this.resetLongPress();
+        this.dragButtons = 0;
+        this.dragPanApplied = false;
       }
       return;
     }
 
     if (state.last) {
       this.clearLongPressTimer();
+      this.dragButtons = 0;
+      this.dragPanApplied = false;
+      if (state.touches >= MULTI_TOUCH_THRESHOLD) {
+        return;
+      }
+      const intent = this.resolver.resolve(pointerInput);
       if (event.button === PRIMARY_BUTTON_INDEX && Math.hypot(pointerInput.movementX, pointerInput.movementY) <= this.resolverOptions.clickThresholdPx) {
-        const intent = this.resolver.resolve(pointerInput);
         this.emitIntent(intent, event);
+      } else {
+        if (intent.kind === 'pan' || intent.kind === 'move' || intent.kind === 'resize' || intent.kind === 'marquee' || intent.kind === 'connect') {
+          this.emitIntent(intent, event);
+        }
       }
 
+      return;
+    }
+
+    if (state.touches >= MULTI_TOUCH_THRESHOLD) {
       return;
     }
 
@@ -362,6 +417,7 @@ export class CanvasInputController {
       this.clearLongPressTimer();
       const intent = this.resolver.resolve(pointerInput);
       this.emitIntent(intent, event);
+      this.dragPanApplied = true;
     }
   };
   private readonly handlePinchState = (state: PinchGestureState) => {
@@ -372,37 +428,145 @@ export class CanvasInputController {
 
     if (event.type === 'pointercancel' || state.canceled) {
       this.pinchBaseDistance = null;
+      this.prevPinchDistance = null;
+      this.pinchPrevOrigin = null;
+      this.pinchPrevTime = null;
+      this.pinchStartTouchCount = null;
+      this.pinchLastVelocity = [0, 0];
+      this.pinchLastMoveTime = null;
+      this.pinchZoomApplied = false;
       return;
     }
 
     if (state.first) {
       this.pinchBaseDistance = state.da[0];
+      this.prevPinchDistance = state.da[0];
+      this.pinchPrevOrigin = state.origin;
+      this.pinchPrevTime = state.elapsedTime;
+      this.pinchStartTouchCount = state.touches;
+      this.pinchLastVelocity = [0, 0];
+      this.pinchLastMoveTime = null;
+      this.pinchZoomApplied = false;
     }
 
     const pinchDistance = state.da[0];
     const pinchDistanceDeltaPx = this.pinchBaseDistance == null ? 0 : pinchDistance - this.pinchBaseDistance;
-    const intent = this.resolver.resolve({
-      kind: 'pointer',
-      phase: state.last ? 'end' : 'change',
-      device: 'touch',
+    
+    let pinchDeltaPx = 0;
+    const isZoomActive = this.pinchZoomApplied || (Math.abs(pinchDistanceDeltaPx) > this.resolverOptions.pinchThresholdPx);
+
+    if (isZoomActive) {
+      if (!this.pinchZoomApplied) {
+        pinchDeltaPx = pinchDistanceDeltaPx;
+        this.pinchZoomApplied = true;
+      } else {
+        const prevDistance = this.prevPinchDistance ?? pinchDistance;
+        pinchDeltaPx = pinchDistance - prevDistance;
+      }
+      this.prevPinchDistance = state.last ? null : pinchDistance;
+    } else {
+      pinchDeltaPx = 0;
+      if (!this.pinchZoomApplied) {
+        this.prevPinchDistance = this.pinchBaseDistance;
+      }
+    }
+
+    const origin = state.origin;
+    const time = state.elapsedTime;
+    let pinchDeltaX = 0;
+    let pinchDeltaY = 0;
+    let velocityX = 0;
+    let velocityY = 0;
+
+    if (this.pinchPrevOrigin != null && this.pinchPrevTime != null) {
+      pinchDeltaX = origin[0] - this.pinchPrevOrigin[0];
+      pinchDeltaY = origin[1] - this.pinchPrevOrigin[1];
+      const deltaTime = time - this.pinchPrevTime;
+      if (deltaTime > 0) {
+        velocityX = (pinchDeltaX / deltaTime) * 16.6667;
+        velocityY = (pinchDeltaY / deltaTime) * 16.6667;
+
+        if (!state.last) {
+          if (pinchDeltaX !== 0 || pinchDeltaY !== 0) {
+            this.pinchLastMoveTime = time;
+          }
+          if (velocityX !== 0 || velocityY !== 0) {
+            this.pinchLastVelocity = [velocityX, velocityY];
+          }
+        }
+      }
+    }
+
+    if (state.last) {
+      const timeSinceLastMove = this.pinchLastMoveTime != null ? time - this.pinchLastMoveTime : Infinity;
+      if (timeSinceLastMove > 100) {
+        velocityX = 0;
+        velocityY = 0;
+      } else {
+        velocityX = this.pinchLastVelocity[0];
+        velocityY = this.pinchLastVelocity[1];
+      }
+    }
+
+    const touchCount = this.pinchStartTouchCount ?? state.touches;
+
+    this.pinchPrevOrigin = state.last ? null : origin;
+    this.pinchPrevTime = state.last ? null : time;
+
+    const baseInput = {
+      kind: 'pointer' as const,
+      phase: state.last ? ('end' as const) : ('change' as const),
+      device: 'touch' as const,
       buttons: 1,
-      touchCount: state.touches,
+      touchCount,
       movementX: state.movement[0],
       movementY: state.movement[1],
+      deltaX: pinchDeltaX,
+      deltaY: pinchDeltaY,
+      velocityX,
+      velocityY,
       elapsedTimeMs: state.elapsedTime,
       hitTarget: resolveHitTargetFromElement(event.target as Element | null),
       modifiers: this.readModifiers(event),
       selection: this.readSelection(),
       activeTool: this.getActiveTool(),
       pinchDistanceDeltaPx,
+      pinchDeltaPx,
+      pinchCenterX: state.origin[0],
+      pinchCenterY: state.origin[1],
+    };
+
+    let zoomIntent: CanvasIntent = { kind: 'ignore' };
+    if (isZoomActive) {
+      zoomIntent = this.resolver.resolve({
+        ...baseInput,
+        pinchZoomApplied: this.pinchZoomApplied,
+      });
+    }
+
+    const panIntent = this.resolver.resolve({
+      ...baseInput,
+      pinchDistanceDeltaPx: undefined,
+      pinchDeltaPx: undefined,
+      pinchZoomApplied: false,
     });
 
-    if (intent.kind !== 'ignore') {
-      this.onIntent(intent, event);
+    if (panIntent.kind === 'pan') {
+      this.onIntent(panIntent, event);
+    }
+    if (zoomIntent.kind === 'zoom') {
+      this.onIntent(zoomIntent, event);
     }
 
     if (state.last) {
       this.pinchBaseDistance = null;
+      this.prevPinchDistance = null;
+      this.pinchPrevOrigin = null;
+      this.pinchPrevTime = null;
+      this.pinchStartTouchCount = null;
+      this.pinchLastVelocity = [0, 0];
+      this.pinchLastMoveTime = null;
+      this.pinchZoomApplied = false;
     }
   };
   private readonly resolverOptions = DEFAULT_INPUT_INTENT_RESOLVER_OPTIONS;
@@ -411,7 +575,16 @@ export class CanvasInputController {
   private longPressArmed: PointerInput | null = null;
   private longPressTriggered = false;
   private pinchBaseDistance: number | null = null;
+  private prevPinchDistance: number | null = null;
+  private pinchPrevOrigin: [number, number] | null = null;
+  private pinchPrevTime: number | null = null;
+  private pinchStartTouchCount: number | null = null;
+  private pinchLastVelocity: [number, number] = [0, 0];
+  private pinchLastMoveTime: number | null = null;
+  private pinchZoomApplied = false;
+  private dragPanApplied = false;
   private spacePressed = false;
+  private dragButtons = 0;
 
   constructor(options: CanvasInputControllerOptions = {onIntent: () => {}}) {
     this.resolver = options.resolver ?? new InputIntentResolver();
@@ -468,6 +641,14 @@ export class CanvasInputController {
     this.target = null;
     this.resetLongPress();
     this.pinchBaseDistance = null;
+    this.prevPinchDistance = null;
+    this.pinchPrevOrigin = null;
+    this.pinchPrevTime = null;
+    this.pinchStartTouchCount = null;
+    this.pinchLastVelocity = [0, 0];
+    this.pinchLastMoveTime = null;
+    this.pinchZoomApplied = false;
+    this.dragPanApplied = false;
     this.spacePressed = false;
   }
 
@@ -478,14 +659,27 @@ export class CanvasInputController {
   }
 
   private buildPointerInput(state: DragGestureState, event: PointerEvent, phase: InputPhase): PointerInput {
+    const dirX = state.direction?.[0] ?? 0;
+    const dirY = state.direction?.[1] ?? 0;
+    const vx = state.velocity?.[0] ?? 0;
+    const vy = state.velocity?.[1] ?? 0;
+
+    const isFirstPanFrame = !this.dragPanApplied && Math.hypot(state.movement[0], state.movement[1]) > this.resolverOptions.clickThresholdPx;
+    const deltaX = isFirstPanFrame ? state.movement[0] : state.delta[0];
+    const deltaY = isFirstPanFrame ? state.movement[1] : state.delta[1];
+
     return {
       kind: 'pointer',
       phase,
       device: (event.pointerType === 'pen' ? 'pen' : event.pointerType === 'touch' ? 'touch' : 'mouse') as PointerInput['device'],
-      buttons: event.buttons ?? state.buttons,
+      buttons: phase === 'end' ? this.dragButtons : (event.buttons ?? state.buttons),
       touchCount: state.touches,
       movementX: state.movement[0],
       movementY: state.movement[1],
+      deltaX,
+      deltaY,
+      velocityX: vx * dirX * 16.6667,
+      velocityY: vy * dirY * 16.6667,
       elapsedTimeMs: state.elapsedTime,
       hitTarget: resolveHitTargetFromElement(event.target as Element | null),
       modifiers: this.readModifiers(event),
@@ -551,18 +745,39 @@ function resolveWheelIntent(input: WheelInput): CanvasIntent {
   }
 
   if (input.modifiers.shiftKey) {
-    return {kind: 'pan', source: 'wheel', deltaX: input.deltaY, deltaY: input.deltaX};
+    return {
+      kind: 'pan',
+      source: 'wheel',
+      deltaX: input.deltaY,
+      deltaY: input.deltaX,
+    };
   }
 
   return {kind: 'zoom', source: 'wheel', amount: input.deltaY, precision: false};
 }
 
 function resolveMultiTouchIntent(input: PointerInput, options: InputIntentResolverOptions): CanvasIntent {
-  if (input.pinchDistanceDeltaPx != null && Math.abs(input.pinchDistanceDeltaPx) > options.pinchThresholdPx) {
-    return {kind: 'zoom', source: 'pinch', amount: input.pinchDistanceDeltaPx, precision: false};
+  const isZooming = input.pinchZoomApplied || (input.pinchDistanceDeltaPx != null && Math.abs(input.pinchDistanceDeltaPx) > options.pinchThresholdPx);
+  if (isZooming) {
+    return {
+      kind: 'zoom',
+      source: 'pinch',
+      amount: input.pinchDeltaPx ?? input.pinchDistanceDeltaPx ?? 0,
+      precision: false,
+      centerX: input.pinchCenterX,
+      centerY: input.pinchCenterY,
+    };
   }
 
-  return {kind: 'pan', source: 'touch', deltaX: input.movementX, deltaY: input.movementY};
+  return {
+    kind: 'pan',
+    source: 'touch',
+    phase: input.phase,
+    deltaX: input.deltaX ?? input.movementX,
+    deltaY: input.deltaY ?? input.movementY,
+    velocityX: input.velocityX,
+    velocityY: input.velocityY,
+  };
 }
 
 function resolveObjectTapIntent(input: PointerInput): CanvasIntent {

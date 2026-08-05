@@ -365,6 +365,7 @@ a {
   position: relative;
   overflow: hidden;
   min-height: 0;
+  touch-action: none;
 }
 
 .board-scene {
