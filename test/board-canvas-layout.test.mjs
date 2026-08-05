@@ -236,6 +236,14 @@ test('スクロールするサイドバーパネルはキーボードで到達�
   }
 });
 
+test('キャンバスのズームは初期表示だけで設定され、リセットUI がある', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+  assert.match(source, /fitToContent\(contentBounds, viewport\)/, '初期カメラは fitToContent で決まる必要があります');
+  assert.match(source, /hasAppliedInitialCameraRef/, '初期倍率の再適用を抑止するフラグが必要です');
+  assert.match(source, /source: 'reset-button'/, 'ズームリセット時の追跡イベントが必要です');
+  assert.match(source, /t\('resetCamera'\)/, 'ズームリセット文言がローカライズされている必要があります');
+});
+
 test('高さ制約の解除はモバイル幅の分岐だけに限定され、そこでは .board-stage の最低高さが戻る', async () => {
   const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
 

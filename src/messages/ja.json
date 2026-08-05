@@ -66,6 +66,7 @@
     "minimapHeading": "ミニマップ",
     "selectionHeading": "選択中のオブジェクト",
     "refresh": "更新",
+    "resetCamera": "表示をリセット",
     "duplicate": "複製",
     "delete": "削除",
     "lockedByYou": "あなたがロック中",

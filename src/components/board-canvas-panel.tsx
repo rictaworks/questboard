@@ -176,6 +176,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
   const [restoreGateOpen, setRestoreGateOpen] = useState(false);
+  const hasAppliedInitialCameraRef = useRef(false);
   const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
     () => readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full'
   );
@@ -289,7 +290,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       return;
     }
 
+    if (hasAppliedInitialCameraRef.current) {
+      return;
+    }
+
     const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
+    if (contentBounds != null) {
+      hasAppliedInitialCameraRef.current = true;
+    }
     if (nextCamera.zoom !== cameraStateRef.current.zoom) {
       analyticsTrackerRef.current?.track({
         eventId: 'camera_zoomed',
@@ -1077,6 +1085,22 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     setCameraState({...controllerRef.current.getState()});
   }
 
+  function resetCamera() {
+    if (viewport.width <= 0 || viewport.height <= 0) {
+      return;
+    }
+
+    const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
+    analyticsTrackerRef.current?.track({
+      eventId: 'camera_zoomed',
+      attributes: {
+        source: 'reset-button',
+        zoom: nextCamera.zoom
+      }
+    });
+    setCameraState({...nextCamera});
+  }
+
   const minimap = resolveMinimapBounds(viewport);
   const viewportRect = resolveViewportRect(cameraState, viewport, contentBounds, minimap);
 
@@ -1142,6 +1166,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
               <option value="off">{t('intensityOff')}</option>
             </select>
           </div>
+          <button className="button button-secondary" onClick={resetCamera} type="button">
+            {t('resetCamera')}
+          </button>
           <button className="button button-secondary" onClick={onReloadBoard} type="button">
             {t('refresh')}
           </button>

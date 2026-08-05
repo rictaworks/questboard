@@ -66,6 +66,7 @@
     "minimapHeading": "Minimap",
     "selectionHeading": "Selected object",
     "refresh": "Refresh",
+    "resetCamera": "Reset view",
     "duplicate": "Duplicate",
     "delete": "Delete",
     "lockedByYou": "Locked by you",

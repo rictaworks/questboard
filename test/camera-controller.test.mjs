@@ -324,6 +324,36 @@ test('resolveNewObjectGeometry centers new objects and offsets overlaps', () => 
   });
 });
 
+test('fitToContent limits zoom to options.fitMaxZoom for small boards/objects', () => {
+  const smallBounds = {left: 10, top: 10, right: 20, bottom: 20};
+  const largeViewport = {width: 1000, height: 1000};
+
+  // Verify default value (1.0)
+  const resultDefault = fitToContent(smallBounds, largeViewport);
+  assert.ok(resultDefault.zoom <= 1.0, `Zoom should be at most 1.0 for small content bounds by default (actual: ${resultDefault.zoom})`);
+
+  // Verify custom value (0.5)
+  const options = {
+    ...DEFAULT_CAMERA_CONTROLLER_OPTIONS,
+    fitMaxZoom: 0.5
+  };
+  const resultCustom = fitToContent(smallBounds, largeViewport, options);
+  assert.ok(resultCustom.zoom <= 0.5, `Zoom should be at most 0.5 when fitMaxZoom is configured to 0.5 (actual: ${resultCustom.zoom})`);
+});
+
+test('fitToContent respects minZoom even if it exceeds the fitMaxZoom limit', () => {
+  const smallBounds = {left: 10, top: 10, right: 20, bottom: 20};
+  const largeViewport = {width: 1000, height: 1000};
+  const options = {
+    ...DEFAULT_CAMERA_CONTROLLER_OPTIONS,
+    minZoom: 2.0,
+    maxZoom: 4.0,
+    fitMaxZoom: 1.0
+  };
+  const result = fitToContent(smallBounds, largeViewport, options);
+  assert.equal(result.zoom, 2.0, `Zoom should be normalized to minZoom (2.0) rather than being inverted by fitMaxZoom limit`);
+});
+
 function activeRange(zoom) {
   const width = 1000;
   const height = 1000;
