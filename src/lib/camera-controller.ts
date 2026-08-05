@@ -201,10 +201,11 @@ export function fitToContent(
   const contentHeight = Math.max(contentBounds.bottom - contentBounds.top, 1);
   const marginWidth = contentWidth * options.boundaryMarginRatio * 2;
   const marginHeight = contentHeight * options.boundaryMarginRatio * 2;
+  const maxLimit = Math.max(options.minZoom, Math.min(options.maxZoom, 1.0));
   const zoom = clamp(
     Math.min(viewport.width / (contentWidth + marginWidth), viewport.height / (contentHeight + marginHeight)),
     options.minZoom,
-    options.maxZoom
+    maxLimit
   );
 
   return centerCameraOnBounds(contentBounds, zoom);
