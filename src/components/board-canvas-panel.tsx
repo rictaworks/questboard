@@ -7,7 +7,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, t
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
-import {CameraController, createCameraState, fitToContent, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
+import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -295,7 +295,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     }
 
     const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
-    hasAppliedInitialCameraRef.current = true;
+    if (contentBounds != null) {
+      hasAppliedInitialCameraRef.current = true;
+    }
     if (nextCamera.zoom !== cameraStateRef.current.zoom) {
       analyticsTrackerRef.current?.track({
         eventId: 'camera_zoomed',
@@ -1088,7 +1090,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       return;
     }
 
-    const nextCamera = fitToContent(contentBounds, viewport);
+    const nextCamera = controllerRef.current.fitToContent(contentBounds, viewport);
     analyticsTrackerRef.current?.track({
       eventId: 'camera_zoomed',
       attributes: {
@@ -1096,13 +1098,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         zoom: nextCamera.zoom
       }
     });
-    controllerRef.current.setState({
-      ...nextCamera,
-      velocityX: 0,
-      velocityY: 0,
-      focus: null,
-    });
-    setCameraState(controllerRef.current.getState());
+    setCameraState({...nextCamera});
   }
 
   const minimap = resolveMinimapBounds(viewport);
