@@ -30,6 +30,7 @@ const {
   panCamera,
   startInertia,
   resolveNewObjectGeometry,
+  tickCamera,
 } = loadedModule;
 
 const viewport = {width: 200, height: 200};
@@ -258,6 +259,35 @@ test('pan to inertia maintains directional continuity across zoom levels', () =>
     velocityX: 0,
     velocityY: 0,
     focus: null,
+  });
+
+  test('wheel zoom, drag pan, and inertia can be driven through controller commands', () => {
+    const controller = new CameraController({
+      x: 200,
+      y: 300,
+      zoom: 1,
+      velocityX: 0,
+      velocityY: 0,
+      focus: null,
+    });
+
+    const zoomed = controller.zoomAtCursor({
+      deltaY: -120,
+      cursor: {x: 50, y: 50},
+      viewport: {width: 100, height: 100},
+    });
+    assert.ok(zoomed.zoom > 1);
+
+    const panned = controller.panBy(20, 10);
+    assert.equal(panned.x, zoomed.x - 20 / zoomed.zoom);
+    assert.equal(panned.y, zoomed.y - 10 / zoomed.zoom);
+
+    const inertial = controller.startInertia(60, 30);
+    assert.equal(inertial.velocityX, -60 / panned.zoom);
+    assert.equal(inertial.velocityY, -30 / panned.zoom);
+
+    const ticked = tickCamera(inertial, 16, {contentBounds: null, viewport});
+    assert.ok(ticked.x !== inertial.x || ticked.y !== inertial.y);
   });
 
   // Dragging right on screen (+20px) moves camera left in world space (-10px)

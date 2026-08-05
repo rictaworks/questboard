@@ -7,7 +7,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, t
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
-import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
+import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE, onCanvasWheel} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -29,6 +29,7 @@ import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
 import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
+import {CanvasInputController, resolveHitTargetFromElement} from '@/lib/input-intent-resolver';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -145,7 +146,11 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
 export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const sceneRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
+  const canvasInputControllerRef = useRef<CanvasInputController | null>(null);
+  const cameraRafRef = useRef<number | null>(null);
+  const cameraTickTimeRef = useRef<number | null>(null);
   const interactionRef = useRef<Interaction>(null);
   const toastIdRef = useRef(0);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -278,6 +283,43 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }, [cameraState]);
 
   useEffect(() => {
+    if (viewport.width <= 0 || viewport.height <= 0) {
+      return;
+    }
+
+    if (cameraRafRef.current != null) {
+      return;
+    }
+
+    const tick = (time: number) => {
+      const lastTick = cameraTickTimeRef.current ?? time;
+      cameraTickTimeRef.current = time;
+      const nextCamera = controllerRef.current.tick(time - lastTick, {contentBounds, viewport});
+      if (
+        nextCamera.x !== cameraStateRef.current.x
+        || nextCamera.y !== cameraStateRef.current.y
+        || nextCamera.zoom !== cameraStateRef.current.zoom
+        || nextCamera.velocityX !== cameraStateRef.current.velocityX
+        || nextCamera.velocityY !== cameraStateRef.current.velocityY
+        || nextCamera.focus !== cameraStateRef.current.focus
+      ) {
+        setCameraState({...nextCamera});
+      }
+      cameraRafRef.current = window.requestAnimationFrame(tick);
+    };
+
+    cameraRafRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (cameraRafRef.current != null) {
+        window.cancelAnimationFrame(cameraRafRef.current);
+        cameraRafRef.current = null;
+      }
+      cameraTickTimeRef.current = null;
+    };
+  }, [contentBounds, viewport]);
+
+  useEffect(() => {
     objectsRef.current = objects;
   }, [objects]);
 
@@ -333,6 +375,65 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       resizeObserverRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const target = sceneRef.current;
+    if (!target) {
+      return undefined;
+    }
+
+    const controller = new CanvasInputController({
+      onIntent(intent, event) {
+        if (intent.kind === 'zoom' && intent.source === 'wheel') {
+          const wheelEvent = event as WheelEvent;
+          const stageRect = canvasRef.current?.getBoundingClientRect();
+          if (!stageRect) {
+            return;
+          }
+
+          hasAppliedInitialCameraRef.current = true;
+          analyticsTrackerRef.current?.track({
+            eventId: 'camera_zoomed',
+            attributes: {
+              source: 'wheel',
+              zoom: controllerRef.current.zoomAtCursor({
+                deltaY: wheelEvent.deltaY,
+                cursor: {x: wheelEvent.clientX - stageRect.left, y: wheelEvent.clientY - stageRect.top},
+                viewport,
+                precision: intent.precision,
+              }).zoom
+            }
+          });
+          setCameraState({...controllerRef.current.getState()});
+          return;
+        }
+
+        if (intent.kind === 'pan') {
+          hasAppliedInitialCameraRef.current = true;
+          analyticsTrackerRef.current?.track({
+            eventId: 'camera_panned',
+            attributes: {source: intent.source}
+          });
+          if (intent.source === 'wheel') {
+            controllerRef.current.panBy(intent.deltaX, intent.deltaY);
+          } else {
+            controllerRef.current.startInertia(intent.deltaX, intent.deltaY);
+          }
+          setCameraState({...controllerRef.current.getState()});
+        }
+      },
+      getSelection: () => selection.map(String),
+      getActiveTool: () => (interactionRef.current?.kind ? 'default' : 'default')
+    });
+
+    canvasInputControllerRef.current = controller;
+    void controller.attach(target);
+
+    return () => {
+      canvasInputControllerRef.current = null;
+      controller.detach();
+    };
+  }, [selection, viewport]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -879,6 +980,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }), [objects, previewGeometry]);
 
   function handleBackgroundPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const hitTarget = resolveHitTargetFromElement(event.target as Element | null);
+    if (hitTarget.kind !== 'blank') {
+      return;
+    }
     if (event.button !== 0 || event.target !== event.currentTarget) {
       return;
     }
@@ -1180,6 +1285,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           <div
             aria-label={t('canvasLabel')}
             className="board-scene"
+            ref={sceneRef}
             onContextMenu={() => {
               analyticsTrackerRef.current?.track({
                 eventId: 'radial_opened',
