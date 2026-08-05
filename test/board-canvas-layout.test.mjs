@@ -241,7 +241,6 @@ test('キャンバスのズームは初期表示だけで設定され、リセ�
   assert.match(source, /fitToContent\(contentBounds, viewport\)/, '初期カメラは fitToContent で決まる必要があります');
   assert.match(source, /hasAppliedInitialCameraRef/, '初期倍率の再適用を抑止するフラグが必要です');
   assert.match(source, /source: 'reset-button'/, 'ズームリセット時の追跡イベントが必要です');
-  assert.match(source, /resetCamera/, 'ズームリセットボタンが必要です');
   assert.match(source, /t\('resetCamera'\)/, 'ズームリセット文言がローカライズされている必要があります');
 });
 

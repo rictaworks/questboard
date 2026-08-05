@@ -47,7 +47,7 @@ export interface CameraControllerOptions {
   wheelZoomExponent: number;
   precisionWheelZoomExponent: number;
   frameDurationMs: number;
-  initialFitMaxZoom: number;
+  fitMaxZoom: number;
 }
 
 export const DEFAULT_CAMERA_CONTROLLER_OPTIONS: CameraControllerOptions = {
@@ -60,7 +60,7 @@ export const DEFAULT_CAMERA_CONTROLLER_OPTIONS: CameraControllerOptions = {
   wheelZoomExponent: 0.0015,
   precisionWheelZoomExponent: 0.003,
   frameDurationMs: 1000 / 60,
-  initialFitMaxZoom: 1.0,
+  fitMaxZoom: 1.0,
 };
 
 export interface CanvasWheelCameraInput {
@@ -203,7 +203,7 @@ export function fitToContent(
   const contentHeight = Math.max(contentBounds.bottom - contentBounds.top, 1);
   const marginWidth = contentWidth * options.boundaryMarginRatio * 2;
   const marginHeight = contentHeight * options.boundaryMarginRatio * 2;
-  const maxLimit = Math.max(options.minZoom, Math.min(options.maxZoom, options.initialFitMaxZoom));
+  const maxLimit = Math.max(options.minZoom, Math.min(options.maxZoom, options.fitMaxZoom));
   const zoom = clamp(
     Math.min(viewport.width / (contentWidth + marginWidth), viewport.height / (contentHeight + marginHeight)),
     options.minZoom,
