@@ -42,7 +42,6 @@ import {
   resolveGesturePanSource,
   resolveReleaseInertiaVelocity,
   trackWithLeadingThrottle,
-  PINCH_ZOOM_COEFFICIENT,
   WHEEL_ANALYTICS_THROTTLE_MS,
   type GesturePanTracker,
   type GestureZoomTracker,
@@ -216,6 +215,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }, [selection]);
 
   const cameraStateRef = useRef<CameraState>(cameraState);
+  // RAF ループと入力コントローラは effect の再実行で作り直すとジェスチャが切れるため、
+  // 毎フレーム変わりうる値は ref 経由で読む。
+  const viewportRef = useRef(viewport);
+  const contentBoundsRef = useRef<CameraBounds | null>(null);
+  // 進行中のジェスチャ数。ドラッグとピンチは同時に走り、ピンチだけ先に終わって
+  // 1本指のドラッグが続くことがあるため、真偽値ではなく開始と終了の対で数える。
+  const activeGestureCountRef = useRef(0);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
@@ -293,6 +299,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const currentUserId = boardState.membership.userId;
   const roleCode = boardState.membership.role.code;
   const contentBounds = useMemo<CameraBounds | null>(() => resolveContentBounds(objects), [objects]);
+  // ステージ実寸が確定するまで RAF もフィットも走らせない。判定だけを依存配列に置き、
+  // 毎フレーム再生成される viewport / contentBounds でループを作り直さない。
+  const isViewportMeasured = viewport.width > 0 && viewport.height > 0;
   const selectedObjects = useMemo(
     () => objects.filter((object) => selection.includes(object.id)),
     [objects, selection]
@@ -308,7 +317,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   }, [cameraState]);
 
   useEffect(() => {
-    if (viewport.width <= 0 || viewport.height <= 0) {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
+  useEffect(() => {
+    contentBoundsRef.current = contentBounds;
+  }, [contentBounds]);
+
+  useEffect(() => {
+    if (!isViewportMeasured) {
       return;
     }
 
@@ -319,7 +336,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     const tick = (time: number) => {
       const lastTick = cameraTickTimeRef.current ?? time;
       cameraTickTimeRef.current = time;
-      const nextCamera = controllerRef.current.tick(time - lastTick, {contentBounds, viewport});
+      const nextCamera = controllerRef.current.tick(time - lastTick, {
+        contentBounds: contentBoundsRef.current,
+        viewport: viewportRef.current,
+        // ポインタを止めたまま保持している間も操作中として扱う。指を離すまで
+        // 境界の引き戻しを抑止しないと、ドラッグに逆らって戻ってしまう。
+        interacting: activeGestureCountRef.current > 0,
+      });
       if (
         nextCamera.x !== cameraStateRef.current.x
         || nextCamera.y !== cameraStateRef.current.y
@@ -342,7 +365,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       }
       cameraTickTimeRef.current = null;
     };
-  }, [contentBounds, viewport]);
+  }, [isViewportMeasured]);
 
   useEffect(() => {
     objectsRef.current = objects;
@@ -407,10 +430,19 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       return undefined;
     }
 
-    // effect のライフサイクルに紐づく。viewport 変更で作り直す際は cleanup で
-    // 保留分を flush してから破棄するため、状態を跨いで持ち越す必要はない。
+    // effect のライフサイクルに紐づく。アンマウント時は cleanup で保留分を
+    // flush してから破棄するため、状態を跨いで持ち越す必要はない。
     const wheelZoomTrackState: ThrottledTrackState = createThrottledTrackState();
     const wheelPanTrackState: ThrottledTrackState = createThrottledTrackState();
+
+    // 初期フィットは「ユーザーが一度もカメラを触っていない場合」に限る。
+    // boardData は取得済みでしか渡らない（board-invite-panel が if (boardData) で
+    // 出し分ける）ため、contentBounds が null なのは「読み込み前」ではなく
+    // 「オブジェクトが0件のボード」を意味する。ここで条件を付けると、空ボードで
+    // 位置を合わせたあと最初のオブジェクトが届いた瞬間にカメラを奪ってしまう。
+    const markInitialCameraApplied = (): void => {
+      hasAppliedInitialCameraRef.current = true;
+    };
 
     // 終端 intent は Space の先離しや pointercancel で届かないため、実移動を伴う
     // 最初の intent でジェスチャ単位に1回だけ記録する。判定はブリッジ層が持つ。
@@ -452,23 +484,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
             return;
           }
 
-          hasAppliedInitialCameraRef.current = true;
-
-          let clientX: number;
-          let clientY: number;
-          let deltaY: number;
-
-          if (intent.source === 'wheel') {
-            const wheelEvent = event as WheelEvent;
-            clientX = wheelEvent.clientX - stageRect.left;
-            clientY = wheelEvent.clientY - stageRect.top;
-            deltaY = wheelEvent.deltaY;
-          } else {
-            // pinch
-            clientX = (intent.centerX ?? 0) - stageRect.left;
-            clientY = (intent.centerY ?? 0) - stageRect.top;
-            deltaY = -intent.amount * PINCH_ZOOM_COEFFICIENT;
-          }
+          markInitialCameraApplied();
 
           // 1. Concurrently apply pan delta if provided in the zoom intent (avoiding double setState)
           if (intent.panDeltaX !== undefined && intent.panDeltaY !== undefined && (intent.panDeltaX !== 0 || intent.panDeltaY !== 0)) {
@@ -477,12 +493,25 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           trackGesturePan(intent);
 
           // 2. Apply zoom transformation
-          const nextState = controllerRef.current.zoomAtCursor({
-            deltaY,
-            cursor: {x: clientX, y: clientY},
-            viewport,
-            precision: intent.precision,
-          });
+          // ホイールは deltaY の指数変換、ピンチは指間距離の倍率をそのまま使う。
+          // 片方の感触定数がもう片方の感度に影響しないよう、入口を分けている。
+          let nextState: CameraState;
+          if (intent.source === 'wheel') {
+            const wheelEvent = event as WheelEvent;
+            nextState = controllerRef.current.zoomAtCursor({
+              deltaY: wheelEvent.deltaY,
+              cursor: {x: wheelEvent.clientX - stageRect.left, y: wheelEvent.clientY - stageRect.top},
+              viewport: viewportRef.current,
+              precision: intent.precision,
+            });
+          } else {
+            const pinch = resolvePinchZoomInput(intent);
+            nextState = controllerRef.current.zoomByScale({
+              scale: pinch.scale,
+              cursor: {x: pinch.centerX - stageRect.left, y: pinch.centerY - stageRect.top},
+              viewport: viewportRef.current,
+            });
+          }
 
           // Debounce / throttle analytics to avoid backend flooding
           if (intent.source === 'pinch') {
@@ -517,7 +546,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         }
 
         if (intent.kind === 'pan') {
-          hasAppliedInitialCameraRef.current = true;
+          markInitialCameraApplied();
 
           // Debounce / throttle analytics to avoid backend flooding
           if (intent.source !== 'wheel') {
@@ -550,12 +579,19 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       // 「ジェスチャ単位で1回」の境界は開始側に置く。終端 intent は Space の
       // 先離しやピンチズームへの移行で届かないことがあり、境界として使えない。
       onGestureStart() {
+        activeGestureCountRef.current += 1;
         resetGesturePan(gesturePanTrackerRef.current);
         resetGestureZoom(gestureZoomTrackerRef.current);
       },
+      // 正常終了。開始と対で減らし、下限は 0 に留めて取りこぼしでも負にしない。
+      onGestureEnd() {
+        activeGestureCountRef.current = Math.max(0, activeGestureCountRef.current - 1);
+      },
       // pointercancel や detach では終端 intent が届かない。パンは記録済み
       // フラグを戻して持ち越しを断ち、ズームは控えていた倍率をここで送出する。
+      // キャンセルは全ポインタの中断を意味するため、対の数え上げごと破棄する。
       onGestureCancel() {
+        activeGestureCountRef.current = 0;
         resetGesturePan(gesturePanTrackerRef.current);
         trackGestureZoom();
       },
@@ -568,11 +604,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
 
     return () => {
       canvasInputControllerRef.current = null;
+      activeGestureCountRef.current = 0;
       controller.detach();
       flushThrottledTrack(wheelZoomTrackState, 'camera_zoomed');
       flushThrottledTrack(wheelPanTrackState, 'camera_panned');
     };
-  }, [viewport]);
+    // viewport を依存に置くとリサイズのたびにコントローラを作り直し、進行中の
+    // ジェスチャのポインタが失われる。可変値は viewportRef 経由で読む。
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1713,6 +1752,25 @@ function buildMutationRequest(
     default:
       return {url: `${prefix}/${action}`, method: 'PATCH', headers: {'Content-Type': 'application/json'}};
   }
+}
+
+// ピンチのズーム入力を取り出す。倍率と中心のどちらかが欠けた intent は、
+// カメラ側で暗黙の既定値に置き換えると原因不明のズレになるため受け付けない。
+function resolvePinchZoomInput(intent: CanvasIntent): {scale: number; centerX: number; centerY: number} {
+  if (intent.kind !== 'zoom' || intent.source !== 'pinch') {
+    throw new Error(`resolvePinchZoomInput requires a pinch zoom intent, received kind=${intent.kind}`);
+  }
+
+  const {scale, centerX, centerY} = intent;
+  if (scale === undefined || !Number.isFinite(scale) || scale <= 0) {
+    throw new Error(`pinch zoom intent carried an unusable scale: ${String(scale)}`);
+  }
+
+  if (centerX === undefined || centerY === undefined) {
+    throw new Error('pinch zoom intent is missing its gesture center');
+  }
+
+  return {scale, centerX, centerY};
 }
 
 function resolveContentBounds(objects: BoardCanvasObject[]): CameraBounds | null {

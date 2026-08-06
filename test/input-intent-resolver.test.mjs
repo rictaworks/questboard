@@ -145,7 +145,7 @@ test('resolveCanvasIntent returns the expected intent for key F1 scenarios', () 
   const cases = [
     [{kind: 'wheel', phase: 'wheel', deltaX: 0, deltaY: -120, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'zoom', source: 'wheel', amount: -120, precision: false}],
     [{kind: 'wheel', phase: 'wheel', deltaX: 0, deltaY: -1, hitTarget: blank, modifiers: modifiers({ctrlKey: true}), selection: selected}, {kind: 'zoom', source: 'wheel', amount: -1, precision: true}],
-    [{kind: 'wheel', phase: 'wheel', deltaX: 12, deltaY: -3, hitTarget: blank, modifiers: modifiers({shiftKey: true}), selection: selected}, {kind: 'pan', source: 'wheel', deltaX: -3, deltaY: 12}],
+    [{kind: 'wheel', phase: 'wheel', deltaX: 12, deltaY: -3, hitTarget: blank, modifiers: modifiers({shiftKey: true}), selection: selected}, {kind: 'pan', source: 'wheel', deltaX: 12, deltaY: 0}],
     [{kind: 'pointer', phase: 'change', device: 'mouse', buttons: 1, touchCount: 1, movementX: 20, movementY: 4, elapsedTimeMs: 20, hitTarget: blank, modifiers: modifiers({spaceKey: true}), selection: selected}, {kind: 'pan', source: 'space', phase: 'change', deltaX: 20, deltaY: 4, velocityX: undefined, velocityY: undefined}],
     [{kind: 'pointer', phase: 'change', device: 'mouse', buttons: 4, touchCount: 1, movementX: 15, movementY: 0, elapsedTimeMs: 20, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'pan', source: 'button', phase: 'change', deltaX: 15, deltaY: 0, velocityX: undefined, velocityY: undefined}],
     [{kind: 'pointer', phase: 'change', device: 'mouse', buttons: 1, touchCount: 1, movementX: 30, movementY: 10, elapsedTimeMs: 40, hitTarget: handle, modifiers: modifiers(), selection: selected}, {kind: 'resize', mode: 'rotate'}],
@@ -154,7 +154,7 @@ test('resolveCanvasIntent returns the expected intent for key F1 scenarios', () 
     [{kind: 'pointer', phase: 'end', device: 'mouse', buttons: 0, touchCount: 1, movementX: 1, movementY: 1, elapsedTimeMs: 60, hitTarget: object, modifiers: modifiers({shiftKey: true}), selection: selected}, {kind: 'select', mode: 'remove'}],
     [{kind: 'pointer', phase: 'end', device: 'mouse', buttons: 0, touchCount: 1, movementX: 1, movementY: 1, elapsedTimeMs: 60, hitTarget: blank, modifiers: modifiers(), selection: {selectedIds: ['node-1']}}, {kind: 'select', mode: 'clear'}],
     [{kind: 'pointer', phase: 'change', device: 'touch', buttons: 1, touchCount: 2, movementX: 18, movementY: 2, elapsedTimeMs: 25, hitTarget: blank, modifiers: modifiers(), selection: selected, activeTool: 'lasso'}, {kind: 'pan', source: 'touch', phase: 'change', deltaX: 18, deltaY: 2, velocityX: undefined, velocityY: undefined}],
-    [{kind: 'pointer', phase: 'change', device: 'touch', buttons: 1, touchCount: 2, movementX: 18, movementY: 2, elapsedTimeMs: 25, hitTarget: blank, modifiers: modifiers(), selection: selected, pinchDistanceDeltaPx: 14}, {kind: 'zoom', source: 'pinch', amount: 14, precision: false, centerX: undefined, centerY: undefined, phase: 'change', panDeltaX: 18, panDeltaY: 2, velocityX: undefined, velocityY: undefined}],
+    [{kind: 'pointer', phase: 'change', device: 'touch', buttons: 1, touchCount: 2, movementX: 18, movementY: 2, elapsedTimeMs: 25, hitTarget: blank, modifiers: modifiers(), selection: selected, pinchDistanceDeltaPx: 14}, {kind: 'zoom', source: 'pinch', amount: 14, scale: undefined, precision: false, centerX: undefined, centerY: undefined, phase: 'change', panDeltaX: 18, panDeltaY: 2, velocityX: undefined, velocityY: undefined}],
     [{kind: 'pointer', phase: 'longpress', device: 'mouse', buttons: 1, touchCount: 1, movementX: 1, movementY: 1, elapsedTimeMs: 500, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'radial-menu', source: 'longpress'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: text, modifiers: modifiers(), selection: selected}, {kind: 'edit-text'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'create-note'}],
@@ -194,7 +194,7 @@ test('CanvasInputController routes gestures, wheel, keyboard, and cancellation',
   assert.deepEqual(intents.at(-1), {kind: 'radial-menu', source: 'contextmenu'});
 
   intents.length = 0;
-  canvas.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
   canvas.nextHitTarget = null;
   canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 1, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
   canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 1, pointerType: 'mouse', buttons: 1, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
@@ -207,7 +207,7 @@ test('CanvasInputController routes gestures, wheel, keyboard, and cancellation',
   assert.equal(endIntent.kind, 'pan');
   assert.ok(endIntent.velocityX !== undefined);
   assert.ok(endIntent.velocityY !== undefined);
-  canvas.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
 
   intents.length = 0;
   canvas.nextHitTarget = new FakeHitElement({'data-obj-id': 'node-1'});
@@ -557,7 +557,7 @@ test('a space pan whose key is released before pointerup emits no terminal pan i
   });
   await controller.attach(canvas);
 
-  canvas.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
   canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 70, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0}));
   canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 70, pointerType: 'mouse', buttons: 1, button: 0, clientX: 40, clientY: 12}));
 
@@ -567,7 +567,7 @@ test('a space pan whose key is released before pointerup emits no terminal pan i
   );
 
   // 指を離す前に Space を離すと、終端では space パンとして解決されない
-  canvas.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
   canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 70, pointerType: 'mouse', buttons: 0, button: 0, clientX: 40, clientY: 12}));
 
   assert.equal(
@@ -616,13 +616,13 @@ test('a space pan is recorded exactly once even when the key is released first',
   const canvas = new FakeHitElement();
   const {controller, panned} = await attachPanRecorder(canvas);
 
-  canvas.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
   canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 100, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0}));
   canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 100, pointerType: 'mouse', buttons: 1, button: 0, clientX: 40, clientY: 12}));
   canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 100, pointerType: 'mouse', buttons: 1, button: 0, clientX: 80, clientY: 30}));
 
   // Space を先に離してから指を離す（終端 intent は pan にならない）
-  canvas.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
   canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 100, pointerType: 'mouse', buttons: 0, button: 0, clientX: 80, clientY: 30}));
 
   assert.deepEqual(panned, ['space'], '終端 intent が無くても1回だけ記録されること');
@@ -858,7 +858,7 @@ test('space key state resets on window blur to avoid stuck pan mode', async () =
 
   await controller.attach(canvas);
 
-  canvas.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
   window.dispatchEvent(new Event('blur'));
 
   canvas.nextHitTarget = null;
@@ -887,3 +887,360 @@ function wait(ms) {
     setTimeout(resolve, ms);
   });
 }
+
+// --- PR #114 レビュー指摘の回帰テスト -------------------------------------
+
+test('Space キーは window で拾うため、フォーカスできないキャンバスでもパンできる', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+
+  // キャンバスは tabIndex を持たずフォーカスを得られない。キーイベントは window にしか届かない。
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+
+  canvas.nextHitTarget = null;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 30, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 30, pointerType: 'mouse', buttons: 1, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(intents.at(-1)?.kind, 'pan', 'Space+ドラッグはパンになる（marquee ではない）');
+  assert.equal(intents.at(-1)?.source, 'space');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 30, pointerType: 'mouse', buttons: 0, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keyup', {key: ' '}));
+  controller.detach();
+});
+
+test('入力欄での Space はパンモードに入らず、既定動作も奪わない', async () => {
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({onIntent() {}});
+  await controller.attach(canvas);
+
+  const textField = {tagName: 'INPUT', isContentEditable: false};
+  const keyEvent = new FakeKeyboardEvent('keydown', {key: ' '});
+  Object.defineProperty(keyEvent, 'target', {value: textField, configurable: true});
+  let prevented = false;
+  keyEvent.preventDefault = () => {
+    prevented = true;
+  };
+  globalThis.window.dispatchEvent(keyEvent);
+
+  assert.equal(prevented, false, '入力欄のスペース入力を握りつぶさない');
+
+  const intents = [];
+  const observed = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+  controller.detach();
+  await observed.attach(canvas);
+
+  canvas.nextHitTarget = null;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 31, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 31, pointerType: 'mouse', buttons: 1, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(intents.at(-1)?.kind, 'marquee', '入力欄の Space ではパンモードにならない');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 31, pointerType: 'mouse', buttons: 0, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  observed.detach();
+});
+
+test('移動を伴わない右クリックの解放はパン intent を出さない', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 32, pointerType: 'mouse', buttons: 2, button: 2, clientX: 10, clientY: 10, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 32, pointerType: 'mouse', buttons: 0, button: 2, clientX: 10, clientY: 10, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(intents.filter((intent) => intent.kind === 'pan').length, 0, '押していないボタンでのパンを作らない');
+
+  // 実際に動かした中ボタンドラッグは従来どおりパンとして終端まで解決する
+  intents.length = 0;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 33, pointerType: 'mouse', buttons: 4, button: 1, clientX: 10, clientY: 10, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 33, pointerType: 'mouse', buttons: 4, button: 1, clientX: 60, clientY: 10, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 33, pointerType: 'mouse', buttons: 0, button: 1, clientX: 60, clientY: 10, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  const endPan = intents.find((intent) => intent.kind === 'pan' && intent.phase === 'end');
+  assert.ok(endPan !== undefined, '実移動を伴う中ボタンドラッグは終端まで pan として届く');
+
+  controller.detach();
+});
+
+test('2本指ジェスチャ中は長押しが発火せず、指を減らしても入力が固まらない', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = new FakeHitElement({'data-obj-id': 'node-9'});
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 40, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 41, pointerType: 'touch', buttons: 1, button: 0, clientX: 60, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 41, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 長押し判定時間を超えて2本指操作を続ける
+  await wait(600);
+
+  assert.equal(
+    intents.filter((intent) => intent.kind === 'radial-menu').length,
+    0,
+    '2本指操作中に長押しメニューを出さない'
+  );
+
+  // 1本離して残る指でドラッグを続けても intent が出続ける
+  intents.length = 0;
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 41, pointerType: 'touch', buttons: 0, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 40, pointerType: 'touch', buttons: 1, button: 0, clientX: 130, clientY: 70, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.ok(intents.length > 0, '指を減らしたあとも入力が凍結しない');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 40, pointerType: 'touch', buttons: 0, button: 0, clientX: 130, clientY: 70, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  controller.detach();
+});
+
+test('shift+ホイールは軸を入れ替えず横方向のパンになる', () => {
+  const shift = modifiers({shiftKey: true});
+
+  // ブラウザがノッチを deltaX へ付け替えて報告する場合
+  assert.deepEqual(
+    resolveCanvasIntent({kind: 'wheel', phase: 'wheel', deltaX: 100, deltaY: 0, modifiers: shift, hitTarget: {kind: 'blank'}, selection: {selectedIds: []}}),
+    {kind: 'pan', source: 'wheel', deltaX: 100, deltaY: 0}
+  );
+
+  // 付け替えずに deltaY のまま報告する場合も横パンに揃える
+  assert.deepEqual(
+    resolveCanvasIntent({kind: 'wheel', phase: 'wheel', deltaX: 0, deltaY: 100, modifiers: shift, hitTarget: {kind: 'blank'}, selection: {selectedIds: []}}),
+    {kind: 'pan', source: 'wheel', deltaX: 100, deltaY: 0}
+  );
+
+  // トラックパッドが両軸に値を乗せる場合は、絶対値の大きい主軸を採用する
+  assert.deepEqual(
+    resolveCanvasIntent({kind: 'wheel', phase: 'wheel', deltaX: 2, deltaY: 80, modifiers: shift, hitTarget: {kind: 'blank'}, selection: {selectedIds: []}}),
+    {kind: 'pan', source: 'wheel', deltaX: 80, deltaY: 0},
+    '小さい deltaX に引きずられて横パンが止まらないこと'
+  );
+  assert.deepEqual(
+    resolveCanvasIntent({kind: 'wheel', phase: 'wheel', deltaX: -90, deltaY: 5, modifiers: shift, hitTarget: {kind: 'blank'}, selection: {selectedIds: []}}),
+    {kind: 'pan', source: 'wheel', deltaX: -90, deltaY: 0}
+  );
+});
+
+test('ピンチのズーム intent は指間距離の倍率を持つ', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 50, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 51, pointerType: 'touch', buttons: 1, button: 0, clientX: 40, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 51, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  const zoomIntent = intents.find((intent) => intent.kind === 'zoom' && intent.source === 'pinch');
+  assert.ok(zoomIntent !== undefined, 'ピンチのズーム intent が届く');
+  assert.equal(typeof zoomIntent.scale, 'number');
+  assert.ok(zoomIntent.scale > 1, '指を広げたら倍率は 1 より大きい');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 51, pointerType: 'touch', buttons: 0, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 50, pointerType: 'touch', buttons: 0, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  controller.detach();
+});
+
+test('フォーカス中のボタンやリンクでは Space の既定動作を奪わない', async () => {
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({onIntent() {}});
+  await controller.attach(canvas);
+
+  for (const target of [
+    {tagName: 'BUTTON', isContentEditable: false},
+    {tagName: 'A', isContentEditable: false},
+    {tagName: 'SUMMARY', isContentEditable: false},
+    {tagName: 'DIV', isContentEditable: false, getAttribute: (name) => (name === 'role' ? 'button' : null)},
+  ]) {
+    const keyEvent = new FakeKeyboardEvent('keydown', {key: ' '});
+    Object.defineProperty(keyEvent, 'target', {value: target, configurable: true});
+    let prevented = false;
+    keyEvent.preventDefault = () => {
+      prevented = true;
+    };
+    globalThis.window.dispatchEvent(keyEvent);
+
+    assert.equal(prevented, false, `${target.tagName} の Space クリックを阻害しないこと`);
+  }
+
+  controller.detach();
+});
+
+test('入力欄へフォーカスが移ってから Space を離してもパンモードが残らない', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+
+  // キャンバス外で Space を押下 → パンモードに入る
+  globalThis.window.dispatchEvent(new FakeKeyboardEvent('keydown', {key: ' '}));
+
+  // 入力欄へフォーカスを移してから離す（keyup のターゲットが入力欄になる）
+  const keyUpEvent = new FakeKeyboardEvent('keyup', {key: ' '});
+  Object.defineProperty(keyUpEvent, 'target', {value: {tagName: 'INPUT', isContentEditable: false}, configurable: true});
+  globalThis.window.dispatchEvent(keyUpEvent);
+
+  canvas.nextHitTarget = null;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 60, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 60, pointerType: 'mouse', buttons: 1, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(intents.at(-1)?.kind, 'marquee', 'Space 解除後の通常ドラッグはパンにならない');
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 60, pointerType: 'mouse', buttons: 0, button: 0, clientX: 24, clientY: 4, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  controller.detach();
+});
+
+test('ジェスチャの開始と終了は対で通知され、ピンチ終了だけでドラッグは終わらない', async () => {
+  const events = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent() {},
+    onGestureStart() {
+      events.push('start');
+    },
+    onGestureEnd() {
+      events.push('end');
+    },
+    onGestureCancel() {
+      events.push('cancel');
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  // 単純なドラッグ：開始1・終了1
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 70, pointerType: 'mouse', buttons: 1, button: 0, clientX: 0, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 70, pointerType: 'mouse', buttons: 1, button: 0, clientX: 40, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 70, pointerType: 'mouse', buttons: 0, button: 0, clientX: 40, clientY: 0, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  assert.equal(events.filter((name) => name === 'start').length, 1);
+  assert.equal(events.filter((name) => name === 'end').length, 1);
+
+  // 2本指 → 1本離す → 残る指でドラッグ継続：この時点で開始と終了の数が揃ってはならない
+  events.length = 0;
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 71, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 72, pointerType: 'touch', buttons: 1, button: 0, clientX: 60, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 72, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 72, pointerType: 'touch', buttons: 0, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  const startsAfterPinchRelease = events.filter((name) => name === 'start').length;
+  const endsAfterPinchRelease = events.filter((name) => name === 'end').length;
+  assert.ok(
+    startsAfterPinchRelease > endsAfterPinchRelease,
+    `1本指のドラッグが継続中は未終了のジェスチャが残る（start=${startsAfterPinchRelease} end=${endsAfterPinchRelease}）`
+  );
+
+  // 最後の指を離すと対が揃う
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 71, pointerType: 'touch', buttons: 0, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  assert.equal(
+    events.filter((name) => name === 'start').length,
+    events.filter((name) => name === 'end').length,
+    '全ての指を離したら開始と終了の数が揃う'
+  );
+
+  controller.detach();
+});
+
+test('指が完全に重なっても倍率 0 のズーム intent を出さない', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 80, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 81, pointerType: 'touch', buttons: 1, button: 0, clientX: 60, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // まずズーム判定を成立させる
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 81, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  assert.ok(intents.some((intent) => intent.kind === 'zoom' && intent.source === 'pinch'), 'ズーム判定が成立している');
+
+  // 2点を完全に重ねる（指間距離 0）
+  intents.length = 0;
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 81, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  for (const intent of intents.filter((candidate) => candidate.kind === 'zoom')) {
+    assert.ok(intent.scale > 0, `倍率は常に正であること（実際: ${intent.scale}）`);
+  }
+
+  // 距離ゼロの次に指を離したフレームで、ズームの追従がすぐ再開する
+  intents.length = 0;
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 81, pointerType: 'touch', buttons: 1, button: 0, clientX: 100, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  assert.ok(intents.length > 0, '距離ゼロを挟んでもピンチが継続する');
+
+  const resumedZoom = intents.find((intent) => intent.kind === 'zoom' && intent.source === 'pinch');
+  assert.ok(resumedZoom !== undefined, '距離ゼロの直後でもズーム intent が届く');
+  assert.ok(
+    resumedZoom.scale > 1,
+    `距離ゼロを基準に保存すると次の動きまで倍率 1 になる（実際: ${resumedZoom?.scale}）`
+  );
+
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 81, pointerType: 'touch', buttons: 0, button: 0, clientX: 100, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 80, pointerType: 'touch', buttons: 0, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  controller.detach();
+});
+
+test('往復して開始点付近へ戻したボタンドラッグでも終端 intent と慣性が残る', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  // 中ボタンで閾値を大きく超えて移動し、開始点付近（8px以内）へ戻して離す
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 90, pointerType: 'mouse', buttons: 4, button: 1, clientX: 100, clientY: 100, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 90, pointerType: 'mouse', buttons: 4, button: 1, clientX: 200, clientY: 100, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 90, pointerType: 'mouse', buttons: 4, button: 1, clientX: 102, clientY: 100, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 90, pointerType: 'mouse', buttons: 0, button: 1, clientX: 102, clientY: 100, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  const endPan = intents.find((intent) => intent.kind === 'pan' && intent.phase === 'end');
+  assert.ok(endPan !== undefined, '往復しても終端の pan intent が届く');
+  assert.equal(endPan.source, 'button');
+  assert.ok(endPan.velocityX !== undefined && endPan.velocityY !== undefined, '解放時慣性の速度が乗る');
+
+  controller.detach();
+});

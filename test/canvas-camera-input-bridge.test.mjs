@@ -30,7 +30,6 @@ const {
   resolveGesturePanSource,
   resolveReleaseInertiaVelocity,
   trackWithLeadingThrottle,
-  PINCH_ZOOM_COEFFICIENT,
   WHEEL_ANALYTICS_THROTTLE_MS,
 } = await loadModule();
 
@@ -473,8 +472,6 @@ test('throttled tracking tolerates a disposed tracker', () => {
 });
 
 test('camera input constants are exported instead of inlined as magic numbers', () => {
-  assert.equal(typeof PINCH_ZOOM_COEFFICIENT, 'number');
-  assert.ok(PINCH_ZOOM_COEFFICIENT > 0);
   assert.equal(typeof WHEEL_ANALYTICS_THROTTLE_MS, 'number');
   assert.ok(WHEEL_ANALYTICS_THROTTLE_MS > 0);
 });
@@ -483,8 +480,12 @@ test('board canvas panel does not inline the extracted camera input literals', a
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
 
   assert.ok(
-    panelSource.includes('PINCH_ZOOM_COEFFICIENT'),
-    'ピンチ係数は定数経由で参照すること'
+    !panelSource.includes('PINCH_ZOOM_COEFFICIENT'),
+    'ピンチのズームはホイール係数を経由せず、倍率で直接指定すること'
+  );
+  assert.ok(
+    panelSource.includes('zoomByScale'),
+    'ピンチのズームは倍率を受け取る専用の入口を使うこと'
   );
   assert.ok(
     panelSource.includes('WHEEL_ANALYTICS_THROTTLE_MS'),

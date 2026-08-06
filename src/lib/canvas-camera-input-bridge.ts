@@ -1,10 +1,6 @@
 import type {AnalyticsTrackerEvent, KpiEventDefinitionCode} from './analytics-tracker';
 import type {CanvasIntent} from './input-intent-resolver';
 
-// ピンチの指間距離差分(px)をホイールの deltaY 相当へ変換する係数。
-// zoomAtCursor は deltaY を前提とするため、符号反転とスケール合わせをここで行う。
-export const PINCH_ZOOM_COEFFICIENT = 3;
-
 // ホイールは1操作で毎フレーム intent が発火するため、KPI 送信は間引く。
 export const WHEEL_ANALYTICS_THROTTLE_MS = 300;
 

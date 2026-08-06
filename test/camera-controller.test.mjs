@@ -302,22 +302,23 @@ test('wheel zoom, drag pan, and inertia can be driven through controller command
   assert.ok(ticked.x !== inertial.x || ticked.y !== inertial.y);
 });
 
-test('resolveCameraRange locks camera position to content center when viewport exceeds expanded bounds', () => {
+test('ビューポートがコンテンツを覆うズームでも、コンテンツが見える範囲は自由にパンできる', () => {
   const smallBounds = {left: 0, top: 0, right: 1000, bottom: 1000};
   const lowZoom = 0.02;
-  const controller = new CameraController({
-    x: 4000,
-    y: 4000,
-    zoom: lowZoom,
-    velocityX: 0,
-    velocityY: 0,
-    focus: null,
-  });
+  const stageViewport = {width: 200, height: 200};
 
-  const ticked = controller.tick(16, {contentBounds: smallBounds, viewport: {width: 200, height: 200}});
-  // Camera should be softened towards center (500), not allowed at x = 4000
-  assert.ok(ticked.x < 4000, 'Camera x position should be constrained towards content center');
-  assert.ok(ticked.y < 4000, 'Camera y position should be constrained towards content center');
+  // このズームでは範囲が逆転する（minX=4800 > maxX=-3800）。入れ替えて [-3800, 4800]
+  // として扱うため、その内側にいるカメラは引き戻されない。
+  const inside = new CameraController({x: 4000, y: 4000, zoom: lowZoom, velocityX: 0, velocityY: 0, focus: null});
+  const insideTicked = inside.tick(16, {contentBounds: smallBounds, viewport: stageViewport, interacting: false});
+  assert.equal(insideTicked.x, 4000, '範囲内のカメラはコンテンツ中心へ引き戻されない');
+  assert.equal(insideTicked.y, 4000, '範囲内のカメラはコンテンツ中心へ引き戻されない');
+
+  // 範囲外まで離れたカメラは従来どおり引き戻される。
+  const outside = new CameraController({x: 40000, y: 40000, zoom: lowZoom, velocityX: 0, velocityY: 0, focus: null});
+  const outsideTicked = outside.tick(16, {contentBounds: smallBounds, viewport: stageViewport, interacting: false});
+  assert.ok(outsideTicked.x < 40000, '範囲外のカメラは引き戻される');
+  assert.ok(outsideTicked.y < 40000, '範囲外のカメラは引き戻される');
 });
 
 test('resolveNewObjectGeometry centers new objects and offsets overlaps', () => {
@@ -396,14 +397,13 @@ function activeRange(zoom) {
   const minY = 0 - (marginHeight / 2) + halfViewportHeight;
   const maxY = 1000 + (marginHeight / 2) - halfViewportHeight;
 
-  const centerX = 500;
-  const centerY = 500;
-
+  // ビューポートがコンテンツ＋余白より大きいと min/max が逆転する。実装と同じく
+  // 入れ替えて扱う（1点に潰すと fit ズーム以下でパンできなくなるため）。
   return {
-    minX: minX > maxX ? centerX : minX,
-    maxX: minX > maxX ? centerX : maxX,
-    minY: minY > maxY ? centerY : minY,
-    maxY: minY > maxY ? centerY : maxY,
+    minX: Math.min(minX, maxX),
+    maxX: Math.max(minX, maxX),
+    minY: Math.min(minY, maxY),
+    maxY: Math.max(minY, maxY),
   };
 }
 
@@ -457,4 +457,115 @@ test('concurrent pan and zoom maintains world coordinate under gesture center', 
 
   assert.ok(Math.abs(newWorldX - worldX) < 1e-9);
   assert.ok(Math.abs(newWorldY - worldY) < 1e-9);
+});
+
+// --- PR #114 レビュー指摘の回帰テスト -------------------------------------
+
+test('操作中は境界の引き戻しを行わず、ユーザーのパン量がそのまま残る', () => {
+  const bounds = {left: 0, top: 0, right: 1000, bottom: 1000};
+  const stageViewport = {width: 1200, height: 800};
+  const controller = new CameraController({x: 500, y: 500, zoom: 1, velocityX: 0, velocityY: 0, focus: null});
+
+  // 右方向へ 300 ワールド単位ドラッグする（10 フレームに分けて適用）
+  for (let index = 0; index < 10; index += 1) {
+    controller.panBy(-30, 0);
+    controller.tick(16, {contentBounds: bounds, viewport: stageViewport, interacting: true});
+  }
+
+  assert.equal(controller.getState().x, 800, 'ドラッグ中は毎フレームの引き戻しで打ち消されない');
+
+  // 指を離すと範囲内へ戻る（このズームでは minX=400 / maxX=600）
+  for (let index = 0; index < 120; index += 1) {
+    controller.tick(16, {contentBounds: bounds, viewport: stageViewport, interacting: false});
+  }
+
+  assert.ok(controller.getState().x <= 600 + 1e-6, '解放後は範囲内へ引き戻される');
+  assert.ok(controller.getState().x >= 400 - 1e-6, '引き戻しは範囲の内側で止まる');
+});
+
+test('フィットズームでもパンできる（範囲が1点に潰れない）', () => {
+  const bounds = {left: 0, top: 0, right: 1000, bottom: 1000};
+  const stageViewport = {width: 1200, height: 800};
+  const controller = new CameraController({x: 0, y: 0, zoom: 1, velocityX: 0, velocityY: 0, focus: null});
+
+  const fitted = controller.fitToContent(bounds, stageViewport);
+  const startX = fitted.x;
+
+  controller.panBy(-120, 0);
+  const settled = (() => {
+    let state = controller.getState();
+    for (let index = 0; index < 120; index += 1) {
+      state = controller.tick(16, {contentBounds: bounds, viewport: stageViewport, interacting: false});
+    }
+    return state;
+  })();
+
+  assert.notEqual(settled.x, startX, 'フィットズームでもカメラを動かせる');
+});
+
+test('慣性は有限フレームで完全に停止し、velocity が 0 になる', () => {
+  const controller = new CameraController({x: 0, y: 0, zoom: 1, velocityX: 0, velocityY: 0, focus: null});
+  controller.startInertia(20, 0);
+
+  let frames = 0;
+  while (frames < 1000) {
+    const state = controller.tick(16, {contentBounds: null, viewport, interacting: false});
+    frames += 1;
+    if (state.velocityX === 0 && state.velocityY === 0) {
+      break;
+    }
+  }
+
+  assert.ok(frames < 300, `慣性は 300 フレーム以内に停止すること（実際: ${frames}）`);
+  assert.equal(controller.getState().velocityX, 0);
+  assert.equal(controller.getState().velocityY, 0);
+
+  // 停止後は状態が一切変化しない（再レンダリングを誘発しない）
+  const stopped = controller.getState();
+  const afterStop = controller.tick(16, {contentBounds: null, viewport, interacting: false});
+  assert.equal(afterStop.x, stopped.x);
+  assert.equal(afterStop.velocityX, 0);
+  assert.equal(afterStop.velocityY, 0);
+});
+
+test('zoomByScale は指間距離の倍率で直接ズームし、ホイールの感触定数に依存しない', () => {
+  const stageViewport = {width: 200, height: 200};
+  const cursor = {x: 100, y: 100};
+  const initialState = {x: 0, y: 0, zoom: 1, velocityX: 0, velocityY: 0, focus: null};
+
+  const controller = new CameraController({...initialState});
+  const zoomed = controller.zoomByScale({scale: 2, cursor, viewport: stageViewport});
+  assert.equal(zoomed.zoom, 2, '倍率 2 のピンチはズームを 2 倍にする');
+
+  // wheelZoomExponent を変えてもピンチの結果は変わらない
+  const retuned = new CameraController({...initialState}, {
+    ...DEFAULT_CAMERA_CONTROLLER_OPTIONS,
+    wheelZoomExponent: DEFAULT_CAMERA_CONTROLLER_OPTIONS.wheelZoomExponent * 10,
+  });
+  assert.equal(retuned.zoomByScale({scale: 2, cursor, viewport: stageViewport}).zoom, 2);
+
+  // カーソル位置のワールド座標は保たれる
+  const worldX = initialState.x + (cursor.x - stageViewport.width / 2) / initialState.zoom;
+  const zoomedWorldX = zoomed.x + (cursor.x - stageViewport.width / 2) / zoomed.zoom;
+  assert.ok(Math.abs(zoomedWorldX - worldX) < 1e-9);
+
+  // 不正な倍率は握りつぶさず例外にする
+  const guarded = new CameraController({...initialState});
+  assert.throws(() => guarded.zoomByScale({scale: 0, cursor, viewport: stageViewport}), /positive finite scale/);
+  assert.throws(() => guarded.zoomByScale({scale: Number.NaN, cursor, viewport: stageViewport}), /positive finite scale/);
+});
+
+test('引き戻しの抑止は次の tick で必ず解除され、操作の取りこぼしで固定化しない', () => {
+  const bounds = {left: 0, top: 0, right: 1000, bottom: 1000};
+  const stageViewport = {width: 1200, height: 800};
+  const controller = new CameraController({x: 500, y: 500, zoom: 1, velocityX: 0, velocityY: 0, focus: null});
+
+  // ジェスチャ終端の通知が無くても（interacting は常に false）、パンした
+  // フレームだけ引き戻しを見送り、以降のフレームでは引き戻しが働く。
+  controller.panBy(-300, 0);
+  const duringDrag = controller.tick(16, {contentBounds: bounds, viewport: stageViewport, interacting: false});
+  assert.equal(duringDrag.x, 800, 'パンした直後のフレームは引き戻さない');
+
+  const afterRelease = controller.tick(16, {contentBounds: bounds, viewport: stageViewport, interacting: false});
+  assert.ok(afterRelease.x < 800, '操作が止まった次のフレームから引き戻しが働く');
 });

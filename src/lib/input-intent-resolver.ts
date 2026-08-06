@@ -49,6 +49,8 @@ export interface PointerInput {
   activeTool?: 'default' | 'lasso';
   pinchDistanceDeltaPx?: number;
   pinchDeltaPx?: number;
+  // 直前の基準距離に対する指間距離の倍率。カメラ側はこれをそのままズーム倍率に使う。
+  pinchScale?: number;
   pinchCenterX?: number;
   pinchCenterY?: number;
   pinchZoomApplied?: boolean;
@@ -80,6 +82,8 @@ export type CanvasIntent =
       kind: 'zoom';
       source: 'wheel' | 'pinch';
       amount: number;
+      // ピンチのみ。指間距離の倍率をそのまま伝え、ホイール係数への従属を断つ。
+      scale?: number;
       precision: boolean;
       centerX?: number;
       centerY?: number;
@@ -133,6 +137,29 @@ const AUXILIARY_BUTTON_BITMASK = 4;
 const PRIMARY_BUTTON_INDEX = 0;
 const MULTI_TOUCH_THRESHOLD = 2;
 const MAX_SUPPORTED_TOUCH_COUNT = 2;
+
+// Space が固有の意味を持つ要素。入力欄では文字入力、ボタン/リンクではクリック相当。
+const INTERACTIVE_TAG_NAMES = new Set(['input', 'textarea', 'select', 'button', 'a', 'summary', 'option', 'audio', 'video']);
+const INTERACTIVE_ARIA_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'tab', 'option', 'textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
+
+// Space は window で拾うため、その要素本来の Space 操作を奪わないよう除外する。
+export function isInteractiveTarget(element: Element | null): boolean {
+  if (element == null) {
+    return false;
+  }
+
+  const tagName = element.tagName?.toLowerCase?.();
+  if (tagName !== undefined && INTERACTIVE_TAG_NAMES.has(tagName)) {
+    return true;
+  }
+
+  if ((element as HTMLElement).isContentEditable === true) {
+    return true;
+  }
+
+  const role = element.getAttribute?.('role');
+  return role != null && INTERACTIVE_ARIA_ROLES.has(role);
+}
 
 export function resolveHitTargetFromElement(element: Element | null): HitTarget {
   const hitElement = element?.closest?.('[data-obj-id]') as HTMLElement | null | undefined;
@@ -279,6 +306,8 @@ export interface CanvasInputControllerOptions {
   // 終端 intent は入力状態次第で届かない（Space を先に離す・pointercancel）ため、
   // 「ジェスチャ単位で1回だけ」を成立させる境界はこの開始側に置く必要がある。
   onGestureStart?: () => void;
+  // ジェスチャの正常終了。onGestureStart と対で発火する（キャンセル時は onGestureCancel）。
+  onGestureEnd?: () => void;
   // ジェスチャが intent を出さずに打ち切られたときに呼ばれる（pointercancel / detach）。
   // 終端 intent を前提にセッション状態を持つ呼び出し側が、それを破棄するための口。
   onGestureCancel?: () => void;
@@ -290,6 +319,7 @@ export class CanvasInputController {
   private readonly resolver: InputIntentResolver;
   private readonly onIntent: (intent: CanvasIntent, event: Event) => void;
   private readonly onGestureStart: () => void;
+  private readonly onGestureEnd: () => void;
   private readonly onGestureCancel: () => void;
   private readonly getSelection: () => readonly string[];
   private readonly getActiveTool: () => 'default' | 'lasso';
@@ -355,7 +385,7 @@ export class CanvasInputController {
   };
   private readonly keyDownListener = (event: Event) => {
     const keyboardEvent = event as KeyboardEvent;
-    if (keyboardEvent.key !== ' ') {
+    if (keyboardEvent.key !== ' ' || isInteractiveTarget(keyboardEvent.target as Element | null)) {
       return;
     }
 
@@ -368,8 +398,13 @@ export class CanvasInputController {
       return;
     }
 
-    keyboardEvent.preventDefault();
+    // 解除はターゲットを問わず行う。押下後にフォーカスが移ってから離された場合に
+    // ここで打ち切ると、パンモードが立ったまま残り以降のドラッグが全てパンになる。
     this.spacePressed = false;
+
+    if (!isInteractiveTarget(keyboardEvent.target as Element | null)) {
+      keyboardEvent.preventDefault();
+    }
   };
   private readonly releaseSpaceListener = () => {
     this.spacePressed = false;
@@ -398,6 +433,12 @@ export class CanvasInputController {
     if (state.first) {
       this.resetLongPress();
       this.armLongPress(pointerInput, event);
+    }
+
+    // 終端の通知は intent の解決より先に出す。以降の分岐は longpress や
+    // マルチタッチで早期 return するため、ここを通さないと取りこぼす。
+    if (state.last) {
+      this.onGestureEnd();
     }
 
     if (state.touches > MAX_SUPPORTED_TOUCH_COUNT) {
@@ -435,6 +476,9 @@ export class CanvasInputController {
     }
 
     if (state.touches >= MULTI_TOUCH_THRESHOLD) {
+      // 2本指はピンチ側が処理する。ここで解除しないと長押しが発火し、以降の
+      // handleDragState が longPressTriggered で素通りして入力が固まる。
+      this.clearLongPressTimer();
       return;
     }
 
@@ -465,6 +509,9 @@ export class CanvasInputController {
     }
 
     if (state.first) {
+      // 2本目の指が触れた時点で長押しは成立しない。ドラッグ側は1本目の指しか
+      // 追わないため、ここで解除しないと保留中のタイマーが発火してしまう。
+      this.clearLongPressTimer();
       this.pinchBaseDistance = state.da[0];
       this.prevPinchDistance = state.da[0];
       this.pinchPrevOrigin = state.origin;
@@ -476,21 +523,35 @@ export class CanvasInputController {
       this.onGestureStart();
     }
 
+    // ピンチの終端は2本目の指が離れた時点。1本目のドラッグが続くことがあるため、
+    // 呼び出し側は「開始と終了の対」で数える必要がある（片方だけでは判定できない）。
+    if (state.last) {
+      this.onGestureEnd();
+    }
+
     const pinchDistance = state.da[0];
     const pinchDistanceDeltaPx = this.pinchBaseDistance == null ? 0 : pinchDistance - this.pinchBaseDistance;
     
     let pinchDeltaPx = 0;
+    let pinchScale = 1;
     const isZoomActive = this.pinchZoomApplied || (Math.abs(pinchDistanceDeltaPx) > this.resolverOptions.pinchThresholdPx);
 
     if (isZoomActive) {
-      if (!this.pinchZoomApplied) {
-        pinchDeltaPx = pinchDistanceDeltaPx;
-        this.pinchZoomApplied = true;
-      } else {
-        const prevDistance = this.prevPinchDistance ?? pinchDistance;
-        pinchDeltaPx = pinchDistance - prevDistance;
-      }
-      this.prevPinchDistance = state.last ? null : pinchDistance;
+      // 最初のズームフレームは開始時の距離、以降は前フレームの距離が基準になる。
+      const referenceDistance = this.pinchZoomApplied
+        ? (this.prevPinchDistance ?? pinchDistance)
+        : (this.pinchBaseDistance ?? pinchDistance);
+      pinchDeltaPx = pinchDistance - referenceDistance;
+      // 2点が完全に重なると距離が 0 になり、倍率 0＝ズームの消失を意味してしまう。
+      // ユーザーがそう意図することはあり得ないので、そのフレームは倍率を変えない。
+      pinchScale = referenceDistance > 0 && pinchDistance > 0 ? pinchDistance / referenceDistance : 1;
+      this.pinchZoomApplied = true;
+      // 距離 0 は基準として保存しない。保存すると次に指が離れたフレームでも
+      // referenceDistance が 0 のままとなり、その動きまで取りこぼす。
+      // 直前の正の距離を保持しておけば、離した瞬間からそのまま追従が再開する。
+      this.prevPinchDistance = state.last
+        ? null
+        : (pinchDistance > 0 ? pinchDistance : this.prevPinchDistance);
     } else {
       pinchDeltaPx = 0;
       if (!this.pinchZoomApplied) {
@@ -559,6 +620,7 @@ export class CanvasInputController {
       activeTool: this.getActiveTool(),
       pinchDistanceDeltaPx,
       pinchDeltaPx,
+      pinchScale,
       pinchCenterX: state.origin[0],
       pinchCenterY: state.origin[1],
     };
@@ -604,6 +666,7 @@ export class CanvasInputController {
     this.resolver = options.resolver ?? new InputIntentResolver();
     this.onIntent = options.onIntent;
     this.onGestureStart = options.onGestureStart ?? (() => {});
+    this.onGestureEnd = options.onGestureEnd ?? (() => {});
     this.onGestureCancel = options.onGestureCancel ?? (() => {});
     this.getSelection = options.getSelection ?? (() => []);
     this.getActiveTool = options.getActiveTool ?? (() => 'default');
@@ -625,10 +688,12 @@ export class CanvasInputController {
     target.addEventListener('wheel', this.wheelListener, {passive: false});
     target.addEventListener('contextmenu', this.contextMenuListener);
     target.addEventListener('dblclick', this.dblClickListener);
-    target.addEventListener('keydown', this.keyDownListener);
-    target.addEventListener('keyup', this.keyUpListener);
 
     if (typeof window !== 'undefined') {
+      // キーは window で拾う。キャンバスは tabIndex を持たずフォーカスを得られないため、
+      // 要素に束縛すると Space が一度も届かず、Space+ドラッグのパンが成立しない。
+      window.addEventListener('keydown', this.keyDownListener);
+      window.addEventListener('keyup', this.keyUpListener);
       window.addEventListener('blur', this.releaseSpaceListener);
       document.addEventListener('visibilitychange', this.releaseSpaceListener);
     }
@@ -645,11 +710,11 @@ export class CanvasInputController {
       this.target.removeEventListener('wheel', this.wheelListener);
       this.target.removeEventListener('contextmenu', this.contextMenuListener);
       this.target.removeEventListener('dblclick', this.dblClickListener);
-      this.target.removeEventListener('keydown', this.keyDownListener);
-      this.target.removeEventListener('keyup', this.keyUpListener);
     }
 
     if (typeof window !== 'undefined') {
+      window.removeEventListener('keydown', this.keyDownListener);
+      window.removeEventListener('keyup', this.keyUpListener);
       window.removeEventListener('blur', this.releaseSpaceListener);
       document.removeEventListener('visibilitychange', this.releaseSpaceListener);
     }
@@ -691,7 +756,14 @@ export class CanvasInputController {
       kind: 'pointer',
       phase,
       device: (event.pointerType === 'pen' ? 'pen' : event.pointerType === 'touch' ? 'touch' : 'mouse') as PointerInput['device'],
-      buttons: phase === 'end' ? this.dragButtons : (event.buttons ?? state.buttons),
+      // pointerup では event.buttons が 0 になるため、ドラッグとして成立した
+      // ジェスチャに限り開始時のボタンを引き継ぐ。移動を伴わない単なる右/中クリックで
+      // 引き継ぐと、押していないボタンでのパンとして解決されてしまう。
+      // 判定には「一度でも閾値を超えたか」(dragPanApplied) を使う。解放位置だけを
+      // 見ると、往復して開始点付近へ戻したドラッグで終端と慣性が失われる。
+      buttons: phase === 'end' && (this.dragPanApplied || this.hasMovedBeyondClickThreshold(state))
+        ? this.dragButtons
+        : (event.buttons ?? state.buttons),
       touchCount: state.touches,
       movementX: state.movement[0],
       movementY: state.movement[1],
@@ -706,6 +778,10 @@ export class CanvasInputController {
       palmContactAreaPx2: readContactAreaPx2(event),
       activeTool: this.getActiveTool(),
     };
+  }
+
+  private hasMovedBeyondClickThreshold(state: DragGestureState): boolean {
+    return Math.hypot(state.movement[0], state.movement[1]) > this.resolverOptions.clickThresholdPx;
   }
 
   private armLongPress(pointerInput: PointerInput, event: PointerEvent): void {
@@ -764,11 +840,15 @@ function resolveWheelIntent(input: WheelInput): CanvasIntent {
   }
 
   if (input.modifiers.shiftKey) {
+    // shift+ホイールは横スクロールを意味する。ブラウザは多くの場合ノッチを deltaX へ
+    // 付け替えて報告するが、付け替えない実装もある。トラックパッドは両軸に値を乗せて
+    // 報告するため、絶対値の大きい方＝ユーザーが意図した主軸を横パンへ回す。
+    const horizontalDelta = Math.abs(input.deltaX) >= Math.abs(input.deltaY) ? input.deltaX : input.deltaY;
     return {
       kind: 'pan',
       source: 'wheel',
-      deltaX: input.deltaY,
-      deltaY: input.deltaX,
+      deltaX: horizontalDelta,
+      deltaY: 0,
     };
   }
 
@@ -782,6 +862,7 @@ function resolveMultiTouchIntent(input: PointerInput, options: InputIntentResolv
       kind: 'zoom',
       source: 'pinch',
       amount: input.pinchDeltaPx ?? input.pinchDistanceDeltaPx ?? 0,
+      scale: input.pinchScale,
       precision: false,
       centerX: input.pinchCenterX,
       centerY: input.pinchCenterY,
