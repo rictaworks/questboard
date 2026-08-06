@@ -1,5 +1,7 @@
 import type {FullGestureState} from '@use-gesture/vanilla';
 
+const MS_PER_FRAME = 16.6667;
+
 type UseGestureModule = typeof import('@use-gesture/vanilla');
 type DragGestureState = FullGestureState<'drag'>;
 type PinchGestureState = FullGestureState<'pinch'>;
@@ -74,7 +76,19 @@ export interface KeyInput {
 export type CanvasInput = PointerInput | WheelInput | KeyInput;
 
 export type CanvasIntent =
-  | {kind: 'zoom'; source: 'wheel' | 'pinch'; amount: number; precision: boolean; centerX?: number; centerY?: number}
+  | {
+      kind: 'zoom';
+      source: 'wheel' | 'pinch';
+      amount: number;
+      precision: boolean;
+      centerX?: number;
+      centerY?: number;
+      phase?: InputPhase;
+      panDeltaX?: number;
+      panDeltaY?: number;
+      velocityX?: number;
+      velocityY?: number;
+    }
   | {
       kind: 'pan';
       source: 'wheel' | 'space' | 'button' | 'touch';
@@ -261,6 +275,13 @@ export class InputIntentResolver {
 export interface CanvasInputControllerOptions {
   resolver?: InputIntentResolver;
   onIntent: (intent: CanvasIntent, event: Event) => void;
+  // ジェスチャの開始時に呼ばれる（ドラッグ／ピンチいずれも最初のポインタイベント）。
+  // 終端 intent は入力状態次第で届かない（Space を先に離す・pointercancel）ため、
+  // 「ジェスチャ単位で1回だけ」を成立させる境界はこの開始側に置く必要がある。
+  onGestureStart?: () => void;
+  // ジェスチャが intent を出さずに打ち切られたときに呼ばれる（pointercancel / detach）。
+  // 終端 intent を前提にセッション状態を持つ呼び出し側が、それを破棄するための口。
+  onGestureCancel?: () => void;
   getSelection?: () => readonly string[];
   getActiveTool?: () => 'default' | 'lasso';
 }
@@ -268,6 +289,8 @@ export interface CanvasInputControllerOptions {
 export class CanvasInputController {
   private readonly resolver: InputIntentResolver;
   private readonly onIntent: (intent: CanvasIntent, event: Event) => void;
+  private readonly onGestureStart: () => void;
+  private readonly onGestureCancel: () => void;
   private readonly getSelection: () => readonly string[];
   private readonly getActiveTool: () => 'default' | 'lasso';
   private target: EventTarget | null = null;
@@ -361,12 +384,14 @@ export class CanvasInputController {
       this.resetLongPress();
       this.dragButtons = 0;
       this.dragPanApplied = false;
+      this.onGestureCancel();
       return;
     }
 
     if (state.first) {
       this.dragButtons = state.buttons;
       this.dragPanApplied = false;
+      this.onGestureStart();
     }
 
     const pointerInput = this.buildPointerInput(state, event, state.last ? 'end' : state.first ? 'start' : 'change');
@@ -435,6 +460,7 @@ export class CanvasInputController {
       this.pinchLastVelocity = [0, 0];
       this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
+      this.onGestureCancel();
       return;
     }
 
@@ -447,6 +473,7 @@ export class CanvasInputController {
       this.pinchLastVelocity = [0, 0];
       this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
+      this.onGestureStart();
     }
 
     const pinchDistance = state.da[0];
@@ -483,8 +510,8 @@ export class CanvasInputController {
       pinchDeltaY = origin[1] - this.pinchPrevOrigin[1];
       const deltaTime = time - this.pinchPrevTime;
       if (deltaTime > 0) {
-        velocityX = (pinchDeltaX / deltaTime) * 16.6667;
-        velocityY = (pinchDeltaY / deltaTime) * 16.6667;
+        velocityX = (pinchDeltaX / deltaTime) * MS_PER_FRAME;
+        velocityY = (pinchDeltaY / deltaTime) * MS_PER_FRAME;
 
         if (!state.last) {
           if (pinchDeltaX !== 0 || pinchDeltaY !== 0) {
@@ -536,26 +563,13 @@ export class CanvasInputController {
       pinchCenterY: state.origin[1],
     };
 
-    let zoomIntent: CanvasIntent = { kind: 'ignore' };
-    if (isZoomActive) {
-      zoomIntent = this.resolver.resolve({
-        ...baseInput,
-        pinchZoomApplied: this.pinchZoomApplied,
-      });
-    }
-
-    const panIntent = this.resolver.resolve({
+    const intent = this.resolver.resolve({
       ...baseInput,
-      pinchDistanceDeltaPx: undefined,
-      pinchDeltaPx: undefined,
-      pinchZoomApplied: false,
+      pinchZoomApplied: this.pinchZoomApplied,
     });
 
-    if (panIntent.kind === 'pan') {
-      this.onIntent(panIntent, event);
-    }
-    if (zoomIntent.kind === 'zoom') {
-      this.onIntent(zoomIntent, event);
+    if (intent.kind !== 'ignore') {
+      this.onIntent(intent, event);
     }
 
     if (state.last) {
@@ -589,6 +603,8 @@ export class CanvasInputController {
   constructor(options: CanvasInputControllerOptions = {onIntent: () => {}}) {
     this.resolver = options.resolver ?? new InputIntentResolver();
     this.onIntent = options.onIntent;
+    this.onGestureStart = options.onGestureStart ?? (() => {});
+    this.onGestureCancel = options.onGestureCancel ?? (() => {});
     this.getSelection = options.getSelection ?? (() => []);
     this.getActiveTool = options.getActiveTool ?? (() => 'default');
   }
@@ -649,7 +665,10 @@ export class CanvasInputController {
     this.pinchLastMoveTime = null;
     this.pinchZoomApplied = false;
     this.dragPanApplied = false;
+    this.dragButtons = 0;
     this.spacePressed = false;
+    // 進行中のジェスチャは終端 intent を出さずに失われるため、キャンセルとして通知する。
+    this.onGestureCancel();
   }
 
   private emitIntent(intent: CanvasIntent, event: Event): void {
@@ -678,8 +697,8 @@ export class CanvasInputController {
       movementY: state.movement[1],
       deltaX,
       deltaY,
-      velocityX: vx * dirX * 16.6667,
-      velocityY: vy * dirY * 16.6667,
+      velocityX: vx * dirX * MS_PER_FRAME,
+      velocityY: vy * dirY * MS_PER_FRAME,
       elapsedTimeMs: state.elapsedTime,
       hitTarget: resolveHitTargetFromElement(event.target as Element | null),
       modifiers: this.readModifiers(event),
@@ -766,6 +785,11 @@ function resolveMultiTouchIntent(input: PointerInput, options: InputIntentResolv
       precision: false,
       centerX: input.pinchCenterX,
       centerY: input.pinchCenterY,
+      phase: input.phase,
+      panDeltaX: input.deltaX ?? input.movementX,
+      panDeltaY: input.deltaY ?? input.movementY,
+      velocityX: input.velocityX,
+      velocityY: input.velocityY,
     };
   }
 

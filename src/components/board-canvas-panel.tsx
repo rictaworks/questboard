@@ -7,7 +7,7 @@ import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, t
 import {useTranslations} from 'next-intl';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
-import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE, onCanvasWheel} from '@/lib/camera-controller';
+import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
 import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
 import {
@@ -29,7 +29,25 @@ import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
 import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
-import {CanvasInputController, resolveHitTargetFromElement} from '@/lib/input-intent-resolver';
+import {CanvasInputController, resolveHitTargetFromElement, type CanvasIntent} from '@/lib/input-intent-resolver';
+import {
+  consumeGestureZoom,
+  createGesturePanTracker,
+  createGestureZoomTracker,
+  createThrottledTrackState,
+  flushThrottledTrack,
+  noteGestureZoom,
+  resetGesturePan,
+  resetGestureZoom,
+  resolveGesturePanSource,
+  resolveReleaseInertiaVelocity,
+  trackWithLeadingThrottle,
+  PINCH_ZOOM_COEFFICIENT,
+  WHEEL_ANALYTICS_THROTTLE_MS,
+  type GesturePanTracker,
+  type GestureZoomTracker,
+  type ThrottledTrackState,
+} from '@/lib/canvas-camera-input-bridge';
 import {
   QUEST_QUERY_ROOT_KEY,
   useQuestsQuery,
@@ -143,10 +161,10 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
   }
 }
 
+
 export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
-  const sceneRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
   const canvasInputControllerRef = useRef<CanvasInputController | null>(null);
   const cameraRafRef = useRef<number | null>(null);
@@ -192,11 +210,18 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     setPrevUserGoogleSub(userGoogleSub);
     setIntensity(readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full');
   }
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
   const cameraStateRef = useRef<CameraState>(cameraState);
   const objectsRef = useRef<BoardCanvasObject[]>([]);
   const previewGeometryRef = useRef<Record<number, BoardCanvasObject['geometry']>>({});
   const boardStateRef = useRef(boardState);
   const analyticsTrackerRef = useRef<AnalyticsTracker | null>(null);
+  const gesturePanTrackerRef = useRef<GesturePanTracker>(createGesturePanTracker());
+  const gestureZoomTrackerRef = useRef<GestureZoomTracker>(createGestureZoomTracker());
   const queryClient = useQueryClient();
   const {backendUrl} = readGoogleAuthSettings();
 
@@ -382,6 +407,35 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       return undefined;
     }
 
+    // effect のライフサイクルに紐づく。viewport 変更で作り直す際は cleanup で
+    // 保留分を flush してから破棄するため、状態を跨いで持ち越す必要はない。
+    const wheelZoomTrackState: ThrottledTrackState = createThrottledTrackState();
+    const wheelPanTrackState: ThrottledTrackState = createThrottledTrackState();
+
+    // 終端 intent は Space の先離しや pointercancel で届かないため、実移動を伴う
+    // 最初の intent でジェスチャ単位に1回だけ記録する。判定はブリッジ層が持つ。
+    const trackGesturePan = (intent: CanvasIntent): void => {
+      const source = resolveGesturePanSource(gesturePanTrackerRef.current, intent);
+      if (source === null) {
+        return;
+      }
+
+      analyticsTrackerRef.current?.track({eventId: 'camera_panned', attributes: {source}});
+    };
+
+    // 適用済みのズーム倍率を送出する。終端 intent が届けば終端で、届かなければ
+    // キャンセル通知で呼ばれる。控えが無いジェスチャでは何も送らない。
+    // 送信先は控えた時点の tracker で、ref は参照しない。アンマウント時は
+    // analytics 側の cleanup が先に走って ref が null になっているためである。
+    const trackGestureZoom = (): void => {
+      const record = consumeGestureZoom(gestureZoomTrackerRef.current);
+      if (record === null) {
+        return;
+      }
+
+      record.tracker?.track({eventId: 'camera_zoomed', attributes: {source: 'pinch', zoom: record.zoom}});
+    };
+
     const controller = new CanvasInputController({
       onIntent(intent, event) {
         if ((intent.kind === 'zoom' && intent.source === 'pinch') || (intent.kind === 'pan' && intent.source === 'touch')) {
@@ -413,47 +467,100 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
             // pinch
             clientX = (intent.centerX ?? 0) - stageRect.left;
             clientY = (intent.centerY ?? 0) - stageRect.top;
-            deltaY = -intent.amount * 3;
+            deltaY = -intent.amount * PINCH_ZOOM_COEFFICIENT;
           }
 
-          analyticsTrackerRef.current?.track({
-            eventId: 'camera_zoomed',
-            attributes: {
-              source: intent.source,
-              zoom: controllerRef.current.zoomAtCursor({
-                deltaY,
-                cursor: {x: clientX, y: clientY},
-                viewport,
-                precision: intent.precision,
-              }).zoom
-            }
+          // 1. Concurrently apply pan delta if provided in the zoom intent (avoiding double setState)
+          if (intent.panDeltaX !== undefined && intent.panDeltaY !== undefined && (intent.panDeltaX !== 0 || intent.panDeltaY !== 0)) {
+            controllerRef.current.panBy(intent.panDeltaX, intent.panDeltaY);
+          }
+          trackGesturePan(intent);
+
+          // 2. Apply zoom transformation
+          const nextState = controllerRef.current.zoomAtCursor({
+            deltaY,
+            cursor: {x: clientX, y: clientY},
+            viewport,
+            precision: intent.precision,
           });
+
+          // Debounce / throttle analytics to avoid backend flooding
+          if (intent.source === 'pinch') {
+            // 送出は終端かキャンセルのどちらか一方。pointercancel では終端 intent が
+            // 届かないため、ここでは倍率を控えるだけにして送出契機を分ける。
+            noteGestureZoom(gestureZoomTrackerRef.current, analyticsTrackerRef, intent, nextState.zoom);
+            if (intent.phase === 'end') {
+              trackGestureZoom();
+            }
+          } else if (intent.source === 'wheel') {
+            trackWithLeadingThrottle(
+              wheelZoomTrackState,
+              analyticsTrackerRef,
+              'camera_zoomed',
+              {source: 'wheel', zoom: nextState.zoom},
+              WHEEL_ANALYTICS_THROTTLE_MS
+            );
+          }
+
           setCameraState({...controllerRef.current.getState()});
+
+          // Handle zoom gesture release inertia
+          if (intent.phase === 'end' && intent.source === 'pinch') {
+            const inertia = resolveReleaseInertiaVelocity(intent);
+            if (inertia) {
+              controllerRef.current.startInertia(inertia.velocityX, inertia.velocityY);
+              setCameraState({...controllerRef.current.getState()});
+            }
+          }
+
           return;
         }
 
         if (intent.kind === 'pan') {
           hasAppliedInitialCameraRef.current = true;
-          analyticsTrackerRef.current?.track({
-            eventId: 'camera_panned',
-            attributes: {source: intent.source}
-          });
+
+          // Debounce / throttle analytics to avoid backend flooding
+          if (intent.source !== 'wheel') {
+            trackGesturePan(intent);
+          } else {
+            trackWithLeadingThrottle(
+              wheelPanTrackState,
+              analyticsTrackerRef,
+              'camera_panned',
+              {source: 'wheel'},
+              WHEEL_ANALYTICS_THROTTLE_MS
+            );
+          }
+
           if (intent.source === 'wheel') {
             controllerRef.current.panBy(intent.deltaX, intent.deltaY);
           } else {
             if (intent.phase === 'change') {
               controllerRef.current.panBy(intent.deltaX, intent.deltaY);
-            } else if (intent.phase === 'end') {
-              if (intent.velocityX !== undefined && intent.velocityY !== undefined) {
-                controllerRef.current.startInertia(intent.velocityX, intent.velocityY);
+            } else {
+              const inertia = resolveReleaseInertiaVelocity(intent);
+              if (inertia) {
+                controllerRef.current.startInertia(inertia.velocityX, inertia.velocityY);
               }
             }
           }
           setCameraState({...controllerRef.current.getState()});
         }
       },
-      getSelection: () => selection.map(String),
-      getActiveTool: () => (interactionRef.current?.kind ? 'default' : 'default')
+      // 「ジェスチャ単位で1回」の境界は開始側に置く。終端 intent は Space の
+      // 先離しやピンチズームへの移行で届かないことがあり、境界として使えない。
+      onGestureStart() {
+        resetGesturePan(gesturePanTrackerRef.current);
+        resetGestureZoom(gestureZoomTrackerRef.current);
+      },
+      // pointercancel や detach では終端 intent が届かない。パンは記録済み
+      // フラグを戻して持ち越しを断ち、ズームは控えていた倍率をここで送出する。
+      onGestureCancel() {
+        resetGesturePan(gesturePanTrackerRef.current);
+        trackGestureZoom();
+      },
+      getSelection: () => selectionRef.current.map(String),
+      getActiveTool: () => 'default'
     });
 
     canvasInputControllerRef.current = controller;
@@ -462,8 +569,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     return () => {
       canvasInputControllerRef.current = null;
       controller.detach();
+      flushThrottledTrack(wheelZoomTrackState, 'camera_zoomed');
+      flushThrottledTrack(wheelPanTrackState, 'camera_panned');
     };
-  }, [selection, viewport]);
+  }, [viewport]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1315,7 +1424,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           <div
             aria-label={t('canvasLabel')}
             className="board-scene"
-            ref={sceneRef}
             onContextMenu={() => {
               analyticsTrackerRef.current?.track({
                 eventId: 'radial_opened',

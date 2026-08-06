@@ -261,35 +261,6 @@ test('pan to inertia maintains directional continuity across zoom levels', () =>
     focus: null,
   });
 
-  test('wheel zoom, drag pan, and inertia can be driven through controller commands', () => {
-    const controller = new CameraController({
-      x: 200,
-      y: 300,
-      zoom: 1,
-      velocityX: 0,
-      velocityY: 0,
-      focus: null,
-    });
-
-    const zoomed = controller.zoomAtCursor({
-      deltaY: -120,
-      cursor: {x: 50, y: 50},
-      viewport: {width: 100, height: 100},
-    });
-    assert.ok(zoomed.zoom > 1);
-
-    const panned = controller.panBy(20, 10);
-    assert.equal(panned.x, zoomed.x - 20 / zoomed.zoom);
-    assert.equal(panned.y, zoomed.y - 10 / zoomed.zoom);
-
-    const inertial = controller.startInertia(60, 30);
-    assert.equal(inertial.velocityX, -60 / panned.zoom);
-    assert.equal(inertial.velocityY, -30 / panned.zoom);
-
-    const ticked = tickCamera(inertial, 16, {contentBounds: null, viewport});
-    assert.ok(ticked.x !== inertial.x || ticked.y !== inertial.y);
-  });
-
   // Dragging right on screen (+20px) moves camera left in world space (-10px)
   const afterPan = controller.panBy(20, 0);
   assert.equal(afterPan.x, -10);
@@ -300,6 +271,35 @@ test('pan to inertia maintains directional continuity across zoom levels', () =>
 
   const afterTick = controller.tick(16, {contentBounds: null, viewport});
   assert.ok(afterTick.x < afterPan.x, 'Camera should continue moving in the same direction during inertia');
+});
+
+test('wheel zoom, drag pan, and inertia can be driven through controller commands', () => {
+  const controller = new CameraController({
+    x: 200,
+    y: 300,
+    zoom: 1,
+    velocityX: 0,
+    velocityY: 0,
+    focus: null,
+  });
+
+  const zoomed = controller.zoomAtCursor({
+    deltaY: -120,
+    cursor: {x: 50, y: 50},
+    viewport: {width: 100, height: 100},
+  });
+  assert.ok(zoomed.zoom > 1);
+
+  const panned = controller.panBy(20, 10);
+  assert.equal(panned.x, zoomed.x - 20 / zoomed.zoom);
+  assert.equal(panned.y, zoomed.y - 10 / zoomed.zoom);
+
+  const inertial = controller.startInertia(60, 30);
+  assert.equal(inertial.velocityX, -60 / panned.zoom);
+  assert.equal(inertial.velocityY, -30 / panned.zoom);
+
+  const ticked = tickCamera(inertial, 16, {contentBounds: null, viewport});
+  assert.ok(ticked.x !== inertial.x || ticked.y !== inertial.y);
 });
 
 test('resolveCameraRange locks camera position to content center when viewport exceeds expanded bounds', () => {
@@ -422,3 +422,39 @@ function axisOutsideDistance(value, min, max) {
 
   return 0;
 }
+
+test('concurrent pan and zoom maintains world coordinate under gesture center', () => {
+  const controller = new CameraController({
+    x: 200,
+    y: 300,
+    zoom: 1,
+    velocityX: 0,
+    velocityY: 0,
+    focus: null,
+  });
+  const viewport = {width: 100, height: 100};
+
+  const oldCenter = {x: 50, y: 50};
+  const worldX = controller.getState().x + (oldCenter.x - viewport.width / 2) / controller.getState().zoom;
+  const worldY = controller.getState().y + (oldCenter.y - viewport.height / 2) / controller.getState().zoom;
+
+  const panDeltaX = 20;
+  const panDeltaY = 10;
+  const newCenter = {x: oldCenter.x + panDeltaX, y: oldCenter.y + panDeltaY};
+
+  // 1. pan (using older zoom scale)
+  const panned = controller.panBy(panDeltaX, panDeltaY);
+  
+  // 2. zoom (using new panned state at the new center)
+  const zoomed = controller.zoomAtCursor({
+    deltaY: -120,
+    cursor: newCenter,
+    viewport,
+  });
+
+  const newWorldX = zoomed.x + (newCenter.x - viewport.width / 2) / zoomed.zoom;
+  const newWorldY = zoomed.y + (newCenter.y - viewport.height / 2) / zoomed.zoom;
+
+  assert.ok(Math.abs(newWorldX - worldX) < 1e-9);
+  assert.ok(Math.abs(newWorldY - worldY) < 1e-9);
+});
