@@ -11,8 +11,8 @@ jobs:
     name: Frontend / ESLint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -24,14 +24,15 @@ jobs:
     name: Frontend / build & test (node --test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
+          go-version: "1.25"
+          cache-dependency-path: src/sync-server/go.sum
       - run: npm install -g npm@11
       - run: npm ci
       - run: npm run build
@@ -41,21 +42,23 @@ jobs:
     name: Go / go test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
+          go-version: "1.25"
+          cache-dependency-path: src/sync-server/go.sum
       - run: go test ./tools/... ./src/sync-server/...
 
   go-lint:
     name: Go / golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.24"
-      - uses: golangci/golangci-lint-action@v7
+          go-version: "1.25"
+          cache-dependency-path: src/sync-server/go.sum
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.11.3
 
@@ -80,7 +83,7 @@ jobs:
       run:
         working-directory: src/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4.10"
@@ -103,7 +106,7 @@ jobs:
       run:
         working-directory: src/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4.10"
@@ -118,7 +121,7 @@ jobs:
       run:
         working-directory: src/backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4.10"
