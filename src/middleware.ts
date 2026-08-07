@@ -12,10 +12,6 @@ export default createMiddleware({
 // `test/scaffold.test.mjs` asserts these two lists stay in sync.
 export const config = {
   matcher: [
-    '/',
-    '/(ja|en|fr|zh|ru|es|ar)/:path*',
-    '/b/:path*',
-    '/auth/google/callback',
-    '/((?!api(?:/|$)|_next(?:/|$)|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)'
+    '/((?!api(?:/|$)|_next(?:/|$)|_vercel(?:/|$)|.*\\..*).*)'
   ]
 };

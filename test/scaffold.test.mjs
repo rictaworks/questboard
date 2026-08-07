@@ -191,36 +191,38 @@ test('middleware matcher stays in sync with routing locales', async () => {
 
   assert.ok(Array.isArray(matcher), 'middleware matcher must be an array');
 
-  // Assert expected routes are protected/handled by the middleware
-  assert.ok(matcher.includes('/'), "middleware matcher must include '/'");
-  assert.ok(matcher.includes('/b/:path*'), "middleware matcher must include '/b/:path*'");
-  assert.ok(matcher.includes('/auth/google/callback'), "middleware matcher must include '/auth/google/callback'");
-
-  // Assert there is a locale match pattern
-  const expectedLocalePattern = `/(${locales.join('|')})/:path*`;
-  assert.ok(matcher.includes(expectedLocalePattern), `middleware matcher must include dynamic locale pattern matching: ${expectedLocalePattern}`);
-
-  // Assert we catch all other routes for locale redirection to prevent unstyled 404
-  const catchAllPattern = '/((?!api(?:/|$)|_next(?:/|$)|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)';
+  // Assert there is only one catch-all pattern
+  const catchAllPattern = '/((?!api(?:/|$)|_next(?:/|$)|_vercel(?:/|$)|.*\\..*).*)';
   assert.ok(matcher.includes(catchAllPattern), `middleware matcher must include catch-all pattern: ${catchAllPattern}`);
 
   // Validate the regex behavior in the matcher
   const regexStr = catchAllPattern.slice(2, -1);
   const regex = new RegExp(`^/${regexStr}$`);
 
-  // Normal paths like /apiary or /faviconXico should match (be processed by middleware)
+  // 1. Expected pages and paths must match (be processed by middleware)
+  assert.ok(regex.test('/'), '/ should match');
+  assert.ok(regex.test('/b/token123'), '/b/token123 should match');
+  assert.ok(regex.test('/auth/google/callback'), '/auth/google/callback should match');
+  for (const locale of locales) {
+    assert.ok(regex.test(`/${locale}`), `/${locale} should match`);
+    assert.ok(regex.test(`/${locale}/b/token123`), `/${locale}/b/token123 should match`);
+  }
+
+  // 2. Normal unknown paths like /apiary or /faviconXico should match
   assert.ok(regex.test('/apiary'), '/apiary should match catch-all pattern');
   assert.ok(regex.test('/faviconXico'), '/faviconXico should match catch-all pattern');
 
-  // Static/API routes should NOT match (be excluded from middleware)
+  // 3. Static/API/Vercel routes must NOT match (be excluded from middleware)
   assert.equal(regex.test('/api'), false, '/api should NOT match');
   assert.equal(regex.test('/api/hello'), false, '/api/hello should NOT match');
   assert.equal(regex.test('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
+  assert.equal(regex.test('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
   assert.equal(regex.test('/favicon.ico'), false, '/favicon.ico should NOT match');
   assert.equal(regex.test('/sitemap.xml'), false, '/sitemap.xml should NOT match');
   assert.equal(regex.test('/robots.txt'), false, '/robots.txt should NOT match');
+  assert.equal(regex.test('/logo.png'), false, '/logo.png should NOT match');
 
-  assert.equal(matcher.length, 5, 'middleware matcher should contain exactly 5 entries');
+  assert.equal(matcher.length, 1, 'middleware matcher should contain exactly 1 entry');
 });
 
 test('forbidden browser dialogs are not used', async () => {
