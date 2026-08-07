@@ -39,6 +39,9 @@ export interface CameraPose {
 
 export interface CameraControllerOptions {
   inertiaFrictionPerFrame: number;
+  // 慣性を打ち切る速度（ワールド単位/フレーム）。摩擦は指数減衰で 0 に到達しないため、
+  // この閾値を下回ったら 0 に落として tick の差分検出を確実に止める。
+  inertiaStopVelocity: number;
   minZoom: number;
   maxZoom: number;
   focusDurationMs: number;
@@ -52,6 +55,7 @@ export interface CameraControllerOptions {
 
 export const DEFAULT_CAMERA_CONTROLLER_OPTIONS: CameraControllerOptions = {
   inertiaFrictionPerFrame: 0.92,
+  inertiaStopVelocity: 0.01,
   minZoom: 0.02,
   maxZoom: 4,
   focusDurationMs: 300,
@@ -70,6 +74,14 @@ export interface CanvasWheelCameraInput {
   precision?: boolean;
 }
 
+// ピンチは指間距離の倍率をそのまま渡す。ホイールの deltaY へ変換すると
+// wheelZoomExponent（ホイールの感触用の定数）にピンチ感度が従属してしまう。
+export interface CanvasPinchCameraInput {
+  scale: number;
+  cursor: CameraPoint;
+  viewport: CameraViewport;
+}
+
 export interface MinimapClickInput {
   click: CameraPoint;
   minimap: CameraBounds;
@@ -79,6 +91,9 @@ export interface MinimapClickInput {
 export interface CameraControllerCommandContext {
   viewport: CameraViewport;
   contentBounds: CameraBounds | null;
+  // ポインタ操作中は true。境界の引き戻しは毎フレーム複利で効くため、操作中に
+  // 適用するとドラッグに逆らって実質ハードクランプになる。引き戻しは解放後に行う。
+  interacting: boolean;
 }
 
 export function createCameraState(overrides: Partial<CameraState> = {}): CameraState {
@@ -136,6 +151,20 @@ export function onCanvasWheel(
 ): CameraState {
   const exponent = input.precision ? options.precisionWheelZoomExponent : options.wheelZoomExponent;
   const nextZoom = clamp(state.zoom * Math.exp(-input.deltaY * exponent), options.minZoom, options.maxZoom);
+  const next = zoomAtPoint(state, nextZoom, input.cursor, input.viewport, options);
+  return normalizeCameraState(next, options);
+}
+
+export function onCanvasPinch(
+  state: CameraState,
+  input: CanvasPinchCameraInput,
+  options: CameraControllerOptions = DEFAULT_CAMERA_CONTROLLER_OPTIONS
+): CameraState {
+  if (!Number.isFinite(input.scale) || input.scale <= 0) {
+    throw new Error(`onCanvasPinch requires a positive finite scale, received ${input.scale}`);
+  }
+
+  const nextZoom = clamp(state.zoom * input.scale, options.minZoom, options.maxZoom);
   const next = zoomAtPoint(state, nextZoom, input.cursor, input.viewport, options);
   return normalizeCameraState(next, options);
 }
@@ -257,16 +286,18 @@ export function tickCamera(
   }
 
   const frameFactor = deltaTimeMs <= 0 ? 0 : deltaTimeMs / options.frameDurationMs;
+  const friction = Math.pow(options.inertiaFrictionPerFrame, frameFactor);
   let next = {
     ...state,
     x: state.x + state.velocityX * frameFactor,
     y: state.y + state.velocityY * frameFactor,
-    velocityX: state.velocityX * Math.pow(options.inertiaFrictionPerFrame, frameFactor),
-    velocityY: state.velocityY * Math.pow(options.inertiaFrictionPerFrame, frameFactor),
+    velocityX: stopBelowThreshold(state.velocityX * friction, options.inertiaStopVelocity),
+    velocityY: stopBelowThreshold(state.velocityY * friction, options.inertiaStopVelocity),
   };
 
-  if (context.contentBounds != null) {
-    next = applyElasticBoundary(next, context.contentBounds, context.viewport, options);
+  // 操作中の引き戻しはドラッグと綱引きになるため、指を離してから範囲へ戻す。
+  if (context.contentBounds != null && !context.interacting) {
+    next = applyElasticBoundary(next, context.contentBounds, context.viewport, frameFactor, options);
   }
 
   return normalizeCameraState(next, options);
@@ -274,6 +305,11 @@ export function tickCamera(
 
 export class CameraController {
   private state: CameraState;
+  // 直前の tick 以降にユーザー操作でカメラを動かしたか。操作中に境界の引き戻しを
+  // 適用するとドラッグと綱引きになるため、その1フレームは引き戻しを見送る。
+  // ジェスチャ境界をまたいで持ち回るフラグと違い、終端 intent を取りこぼしても
+  // 次の tick で必ず倒れるため「引き戻しが二度と効かない」状態にならない。
+  private commandedSinceTick = false;
 
   constructor(
     initialState: CameraState = createCameraState(),
@@ -292,6 +328,7 @@ export class CameraController {
   }
 
   panBy(deltaX: number, deltaY: number): CameraState {
+    this.commandedSinceTick = true;
     this.state = panCamera(this.state, deltaX, deltaY, this.options);
     return this.state;
   }
@@ -302,7 +339,14 @@ export class CameraController {
   }
 
   zoomAtCursor(input: CanvasWheelCameraInput): CameraState {
+    this.commandedSinceTick = true;
     this.state = onCanvasWheel(this.state, input, this.options);
+    return this.state;
+  }
+
+  zoomByScale(input: CanvasPinchCameraInput): CameraState {
+    this.commandedSinceTick = true;
+    this.state = onCanvasPinch(this.state, input, this.options);
     return this.state;
   }
 
@@ -332,7 +376,9 @@ export class CameraController {
   }
 
   tick(deltaTimeMs: number, context: CameraControllerCommandContext): CameraState {
-    this.state = tickCamera(this.state, deltaTimeMs, context, this.options);
+    const interacting = context.interacting || this.commandedSinceTick;
+    this.commandedSinceTick = false;
+    this.state = tickCamera(this.state, deltaTimeMs, {...context, interacting}, this.options);
     return this.state;
   }
 }
@@ -388,14 +434,18 @@ function applyElasticBoundary(
   state: CameraState,
   bounds: CameraBounds,
   viewport: CameraViewport,
+  frameFactor: number,
   options: CameraControllerOptions
 ): CameraState {
   const range = resolveCameraRange(bounds, viewport, state.zoom, options.boundaryMarginRatio);
+  // 1フレーム分で boundaryElasticity 倍だけ超過分を残す。フレーム時間が伸びても
+  // 引き戻し量が変わらないよう、経過フレーム数で指数化する。
+  const retain = Math.pow(options.boundaryElasticity, frameFactor);
 
   return {
     ...state,
-    x: softenToRange(state.x, range.minX, range.maxX, options.boundaryElasticity),
-    y: softenToRange(state.y, range.minY, range.maxY, options.boundaryElasticity),
+    x: softenToRange(state.x, range.minX, range.maxX, retain),
+    y: softenToRange(state.y, range.minY, range.maxY, retain),
   };
 }
 
@@ -416,27 +466,31 @@ function resolveCameraRange(
   const minY = bounds.top - (expandedHeight - height) / 2 + halfViewportHeight;
   const maxY = bounds.bottom + (expandedHeight - height) / 2 - halfViewportHeight;
 
-  const centerX = (bounds.left + bounds.right) / 2;
-  const centerY = (bounds.top + bounds.bottom) / 2;
-
+  // ビューポートがコンテンツ＋余白より大きいと min/max が逆転する。1点に潰すと
+  // fit ズーム以下でパンが一切できなくなるため、逆転時は入れ替えて範囲として扱う。
+  // 入れ替え後の範囲は「コンテンツが画面内に残る」カメラ位置の集合と一致する。
   return {
-    minX: minX > maxX ? centerX : minX,
-    maxX: minX > maxX ? centerX : maxX,
-    minY: minY > maxY ? centerY : minY,
-    maxY: minY > maxY ? centerY : maxY,
+    minX: Math.min(minX, maxX),
+    maxX: Math.max(minX, maxX),
+    minY: Math.min(minY, maxY),
+    maxY: Math.max(minY, maxY),
   };
 }
 
-function softenToRange(value: number, min: number, max: number, elasticity: number): number {
+function softenToRange(value: number, min: number, max: number, retain: number): number {
   if (value < min) {
-    return min + (value - min) * elasticity;
+    return min + (value - min) * retain;
   }
 
   if (value > max) {
-    return max + (value - max) * elasticity;
+    return max + (value - max) * retain;
   }
 
   return value;
+}
+
+function stopBelowThreshold(velocity: number, threshold: number): number {
+  return Math.abs(velocity) < threshold ? 0 : velocity;
 }
 
 function normalizeCameraState(state: CameraState, options: CameraControllerOptions): CameraState {
