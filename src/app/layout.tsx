@@ -3,7 +3,8 @@ import type {ReactNode} from 'react';
 
 import ClientErrorBridge from '@/components/client-error-bridge';
 import QueryProvider from '@/components/query-provider';
-import {defaultLocale} from '@/i18n/routing';
+import {defaultLocale, locales, type Locale} from '@/i18n/routing';
+import {getLocale} from 'next-intl/server';
 
 import './globals.css';
 
@@ -21,9 +22,12 @@ export const metadata: Metadata = {
 // ロケール切替でキャッシュが捨てられることもない。
 // このレイアウトは Server Component のまま、children をクライアント境界越しに
 // 渡すだけなので、配下がクライアントコンポーネント化するコストは発生しない。
-export default function RootLayout({children}: {children: ReactNode}) {
+export default async function RootLayout({children}: {children: ReactNode}) {
+  const locale = await getLocale();
+  const resolvedLocale = locales.includes(locale as Locale) ? (locale as Locale) : defaultLocale;
+
   return (
-    <html lang={defaultLocale}>
+    <html lang={resolvedLocale} dir={resolvedLocale === 'ar' ? 'rtl' : 'ltr'}>
       <body>
         <QueryProvider>{children}</QueryProvider>
         <ClientErrorBridge />
