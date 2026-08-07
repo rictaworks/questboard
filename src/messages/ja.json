@@ -110,5 +110,10 @@
     "intensityFull": "フル",
     "intensitySubtle": "控えめ",
     "intensityOff": "オフ"
+  },
+  "NotFound": {
+    "title": "ページが見つかりません",
+    "description": "お探しのページは存在しないか、移動した可能性があります。",
+    "homeButton": "ホームに戻る"
   }
 }

@@ -52,6 +52,27 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
+async function loadMiddleware() {
+  const source = await read('src/middleware.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  const require = (specifier) => {
+    if (specifier === 'next-intl/middleware') {
+      return {__esModule: true, default: () => null};
+    }
+    if (specifier === '@/i18n/routing') {
+      return {defaultLocale, locales};
+    }
+    throw new Error(`Unexpected import in middleware: ${specifier}`);
+  };
+
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  return moduleShim.exports;
+}
+
 const {defaultLocale, locales} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
 const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
@@ -83,12 +104,18 @@ test('all locale files exist and placeholder locales stay scaffolded', async () 
     assert.ok(json.BoardInvite.notFoundDescription, `${locale} board invite notFoundDescription missing`);
     assert.ok(json.BoardCanvas, `${locale} board canvas namespace missing`);
     assert.ok(json.BoardCanvas.resetCamera, `${locale} board canvas resetCamera missing`);
+    assert.ok(json.NotFound, `${locale} NotFound namespace missing`);
+    assert.ok(json.NotFound.title, `${locale} NotFound title missing`);
+    assert.ok(json.NotFound.description, `${locale} NotFound description missing`);
+    assert.ok(json.NotFound.homeButton, `${locale} NotFound homeButton missing`);
   }
 
   const ja = JSON.parse(await read('src/messages/ja.json'));
   const en = JSON.parse(await read('src/messages/en.json'));
   assert.doesNotMatch(ja.Metadata.description, /^\[TODO]/);
   assert.doesNotMatch(en.Metadata.description, /^\[TODO]/);
+  assert.doesNotMatch(ja.NotFound.description, /^\[TODO]/);
+  assert.doesNotMatch(en.NotFound.description, /^\[TODO]/);
 
   for (const locale of pendingLocales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
@@ -159,11 +186,41 @@ test('UI source does not contain hardcoded JSX text', async () => {
 });
 
 test('middleware matcher stays in sync with routing locales', async () => {
-  const middleware = await read('src/middleware.ts');
-  const matcherMatch = middleware.match(/'\/\(([^)]+)\)\/:path\*'/);
+  const middlewareModule = await loadMiddleware();
+  const matcher = middlewareModule.config?.matcher;
 
-  assert.ok(matcherMatch, 'middleware matcher pattern not found');
-  assert.deepEqual(matcherMatch[1].split('|'), [...locales]);
+  assert.ok(Array.isArray(matcher), 'middleware matcher must be an array');
+
+  // Assert expected routes are protected/handled by the middleware
+  assert.ok(matcher.includes('/'), "middleware matcher must include '/'");
+  assert.ok(matcher.includes('/b/:path*'), "middleware matcher must include '/b/:path*'");
+  assert.ok(matcher.includes('/auth/google/callback'), "middleware matcher must include '/auth/google/callback'");
+
+  // Assert there is a locale match pattern
+  const expectedLocalePattern = `/(${locales.join('|')})/:path*`;
+  assert.ok(matcher.includes(expectedLocalePattern), `middleware matcher must include dynamic locale pattern matching: ${expectedLocalePattern}`);
+
+  // Assert we catch all other routes for locale redirection to prevent unstyled 404
+  const catchAllPattern = '/((?!api(?:/|$)|_next(?:/|$)|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)';
+  assert.ok(matcher.includes(catchAllPattern), `middleware matcher must include catch-all pattern: ${catchAllPattern}`);
+
+  // Validate the regex behavior in the matcher
+  const regexStr = catchAllPattern.slice(2, -1);
+  const regex = new RegExp(`^/${regexStr}$`);
+
+  // Normal paths like /apiary or /faviconXico should match (be processed by middleware)
+  assert.ok(regex.test('/apiary'), '/apiary should match catch-all pattern');
+  assert.ok(regex.test('/faviconXico'), '/faviconXico should match catch-all pattern');
+
+  // Static/API routes should NOT match (be excluded from middleware)
+  assert.equal(regex.test('/api'), false, '/api should NOT match');
+  assert.equal(regex.test('/api/hello'), false, '/api/hello should NOT match');
+  assert.equal(regex.test('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
+  assert.equal(regex.test('/favicon.ico'), false, '/favicon.ico should NOT match');
+  assert.equal(regex.test('/sitemap.xml'), false, '/sitemap.xml should NOT match');
+  assert.equal(regex.test('/robots.txt'), false, '/robots.txt should NOT match');
+
+  assert.equal(matcher.length, 5, 'middleware matcher should contain exactly 5 entries');
 });
 
 test('forbidden browser dialogs are not used', async () => {

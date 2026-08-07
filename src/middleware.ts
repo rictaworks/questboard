@@ -15,7 +15,7 @@ export const config = {
     '/',
     '/(ja|en|fr|zh|ru|es|ar)/:path*',
     '/b/:path*',
-    '/auth/google/callback'
+    '/auth/google/callback',
+    '/((?!api(?:/|$)|_next(?:/|$)|favicon\\.ico|sitemap\\.xml|robots\\.txt).*)'
   ]
 };
-

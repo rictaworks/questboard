@@ -110,5 +110,10 @@
     "intensityFull": "كامل",
     "intensitySubtle": "خفيف",
     "intensityOff": "إيقاف"
+  },
+  "NotFound": {
+    "title": "[TODO] translate",
+    "description": "[TODO] translate",
+    "homeButton": "[TODO] translate"
   }
 }

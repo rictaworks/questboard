@@ -15,8 +15,7 @@ export function generateStaticParams(): Array<{locale: Locale}> {
   return locales.map((locale) => ({locale}));
 }
 
-// ルートの layout.tsx にもタイトルの既定値を置いているが、そちらはロケールを知らない。
-// 説明文だけはロケールごとに変わるため、ここで上書きする（Issue #100）。
+// タイトルの既定値と説明文を設定する（Issue #100）。
 export async function generateMetadata({
   params
 }: {

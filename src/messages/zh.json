@@ -110,5 +110,10 @@
     "intensityFull": "完整",
     "intensitySubtle": "微弱",
     "intensityOff": "关闭"
+  },
+  "NotFound": {
+    "title": "[TODO] translate",
+    "description": "[TODO] translate",
+    "homeButton": "[TODO] translate"
   }
 }

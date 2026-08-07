@@ -110,5 +110,10 @@
     "intensityFull": "Completa",
     "intensitySubtle": "Sutil",
     "intensityOff": "Desactivada"
+  },
+  "NotFound": {
+    "title": "[TODO] translate",
+    "description": "[TODO] translate",
+    "homeButton": "[TODO] translate"
   }
 }
