@@ -160,7 +160,7 @@ test('UI source does not contain hardcoded JSX text', async () => {
 
 test('middleware matcher stays in sync with routing locales', async () => {
   const middleware = await read('src/middleware.ts');
-  const matcherMatch = middleware.match(/matcher: \['\/', '\/\(([^)]+)\)\/:path\*'\]/);
+  const matcherMatch = middleware.match(/'\/\(([^)]+)\)\/:path\*'/);
 
   assert.ok(matcherMatch, 'middleware matcher pattern not found');
   assert.deepEqual(matcherMatch[1].split('|'), [...locales]);

@@ -448,10 +448,10 @@ a {
   color: inherit;
 }
 
-.board-object-action-rotate { top: -0.6rem; right: -0.6rem; }
-.board-object-action-resize { right: -0.6rem; bottom: -0.6rem; }
-.board-object-action-color { left: -0.6rem; bottom: -0.6rem; }
-.board-object-action-lock { left: -0.6rem; top: -0.6rem; }
+.board-object-action-rotate { top: -0.6rem; inset-inline-end: -0.6rem; }
+.board-object-action-resize { inset-inline-end: -0.6rem; bottom: -0.6rem; }
+.board-object-action-color { inset-inline-start: -0.6rem; bottom: -0.6rem; }
+.board-object-action-lock { inset-inline-start: -0.6rem; top: -0.6rem; }
 
 .selection-marquee {
   position: absolute;
@@ -651,7 +651,7 @@ a {
 
 .board-toasts {
   position: fixed;
-  right: var(--space-4);
+  inset-inline-end: var(--space-4);
   bottom: var(--space-4);
   display: grid;
   gap: var(--space-2);

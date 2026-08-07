@@ -11,5 +11,11 @@ export default createMiddleware({
 // values), so this list cannot be derived from `locales` at build time.
 // `test/scaffold.test.mjs` asserts these two lists stay in sync.
 export const config = {
-  matcher: ['/', '/(ja|en|fr|zh|ru|es|ar)/:path*']
+  matcher: [
+    '/',
+    '/(ja|en|fr|zh|ru|es|ar)/:path*',
+    '/b/:path*',
+    '/auth/google/callback'
+  ]
 };
+

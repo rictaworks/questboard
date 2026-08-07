@@ -7,8 +7,23 @@ import * as ts from 'typescript';
 
 const root = process.cwd();
 
+async function loadRouting() {
+  const source = await readFile(path.join(root, 'src/i18n/routing.ts'), 'utf8');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
+  return moduleShim.exports;
+}
+
+const realRouting = await loadRouting();
+
+let cssImported = false;
+
 async function loadModule(locale) {
-  const source = await readFile(path.join(root, 'src/app/layout.tsx'), 'utf8');
+  const source = await readFile(path.join(root, 'src/app/[locale]/layout.tsx'), 'utf8');
   const {outputText} = ts.transpileModule(source, {
     compilerOptions: {
       jsx: ts.JsxEmit.ReactJSX,
@@ -21,7 +36,25 @@ async function loadModule(locale) {
   const require = createRequire(import.meta.url);
   const mockRequire = (specifier) => {
     if (specifier === 'next-intl/server') {
-      return {getLocale: async () => locale};
+      return {
+        getMessages: async () => ({}),
+        getTranslations: async () => (key) => key,
+        setRequestLocale: () => {}
+      };
+    }
+
+    if (specifier === 'next-intl') {
+      return {
+        NextIntlClientProvider: ({children}) => children
+      };
+    }
+
+    if (specifier === 'next/navigation') {
+      return {
+        notFound: () => {
+          throw new Error('notFound');
+        }
+      };
     }
 
     if (specifier === '@/components/client-error-bridge') {
@@ -33,10 +66,13 @@ async function loadModule(locale) {
     }
 
     if (specifier === '@/i18n/routing') {
-      return {defaultLocale: 'ja', locales: ['ja', 'en', 'fr', 'zh', 'ru', 'es', 'ar']};
+      return realRouting;
     }
 
     if (specifier.endsWith('.css')) {
+      if (specifier === '../globals.css') {
+        cssImported = true;
+      }
       return {};
     }
 
@@ -48,23 +84,29 @@ async function loadModule(locale) {
 }
 
 async function renderLayout(locale) {
-  const {default: RootLayout} = await loadModule(locale);
+  cssImported = false;
+  const {default: LocaleLayout} = await loadModule(locale);
   const React = await import('react');
   const {renderToStaticMarkup} = await import('react-dom/server');
-  const markup = await RootLayout({children: React.createElement('main', null, 'content')});
+  const params = Promise.resolve({locale});
+  const markup = await LocaleLayout({children: React.createElement('main', null, 'content'), params});
 
   return renderToStaticMarkup(markup);
 }
 
-test('root layout reflects locale and direction', async () => {
-  await assert.doesNotReject(async () => {
-    const localized = await renderLayout('en');
-    assert.match(localized, /<html lang="en" dir="ltr">/);
+test('root layout reflects ltr direction for en', async () => {
+  const localized = await renderLayout('en');
+  assert.match(localized, /<html lang="en" dir="ltr">/);
+  assert.equal(cssImported, true, 'globals.css was not imported');
+});
 
-    const rtl = await renderLayout('ar');
-    assert.match(rtl, /<html lang="ar" dir="rtl">/);
+test('root layout reflects rtl direction for ar', async () => {
+  const rtl = await renderLayout('ar');
+  assert.match(rtl, /<html lang="ar" dir="rtl">/);
+});
 
-    const fallback = await renderLayout('de');
-    assert.match(fallback, /<html lang="ja" dir="ltr">/);
-  });
+test('root layout triggers notFound for invalid locale', async () => {
+  await assert.rejects(async () => {
+    await renderLayout('de');
+  }, /notFound/);
 });

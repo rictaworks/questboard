@@ -5,7 +5,11 @@ import {NextIntlClientProvider} from 'next-intl';
 import {notFound} from 'next/navigation';
 import {getMessages, getTranslations, setRequestLocale} from 'next-intl/server';
 
-import {locales, type Locale} from '@/i18n/routing';
+import ClientErrorBridge from '@/components/client-error-bridge';
+import QueryProvider from '@/components/query-provider';
+import {locales, type Locale, isRtlLocale} from '@/i18n/routing';
+
+import '../globals.css';
 
 export function generateStaticParams(): Array<{locale: Locale}> {
   return locales.map((locale) => ({locale}));
@@ -47,10 +51,16 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale as Locale);
   const messages = await getMessages();
+  const dir = isRtlLocale(locale as Locale) ? 'rtl' : 'ltr';
 
   return (
-    <NextIntlClientProvider messages={messages}>
-      {children}
-    </NextIntlClientProvider>
+    <html lang={locale} dir={dir}>
+      <body>
+        <NextIntlClientProvider messages={messages}>
+          <QueryProvider>{children}</QueryProvider>
+          <ClientErrorBridge />
+        </NextIntlClientProvider>
+      </body>
+    </html>
   );
 }
