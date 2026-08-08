@@ -1,19 +1,35 @@
 'use client';
 
-import {QueryClientProvider} from '@tanstack/react-query';
+import {QueryClientProvider, type QueryClient} from '@tanstack/react-query';
 import {useState, type ReactNode} from 'react';
 
 import {createQueryClient} from '@/lib/query-client';
 
-// QueryClient は必ずコンポーネント内で生成する。モジュールスコープで生成すると、
-// SSR時に同一Node.jsプロセス上の並行リクエストが1つのキャッシュを共有し、
-// あるユーザーのクエスト状態が別ユーザーのHTMLに混入しうる（request bleed）。
-// useState の遅延初期化により、ブラウザではタブごとに1個、
-// サーバーではレンダリングごとに1個のインスタンスに固定される。
-// このプロバイダは src/app/layout.tsx（ロケールセグメントの外側）に置くため、
-// ロケール切替で再マウントされずキャッシュも維持される。
+// ブラウザ側の QueryClient。モジュールスコープに置くのはブラウザ用の1個だけで、
+// サーバー側は必ずレンダリングごとに新しいインスタンスを作る。
+//
+// サーバーでモジュールスコープのインスタンスを共有すると、同一 Node.js プロセス上の
+// 並行リクエストが1つのキャッシュを見て、あるユーザーのクエスト状態が別ユーザーの
+// HTML に混入する（request bleed）。ブラウザでは1タブ＝1プロセスなのでこの危険はない。
+let browserQueryClient: QueryClient | undefined;
+
+function resolveQueryClient(): QueryClient {
+  if (typeof window === 'undefined') {
+    return createQueryClient();
+  }
+
+  browserQueryClient ??= createQueryClient();
+
+  return browserQueryClient;
+}
+
+// このプロバイダは src/app/[locale]/layout.tsx（ロケールセグメントの内側）に置く。
+// App Router はレイアウトを動的セグメントの値でキー付けするため、/ja → /en の
+// ロケール切替でこのコンポーネントはアンマウント・再マウントされる。
+// 再マウントで useState の初期化が走り直しても、ブラウザでは上の
+// browserQueryClient を返すため、取得済みのボード・クエストのキャッシュは残る。
 export default function QueryProvider({children}: {children: ReactNode}) {
-  const [queryClient] = useState(createQueryClient);
+  const [queryClient] = useState(resolveQueryClient);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

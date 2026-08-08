@@ -1138,11 +1138,18 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           });
         }
       } else if (current.kind === 'resize') {
+        // RTL ではリサイズハンドルをミラーするため、幅を変えると左辺（x）も動く
+        // （handleMove の actualDeltaX）。LTR では x は動かない。
+        //
+        // x は move op と同じ geometry プロパティで、mergeGeometry() は届いたキーを
+        // すべて適用する。ロケールを見て一律に x を載せると、x が動いていない
+        // リサイズでも自分の古い x を送ってしまい、他ユーザーが同時に行った移動を
+        // 上書きして巻き戻す。実際に変化したときだけ送ること。
         const payload: Record<string, number> = {
           w: Math.round(nextGeometry.w),
           h: Math.round(nextGeometry.h)
         };
-        if (isRtl) {
+        if (Math.round(nextGeometry.x) !== Math.round(targetObject.geometry.x)) {
           payload.x = Math.round(nextGeometry.x);
         }
         sendObjectRealtimeOp(targetObject.id, 'geometry', payload);

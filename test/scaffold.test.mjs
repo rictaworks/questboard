@@ -82,7 +82,7 @@ async function loadMiddleware() {
       return {__esModule: true, default: () => null};
     }
     if (specifier === 'next/server') {
-      return {NextResponse: {next: () => null}};
+      return {NextRequest: class {}, NextResponse: {next: () => null}};
     }
     if (specifier === '@/i18n/middleware-routing') {
       return middlewareRouting;
@@ -238,9 +238,15 @@ test('middleware matcher only excludes build artifacts', async () => {
   assert.ok(matches('/.well-known/acme-challenge/token'), '/.well-known/... should match');
   assert.ok(matches('/wp-login.php'), '/wp-login.php should match');
 
-  // 2. ビルド成果物と計測エンドポイントだけを外す
+  // 2. ビルド成果物と計測エンドポイントの「配下」だけを外す
   assert.equal(matches('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
   assert.equal(matches('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
+
+  // 3. `_next` / `_vercel` そのものは対象に含める。1セグメントのパスなので
+  //    [locale] に一致してしまい、外すとミドルウェアを通らないまま
+  //    クライアントが送ったロケール・パスのヘッダーがサーバーコンポーネントに届く。
+  assert.ok(matches('/_next'), '/_next should match');
+  assert.ok(matches('/_vercel'), '/_vercel should match');
 });
 
 // ロケール解決（リダイレクトとロケールヘッダーの付与）を行うかどうかの判定。
@@ -249,7 +255,9 @@ test('middleware matcher only excludes build artifacts', async () => {
 test('locale routing is skipped for real file requests but never for locale-prefixed paths', async () => {
   const {shouldSkipLocaleRouting} = middlewareRouting;
 
-  // 1. 実ファイル要求は素通しする
+  // 1. 実ファイル要求は素通しする。
+  //    ルート直下は拡張子の有無で絞らない。絞ると、拡張子を持たない所有権確認
+  //    ファイルや CDN のヘルスチェックパスが public/ から配信されなくなる。
   for (const pathname of [
     '/robots.txt',
     '/favicon.ico',
@@ -258,10 +266,13 @@ test('locale routing is skipped for real file requests but never for locale-pref
     '/fonts/inter.woff2',
     '/index.html',
     '/googleabc.html',
+    '/googlehostedservice',
+    '/apple-app-site-association',
+    '/_next',
+    '/_vercel',
     '/api',
     '/api/hello',
-    '/.well-known/acme-challenge/token',
-    '/apple-app-site-association'
+    '/.well-known/acme-challenge/token'
   ]) {
     assert.equal(shouldSkipLocaleRouting(pathname), true, `${pathname} should skip locale routing`);
   }
@@ -282,10 +293,46 @@ test('locale routing is skipped for real file requests but never for locale-pref
     );
   }
 
-  // 3. HTML を期待する通常のパスもロケール解決の対象
-  for (const pathname of ['/', '/b/token123', '/apiary', '/faviconXico']) {
+  // 3. ルート自身と多階層の通常パスはロケール解決の対象。
+  //    /b/token123 は過去に配布された（ロケール接頭辞の無い）共有リンクなので、
+  //    ここを素通しにすると既存のリンクがロケール解決されず 404 に落ちる。
+  for (const pathname of ['/', '/b/token123', '/auth/google/callback']) {
     assert.equal(shouldSkipLocaleRouting(pathname), false, `${pathname} should be routed`);
   }
+});
+
+// ロケール接頭辞の無い共有リンクは、受け取り側の Accept-Language で解決させない。
+// 翻訳が未完了のロケールに着地すると "[TODO] translate" だけが見える。
+test('locale-less share links go to the default locale, not the detected one', async () => {
+  const {requiresDefaultLocale} = middlewareRouting;
+
+  assert.equal(requiresDefaultLocale('/b/token123'), true, '/b/token123 must use the default locale');
+
+  // ロケール接頭辞が付いていればそのロケールを尊重する
+  for (const locale of locales) {
+    assert.equal(
+      requiresDefaultLocale(`/${locale}/b/token123`),
+      false,
+      `/${locale}/b/token123 must keep its locale`
+    );
+  }
+
+  // OAuth のコールバックは本人のクッキー由来の検出結果に任せる
+  assert.equal(requiresDefaultLocale('/auth/google/callback'), false);
+  // 前方一致で誤って拾わないこと
+  assert.equal(requiresDefaultLocale('/board'), false);
+  assert.equal(requiresDefaultLocale('/b'), false);
+});
+
+// 壊れたパスを next-intl に渡すと、リクエストヘッダーに触れないまま素通しされ、
+// クライアントが送ったロケールがサーバーコンポーネントに届く。
+test('malformed pathnames are classified as undecodable so next-intl never sees them', async () => {
+  const {isDecodablePathname} = middlewareRouting;
+
+  assert.equal(isDecodablePathname('/ja/%E7%B4%84'), true, 'valid escapes should decode');
+  assert.equal(isDecodablePathname('/ja/plain'), true, 'plain paths should decode');
+  assert.equal(isDecodablePathname('/%E0%A4%A'), false, 'truncated escape should not decode');
+  assert.equal(isDecodablePathname('/%ZZ'), false, 'invalid escape should not decode');
 });
 
 test('forbidden browser dialogs are not used', async () => {

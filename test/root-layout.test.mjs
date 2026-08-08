@@ -75,7 +75,7 @@ const localeLayoutOutput = transpile(
   await readFile(path.join(root, 'src/app/[locale]/layout.tsx'), 'utf8')
 );
 
-function loadLocaleLayout({requestPathname = null} = {}) {
+function loadLocaleLayout({requestPathname = null, detectedLocale = 'ja'} = {}) {
   const calls = {redirectedTo: null, cssImported: false, requestLocale: null};
 
   const mockRequire = (specifier) => {
@@ -118,6 +118,10 @@ function loadLocaleLayout({requestPathname = null} = {}) {
 
     if (specifier === '@/i18n/middleware-routing') {
       return realMiddlewareRouting;
+    }
+
+    if (specifier === '@/i18n/server-locale') {
+      return {resolveRequestLocale: async () => detectedLocale};
     }
 
     if (specifier === '@/i18n/routing') {
@@ -176,9 +180,9 @@ test('locale layout exposes a default title so tabs never show a raw URL', async
 });
 
 // 不正なロケールで notFound() を投げると、その 404 は lang / dir / globals.css を
-// 持たない Next 組み込みのエラーシェルで返る。既定ロケール付きのパスへ送り直し、
+// 持たない Next 組み込みのエラーシェルで返る。ロケール付きのパスへ送り直し、
 // 「どのルートにも一致しない」経路（global-not-found）に寄せる。
-test('locale layout redirects an invalid locale to the default locale path', async () => {
+test('locale layout redirects an invalid locale to a locale-prefixed path', async () => {
   const {calls} = loadLocaleLayout({requestPathname: '/robots.txt'});
   const {module} = loadLocaleLayout({requestPathname: '/robots.txt'});
 
@@ -205,6 +209,42 @@ test('locale layout keeps the original path when redirecting an invalid locale',
   );
 
   assert.equal(loaded.calls.redirectedTo, '/ja/.well-known/acme-challenge/token');
+});
+
+// リダイレクト先に既定ロケールを固定すると、素通しパスの 404 が全利用者に
+// 日本語で返る。ミドルウェアが判定したロケールを使うこと。
+test('locale layout redirects an invalid locale to the detected locale, not the default', async () => {
+  const loaded = loadLocaleLayout({requestPathname: '/googlehostedservice', detectedLocale: 'ar'});
+
+  await assert.rejects(async () =>
+    loaded.module.default({
+      children: React.createElement('main', null, 'content'),
+      params: Promise.resolve({locale: 'googlehostedservice'})
+    })
+  );
+
+  assert.equal(loaded.calls.redirectedTo, '/ar/googlehostedservice');
+});
+
+// パスのヘッダーが無いのはミドルウェアの不具合。パスを捏造して静かに誤った
+// リダイレクトを返すのではなく、原因の分かる例外で落とすこと。
+test('locale layout throws instead of inventing a path when the pathname header is missing', async () => {
+  const loaded = loadLocaleLayout({requestPathname: null});
+
+  await assert.rejects(
+    async () =>
+      loaded.module.default({
+        children: React.createElement('main', null, 'content'),
+        params: Promise.resolve({locale: 'robots.txt'})
+      }),
+    (error) => {
+      assert.doesNotMatch(error.message, /NEXT_REDIRECT/, 'リダイレクトしてはいけない');
+      assert.match(error.message, new RegExp(realMiddlewareRouting.PATHNAME_HEADER));
+      return true;
+    }
+  );
+
+  assert.equal(loaded.calls.redirectedTo, null);
 });
 
 test('locale layout returns empty metadata for an invalid locale', async () => {

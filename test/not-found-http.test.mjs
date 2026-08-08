@@ -28,6 +28,9 @@ const LOCALE_HEADER = 'x-next-intl-locale';
 const FIXTURE_MARKER = 'questboard-public-fixture';
 const FIXTURE_FILES = [
   {pathname: '/__qb-test-fixture.txt', relativePath: 'public/__qb-test-fixture.txt'},
+  // 拡張子を持たないルート直下の実ファイル。ドメイン所有権確認ファイルや CDN の
+  // ヘルスチェックパスがこの形なので、拡張子を条件にすると配信されなくなる。
+  {pathname: '/__qb-test-fixture', relativePath: 'public/__qb-test-fixture'},
   {
     pathname: '/.well-known/__qb-test-fixture',
     relativePath: 'public/.well-known/__qb-test-fixture'
@@ -99,6 +102,18 @@ async function getFinal(pathname, headers = {}) {
   const htmlTag = body.match(/<html[^>]*>/)?.[0] ?? '';
 
   return {status: response.status, htmlTag, body};
+}
+
+// リダイレクトを追わず、1 ホップ目の行き先だけを見る。
+async function getRedirect(pathname, headers = {}) {
+  const response = await fetch(`${BASE_URL}${pathname}`, {headers, redirect: 'manual'});
+  const location = response.headers.get('location');
+
+  return {
+    status: response.status,
+    location: location === null ? null : new URL(location, BASE_URL).pathname,
+    search: location === null ? null : new URL(location, BASE_URL).search
+  };
 }
 
 before(async () => {
@@ -207,10 +222,73 @@ test('クライアントが送ったロケールヘッダーで URL のロケー
   assert.equal(htmlTag, '<html lang="ja" dir="ltr">');
 });
 
-test('ミドルウェアを通らないパスでもロケールヘッダーを信頼しない', async () => {
+test('ロケール解決を素通しするパスでもロケールヘッダーを信頼しない', async () => {
   const {htmlTag} = await getFinal('/__qb-missing.txt', {[LOCALE_HEADER]: 'ar'});
 
   assert.equal(htmlTag, '<html lang="ja" dir="ltr">');
+});
+
+// matcher から `_next` / `_vercel` そのものを除外すると、これらは1セグメントの
+// パスなので [locale] に一致し、ミドルウェアを通らないままクライアントの
+// ロケールヘッダーがサーバーコンポーネントに届く。
+for (const pathname of ['/_next', '/_vercel']) {
+  test(`${pathname} でもロケールヘッダーを信頼しない`, async () => {
+    const {htmlTag} = await getFinal(pathname, {[LOCALE_HEADER]: 'ar'});
+
+    assert.equal(htmlTag, '<html lang="ja" dir="ltr">');
+  });
+}
+
+// next-intl のミドルウェアは decodeURI() が失敗するとヘッダーに触れずに素通しする。
+// その経路にクライアントのロケールを残してはいけない。
+test('不正なパーセントエスケープでロケールヘッダーを持ち込めない', async () => {
+  const {body} = await getFinal('/%E0%A4%A', {[LOCALE_HEADER]: 'ar'});
+
+  assert.doesNotMatch(body, /<html lang="ar"/, 'クライアント指定のロケールで描画されている');
+});
+
+// ---------------------------------------------------------------------------
+// 3-b. 素通しするパスでも、利用者の言語で 404 を返すこと
+// ---------------------------------------------------------------------------
+
+// 既定ロケール固定にすると、アラビア語利用者に読めない左横書きの 404 が返り、
+// 「ホームに戻る」も日本語サイトへ向かう。
+for (const pathname of ['/__qb-missing.txt', '/__qb-missing-without-extension']) {
+  test(`${pathname} の 404 が Accept-Language のロケールで返る`, async () => {
+    const {status, htmlTag} = await getFinal(pathname, {'accept-language': 'ar'});
+
+    assert.equal(status, 404);
+    assert.equal(htmlTag, '<html lang="ar" dir="rtl">');
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3-c. ロケール接頭辞の無い入口の行き先
+// ---------------------------------------------------------------------------
+
+// 共有リンクの受け取り側にはクッキーが無いため、検出は Accept-Language に落ちる。
+// 翻訳が未完了のロケールに着地すると、見出しもボタンも "[TODO] translate" になる。
+test('ロケール接頭辞の無い共有リンクは既定ロケールへ送られる', async () => {
+  const {status, location, search} = await getRedirect('/b/token123?invited=1', {
+    'accept-language': 'fr'
+  });
+
+  assert.equal(status, 307);
+  assert.equal(location, '/ja/b/token123');
+  assert.equal(search, '?invited=1', 'クエリを落としてはいけない');
+});
+
+// Google に登録する redirect_uri はロケール接頭辞を持てないが、戻ってくる利用者は
+// 直前に付いた NEXT_LOCALE クッキーを持つ。既定ロケールに固定するとログインの
+// たびに日本語サイトへ飛ばされる。
+test('OAuth コールバックはクッキーのロケールを保ち、クエリも落とさない', async () => {
+  const {status, location, search} = await getRedirect('/auth/google/callback?code=abc&state=xyz', {
+    cookie: 'NEXT_LOCALE=fr'
+  });
+
+  assert.equal(status, 307);
+  assert.equal(location, '/fr/auth/google/callback');
+  assert.equal(search, '?code=abc&state=xyz', '認可コードを落としてはいけない');
 });
 
 // ---------------------------------------------------------------------------

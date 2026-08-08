@@ -18,3 +18,10 @@
 *.tsbuildinfo
 .vercel
 /.playwright-mcp/
+
+# test/not-found-http.test.mjs が public/ 配信を検証するために作る一時ファイル。
+# テストは after() で DELETE/ へ退避するが、中断（Ctrl-C・CI のタイムアウト・
+# ポート衝突）で残ることがある。commit されると Vercel が公開配信してしまうため、
+# 追跡対象から外しておく。
+/public/__qb-test-fixture*
+/public/.well-known/__qb-test-fixture*
