@@ -76,6 +76,17 @@ a {
   color: rgba(247, 244, 255, 0.88);
 }
 
+.not-found-card {
+  max-width: 36rem;
+  margin: var(--space-12) auto;
+  text-align: center;
+}
+
+/* .hero-copy の左寄せマージンを打ち消し、カード内で中央に置く */
+.not-found-description {
+  margin: var(--space-4) auto var(--space-8);
+}
+
 .button {
   display: inline-flex;
   align-items: center;

@@ -1,21 +1,21 @@
-import {redirect} from "next/navigation";
+import GoogleCallback from "@/components/google-callback";
 
-import {defaultLocale} from "@/i18n/routing";
+// 同名のクエリパラメータが複数回現れると Next は配列を渡す（?code=a&code=b）。
+// 配列をそのまま下流に流すと truthy なので「必須パラメータが無い」判定を素通りし、
+// バックエンドのトークン交換に配列が届いて 502 になる。利用者にはログイン
+// コールバック画面で生のバックエンドエラーが出る。
+// 文字列でないものは受け取らなかったものとして扱い、callbackMissingCode の
+// メッセージに寄せる。
+function readParam(value: string | string[] | undefined): string | null {
+  return typeof value === "string" ? value : null;
+}
 
-export default async function GoogleCallbackAliasPage({
+export default async function GoogleCallbackPage({
   searchParams
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const query = new URLSearchParams();
 
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === "string") {
-      query.set(key, value);
-    }
-  }
-
-  const suffix = query.toString();
-  redirect(suffix ? `/${defaultLocale}/auth/google/callback?${suffix}` : `/${defaultLocale}/auth/google/callback`);
+  return <GoogleCallback code={readParam(params.code)} state={readParam(params.state)} />;
 }

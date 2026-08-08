@@ -52,9 +52,8 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
-const {defaultLocale, locales} = await loadRouting();
+const {defaultLocale} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
-const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
 
 test('design tokens keep expected values', async () => {
   const colors = await read('src/styles/tokens/colors.css');
@@ -70,40 +69,41 @@ test('design tokens keep expected values', async () => {
   assert.match(effects, /--shadow-glow-md:\s*0 0 30px var\(--color-glow\), 0 0 60px var\(--color-glow-wide\);/);
 });
 
-test('all locale files exist and placeholder locales stay scaffolded', async () => {
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.ok(json.Metadata, `${locale} metadata namespace missing`);
-    assert.ok(json.Home, `${locale} message namespace missing`);
-    assert.ok(json.Auth, `${locale} auth namespace missing`);
-    assert.ok(json.BoardInvite, `${locale} board invite namespace missing`);
-    assert.ok(json.Home.title, `${locale} home title missing`);
-    assert.ok(json.Home.authSectionTitle, `${locale} auth section title missing`);
-    assert.ok(json.BoardInvite.notFoundHeading, `${locale} board invite notFoundHeading missing`);
-    assert.ok(json.BoardInvite.notFoundDescription, `${locale} board invite notFoundDescription missing`);
-    assert.ok(json.BoardCanvas, `${locale} board canvas namespace missing`);
-    assert.ok(json.BoardCanvas.resetCamera, `${locale} board canvas resetCamera missing`);
-  }
+// 対応言語は日本語のみ。メッセージファイルが1つであること自体を検査する。
+// 増やすと URL 接頭辞・ロケール検出・未翻訳の扱いが再び必要になるため、
+// 言語追加は方針変更（CLAUDE.md）を伴う判断として扱う。
+test('only the japanese message catalog exists', async () => {
+  const files = (await walk('src/messages')).sort();
 
-  const ja = JSON.parse(await read('src/messages/ja.json'));
-  const en = JSON.parse(await read('src/messages/en.json'));
-  assert.doesNotMatch(ja.Metadata.description, /^\[TODO]/);
-  assert.doesNotMatch(en.Metadata.description, /^\[TODO]/);
-
-  for (const locale of pendingLocales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.match(json.Home.authSectionTitle, /^\[TODO] translate$/);
-  }
+  assert.deepEqual(files, ['src/messages/ja.json']);
+  assert.equal(defaultLocale, 'ja');
 });
 
-// 製品名はどのロケールでも同じ表記なので、翻訳待ちのロケールでも
-// プレースホルダのままにしない。ブラウザのタブに [TODO] translate と出る（Issue #100）。
-test('the product name is not left untranslated in any locale', async () => {
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.equal(json.Metadata.title, 'Questboard', `${locale} metadata title differs`);
-    assert.equal(json.Home.title, 'Questboard', `${locale} home title differs`);
-  }
+test('the japanese message catalog covers every namespace and has no placeholders', async () => {
+  const json = JSON.parse(await read('src/messages/ja.json'));
+
+  assert.ok(json.Metadata, 'metadata namespace missing');
+  assert.ok(json.Home, 'home namespace missing');
+  assert.ok(json.Auth, 'auth namespace missing');
+  assert.ok(json.BoardInvite, 'board invite namespace missing');
+  assert.ok(json.Home.title, 'home title missing');
+  assert.ok(json.Home.authSectionTitle, 'auth section title missing');
+  assert.ok(json.BoardInvite.notFoundHeading, 'board invite notFoundHeading missing');
+  assert.ok(json.BoardInvite.notFoundDescription, 'board invite notFoundDescription missing');
+  assert.ok(json.BoardCanvas, 'board canvas namespace missing');
+  assert.ok(json.BoardCanvas.resetCamera, 'board canvas resetCamera missing');
+
+  // 翻訳待ちのプレースホルダが1つも残っていないこと。多言語をやめた以上、
+  // [TODO] translate が画面に出る状態は存在してはならない（Issue #103）。
+  assert.doesNotMatch(JSON.stringify(json), /\[TODO]/);
+});
+
+// タイトルが空だとブラウザのタブが生の URL 表示になる（Issue #100）。
+test('the product name is set for the tab title and the home heading', async () => {
+  const json = JSON.parse(await read('src/messages/ja.json'));
+
+  assert.equal(json.Metadata.title, 'Questboard');
+  assert.equal(json.Home.title, 'Questboard');
 });
 
 // トップページはアプリの入口であって製品紹介の LP ではない。開発用の雛形説明も
@@ -121,14 +121,12 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
     'localesDescription'
   ];
 
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    for (const key of removedKeys) {
-      assert.equal(key in json.Home, false, `${locale} still defines Home.${key}`);
-    }
+  const json = JSON.parse(await read('src/messages/ja.json'));
+  for (const key of removedKeys) {
+    assert.equal(key in json.Home, false, `Home.${key} is still defined`);
   }
 
-  const page = await read('src/app/[locale]/page.tsx');
+  const page = await read('src/app/page.tsx');
   assert.equal(page.includes('design-tokens'), false);
   assert.equal(page.includes('#locales'), false);
 });
@@ -158,12 +156,39 @@ test('UI source does not contain hardcoded JSX text', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('middleware matcher stays in sync with routing locales', async () => {
-  const middleware = await read('src/middleware.ts');
-  const matcherMatch = middleware.match(/matcher: \['\/', '\/\(([^)]+)\)\/:path\*'\]/);
+// ロケールを URL 接頭辞に持たせる構成には戻さない。
+//
+// [locale] は1セグメントのパスなら何にでも一致するため、/robots.txt や
+// /wp-login.php までルートとして受けてしまい、それを打ち消すために
+// ミドルウェアでのロケール解決・素通し判定・専用の 404 シェルが必要になる。
+// PR #116 ではこの構成で 2 日間に 14 コミット・設計の往復 4 回を要し、
+// レビューで確認された不具合 20 件はすべてこの構成に由来していた。
+test('locale routing is not reintroduced via a [locale] segment or middleware', async () => {
+  const appFiles = await walk('src/app');
+  const localeSegments = appFiles.filter((file) => file.includes('[locale]'));
 
-  assert.ok(matcherMatch, 'middleware matcher pattern not found');
-  assert.deepEqual(matcherMatch[1].split('|'), [...locales]);
+  assert.deepEqual(localeSegments, [], '[locale] セグメントが復活している');
+
+  // Next はミドルウェアを src/ 直下とリポジトリ直下の両方から読み、名前も
+  // middleware / proxy（Next 16 の新名称）の2系統、拡張子も ts / js / mjs がある。
+  // 一部しか見ないと、見ていないパスに置くだけで検査を素通りできてしまう。
+  const middlewareBasenames = ['middleware', 'proxy'];
+  const middlewareExtensions = ['ts', 'tsx', 'js', 'mjs'];
+  const middlewareDirs = ['src', '.'];
+
+  for (const dir of middlewareDirs) {
+    for (const basename of middlewareBasenames) {
+      for (const extension of middlewareExtensions) {
+        const middlewarePath = path.join(dir, `${basename}.${extension}`);
+
+        await assert.rejects(
+          async () => read(middlewarePath),
+          /ENOENT/,
+          `${middlewarePath} が存在する。ロケール解決のためのミドルウェアは置かない`
+        );
+      }
+    }
+  }
 });
 
 test('forbidden browser dialogs are not used', async () => {
