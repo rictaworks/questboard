@@ -185,7 +185,7 @@ test('UI source does not contain hardcoded JSX text', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('middleware matcher stays in sync with routing locales', async () => {
+test('middleware matcher excludes API and static paths', async () => {
   const middlewareModule = await loadMiddleware();
   const matcher = middlewareModule.config?.matcher;
 
