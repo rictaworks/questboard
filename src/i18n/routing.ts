@@ -5,5 +5,3 @@
 // および ICU の補間・複数形のためである。ロケールを URL 接頭辞に持たせないので、
 // この値はメッセージファイルの選択と <html lang> にのみ使う。
 export const defaultLocale = 'ja';
-
-export type Locale = typeof defaultLocale;

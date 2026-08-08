@@ -169,12 +169,25 @@ test('locale routing is not reintroduced via a [locale] segment or middleware', 
 
   assert.deepEqual(localeSegments, [], '[locale] セグメントが復活している');
 
-  for (const middlewarePath of ['src/middleware.ts', 'src/proxy.ts', 'middleware.ts']) {
-    await assert.rejects(
-      async () => read(middlewarePath),
-      /ENOENT/,
-      `${middlewarePath} が存在する。ロケール解決のためのミドルウェアは置かない`
-    );
+  // Next はミドルウェアを src/ 直下とリポジトリ直下の両方から読み、名前も
+  // middleware / proxy（Next 16 の新名称）の2系統、拡張子も ts / js / mjs がある。
+  // 一部しか見ないと、見ていないパスに置くだけで検査を素通りできてしまう。
+  const middlewareBasenames = ['middleware', 'proxy'];
+  const middlewareExtensions = ['ts', 'tsx', 'js', 'mjs'];
+  const middlewareDirs = ['src', '.'];
+
+  for (const dir of middlewareDirs) {
+    for (const basename of middlewareBasenames) {
+      for (const extension of middlewareExtensions) {
+        const middlewarePath = path.join(dir, `${basename}.${extension}`);
+
+        await assert.rejects(
+          async () => read(middlewarePath),
+          /ENOENT/,
+          `${middlewarePath} が存在する。ロケール解決のためのミドルウェアは置かない`
+        );
+      }
+    }
   }
 });
 

@@ -2,7 +2,7 @@ import type {Metadata} from 'next';
 import type {ReactNode} from 'react';
 
 import {NextIntlClientProvider} from 'next-intl';
-import {getMessages, getTranslations} from 'next-intl/server';
+import {getTranslations} from 'next-intl/server';
 
 import ClientErrorBridge from '@/components/client-error-bridge';
 import QueryProvider from '@/components/query-provider';
@@ -27,14 +27,16 @@ export async function generateMetadata(): Promise<Metadata> {
 //
 // QueryProvider と ClientErrorBridge もここに置く。動的セグメントを持たない
 // レイアウトなので、ページ遷移で再マウントされず React Query のキャッシュも保たれる。
-export default async function RootLayout({children}: {children: ReactNode}) {
-  const messages = await getMessages();
-
+// messages は渡さない。Server Component から描画した NextIntlClientProvider は
+// 自分で getMessages() を呼ぶため（next-intl 4.x の NextIntlClientProviderServer）、
+// ここで渡すとメッセージの出所が2箇所あるように見えるだけになる。
+// 実際の設定元は src/i18n/request.ts。
+export default function RootLayout({children}: {children: ReactNode}) {
   return (
     <html lang={defaultLocale}>
       <body>
         <QueryProvider>
-          <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>
+          <NextIntlClientProvider>{children}</NextIntlClientProvider>
         </QueryProvider>
         <ClientErrorBridge />
       </body>

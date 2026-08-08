@@ -50,7 +50,7 @@ Issue #19（PR #56）で実装。実装は `src/components/board-canvas-panel.ts
 
 ### WebSocket接続・再接続
 
-- ボード（`/{locale}/b/{shareToken}`）表示時に`NEXT_PUBLIC_SYNC_SERVER_URL`へ接続する。切断時は800msから開始し、最大8秒まで倍々に伸びるバックオフで自動再接続する
+- ボード（`/b/{shareToken}`）表示時に`NEXT_PUBLIC_SYNC_SERVER_URL`へ接続する。切断時は800msから開始し、最大8秒まで倍々に伸びるバックオフで自動再接続する
 - ブラウザの`online`/`offline`イベントを監視し、接続状態（`connecting`/`connected`/`reconnecting`/`offline`）をヘッダーの`board-sync-status`に表示する
 
 ### 楽観的op送信とサーバー確定値への収束
