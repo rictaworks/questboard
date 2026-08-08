@@ -2,7 +2,7 @@ import nextVitals from 'eslint-config-next/core-web-vitals';
 
 const config = [
   {
-    ignores: ['app-ui/**', '.next/**', 'node_modules/**'],
+    ignores: ['app-ui/**', '.next/**', 'node_modules/**', 'DELETE/**'],
   },
   ...(Array.isArray(nextVitals) ? nextVitals : [nextVitals]),
 ];

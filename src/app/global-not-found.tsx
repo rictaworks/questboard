@@ -21,8 +21,8 @@ async function getBrowserLocale(): Promise<Locale> {
         return pref as Locale;
       }
     }
-  } catch {
-    // Safe fallback to default locale in case headers cannot be read
+  } catch (error) {
+    console.error('[GlobalNotFound] Failed to parse Accept-Language header:', error);
   }
   return defaultLocale;
 }
