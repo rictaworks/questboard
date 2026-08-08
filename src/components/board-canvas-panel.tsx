@@ -1160,7 +1160,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [interaction, sendObjectRealtimeOp, viewport]);
+  }, [interaction, isRtl, sendObjectRealtimeOp, viewport]);
 
   const visibleObjects = useMemo(() => objects.map((object) => {
     const draft = previewGeometry[object.id];
