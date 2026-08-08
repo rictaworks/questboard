@@ -5,17 +5,15 @@ import {NextIntlClientProvider} from 'next-intl';
 import {notFound} from 'next/navigation';
 import {getMessages, getTranslations, setRequestLocale} from 'next-intl/server';
 
-import ClientErrorBridge from '@/components/client-error-bridge';
-import QueryProvider from '@/components/query-provider';
-import {locales, type Locale, isRtlLocale} from '@/i18n/routing';
-
-import '../globals.css';
+import {locales, type Locale} from '@/i18n/routing';
 
 export function generateStaticParams(): Array<{locale: Locale}> {
   return locales.map((locale) => ({locale}));
 }
 
 // タイトルの既定値と説明文を設定する（Issue #100）。
+// ルートレイアウトの generateMetadata もヘッダー由来のロケールで同じ値を返すが、
+// URL のロケールとヘッダーが食い違う場合はこちらの URL 由来の値が優先される。
 export async function generateMetadata({
   params
 }: {
@@ -35,6 +33,7 @@ export async function generateMetadata({
   };
 }
 
+// <html> / <body> は src/app/layout.tsx が出力する。ここで二重に出さないこと。
 export default async function LocaleLayout({
   children,
   params
@@ -50,16 +49,6 @@ export default async function LocaleLayout({
 
   setRequestLocale(locale as Locale);
   const messages = await getMessages();
-  const dir = isRtlLocale(locale as Locale) ? 'rtl' : 'ltr';
 
-  return (
-    <html lang={locale} dir={dir}>
-      <body>
-        <NextIntlClientProvider messages={messages}>
-          <QueryProvider>{children}</QueryProvider>
-          <ClientErrorBridge />
-        </NextIntlClientProvider>
-      </body>
-    </html>
-  );
+  return <NextIntlClientProvider messages={messages}>{children}</NextIntlClientProvider>;
 }

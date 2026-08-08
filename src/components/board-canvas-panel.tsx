@@ -165,7 +165,7 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
 export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const locale = useLocale();
-  const isRtl = isRtlLocale(locale as any);
+  const isRtl = isRtlLocale(locale);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
   const canvasInputControllerRef = useRef<CanvasInputController | null>(null);

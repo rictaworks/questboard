@@ -190,39 +190,39 @@ test('middleware matcher excludes API and static paths', async () => {
   const matcher = middlewareModule.config?.matcher;
 
   assert.ok(Array.isArray(matcher), 'middleware matcher must be an array');
+  assert.equal(matcher.length, 1, 'middleware matcher should contain exactly 1 entry');
 
-  // Assert there is only one catch-all pattern
-  const catchAllPattern = '/((?!api(?:/|$)|_next(?:/|$)|_vercel(?:/|$)|.*\\..*).*)';
-  assert.ok(matcher.includes(catchAllPattern), `middleware matcher must include catch-all pattern: ${catchAllPattern}`);
+  // パターンはミドルウェア本体から読む。テスト側にコピーを書くと、実装を変えても
+  // コピーを貼り直すだけでグリーンに戻せてしまい、挙動を検証しないテストになる。
+  const [catchAllPattern] = matcher;
+  const matches = (pathname) => new RegExp(`^${catchAllPattern}$`).test(pathname);
 
-  // Validate the regex behavior in the matcher
-  const regexStr = catchAllPattern.slice(2, -1);
-  const regex = new RegExp(`^/${regexStr}$`);
-
-  // 1. Expected pages and paths must match (be processed by middleware)
-  assert.ok(regex.test('/'), '/ should match');
-  assert.ok(regex.test('/b/token123'), '/b/token123 should match');
-  assert.ok(regex.test('/auth/google/callback'), '/auth/google/callback should match');
+  // 1. HTML を返すパスはすべてミドルウェアを通す（ロケールが決まらないと
+  //    lang / dir を持たない Next 組み込みの 404 で返ってしまう）
+  assert.ok(matches('/'), '/ should match');
+  assert.ok(matches('/b/token123'), '/b/token123 should match');
+  assert.ok(matches('/auth/google/callback'), '/auth/google/callback should match');
   for (const locale of locales) {
-    assert.ok(regex.test(`/${locale}`), `/${locale} should match`);
-    assert.ok(regex.test(`/${locale}/b/token123`), `/${locale}/b/token123 should match`);
+    assert.ok(matches(`/${locale}`), `/${locale} should match`);
+    assert.ok(matches(`/${locale}/b/token123`), `/${locale}/b/token123 should match`);
   }
 
-  // 2. Normal unknown paths like /apiary or /faviconXico should match
-  assert.ok(regex.test('/apiary'), '/apiary should match catch-all pattern');
-  assert.ok(regex.test('/faviconXico'), '/faviconXico should match catch-all pattern');
+  // 2. 未知のパスも通す。拡張子が静的アセットのものでなければ HTML 扱いにする。
+  assert.ok(matches('/apiary'), '/apiary should match');
+  assert.ok(matches('/faviconXico'), '/faviconXico should match');
+  assert.ok(matches('/wp-login.php'), '/wp-login.php should match (HTML を期待するリクエスト)');
+  assert.ok(matches('/index.html'), '/index.html should match');
 
-  // 3. Static/API/Vercel routes must NOT match (be excluded from middleware)
-  assert.equal(regex.test('/api'), false, '/api should NOT match');
-  assert.equal(regex.test('/api/hello'), false, '/api/hello should NOT match');
-  assert.equal(regex.test('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
-  assert.equal(regex.test('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
-  assert.equal(regex.test('/favicon.ico'), false, '/favicon.ico should NOT match');
-  assert.equal(regex.test('/sitemap.xml'), false, '/sitemap.xml should NOT match');
-  assert.equal(regex.test('/robots.txt'), false, '/robots.txt should NOT match');
-  assert.equal(regex.test('/logo.png'), false, '/logo.png should NOT match');
-
-  assert.equal(matcher.length, 1, 'middleware matcher should contain exactly 1 entry');
+  // 3. API・Next 内部・Vercel 計測・静的アセットは通さない
+  assert.equal(matches('/api'), false, '/api should NOT match');
+  assert.equal(matches('/api/hello'), false, '/api/hello should NOT match');
+  assert.equal(matches('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
+  assert.equal(matches('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
+  assert.equal(matches('/favicon.ico'), false, '/favicon.ico should NOT match');
+  assert.equal(matches('/sitemap.xml'), false, '/sitemap.xml should NOT match');
+  assert.equal(matches('/robots.txt'), false, '/robots.txt should NOT match');
+  assert.equal(matches('/logo.png'), false, '/logo.png should NOT match');
+  assert.equal(matches('/fonts/inter.woff2'), false, '/fonts/inter.woff2 should NOT match');
 });
 
 test('forbidden browser dialogs are not used', async () => {
