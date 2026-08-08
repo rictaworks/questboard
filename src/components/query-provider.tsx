@@ -1,17 +1,31 @@
 'use client';
 
-import {QueryClientProvider} from '@tanstack/react-query';
+import {QueryClientProvider, type QueryClient} from '@tanstack/react-query';
 import {useState, type ReactNode} from 'react';
 
 import {createQueryClient} from '@/lib/query-client';
 
+let browserQueryClient: QueryClient | undefined = undefined;
+
+function getQueryClient() {
+  if (typeof window === 'undefined') {
+    // サーバーサイド（SSR）ではリクエストごとに毎回新しい QueryClient を作成して返す。
+    // これにより、同一Node.jsプロセス上の並行リクエスト間でキャッシュが共有される
+    // セキュリティ上のリスク（request bleed）を防ぐ。
+    return createQueryClient();
+  } else {
+    // クライアントサイド（ブラウザ）では、一度作成したインスタンスを再利用する。
+    // これにより、言語切り替え等で QueryProvider が再マウントされた場合でも、
+    // キャッシュされたクエリデータが消失しないようにする。
+    if (!browserQueryClient) {
+      browserQueryClient = createQueryClient();
+    }
+    return browserQueryClient;
+  }
+}
+
 export default function QueryProvider({children}: {children: ReactNode}) {
-  // QueryClient は必ずコンポーネント内で生成する。モジュールスコープで生成すると、
-  // SSR時に同一Node.jsプロセス上の並行リクエストが1つのキャッシュを共有し、
-  // あるユーザーのクエスト状態が別ユーザーのHTMLに混入しうる（request bleed）。
-  // useState の遅延初期化により、ブラウザではタブごとに1個、
-  // サーバーではレンダリングごとに1個のインスタンスに固定される。
-  const [queryClient] = useState(createQueryClient);
+  const [queryClient] = useState(getQueryClient);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
