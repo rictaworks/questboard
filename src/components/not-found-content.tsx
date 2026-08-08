@@ -1,11 +1,15 @@
-import type {Route} from 'next';
 import Link from 'next/link';
-import {getLocale, getTranslations} from 'next-intl/server';
+import {getTranslations} from 'next-intl/server';
 
-// 404 の本文は src/app/not-found.tsx と src/app/[locale]/not-found.tsx の両方から
-// 使う。片方だけ直して見た目が食い違うのを防ぐため、ここに一本化する。
+import {resolveRequestLocale} from '@/i18n/server-locale';
+
+// 404 の本文。src/app/global-not-found.tsx から使う。将来 [locale] 配下に
+// not-found 境界を足すときも、本文はここに一本化して見た目を揃えること。
 export default async function NotFoundContent() {
-  const locale = await getLocale();
+  // ロケールはリテラル型の Locale で受け取る。string にすると href が
+  // typedRoutes の検査を通らず、型キャストで押し通す形になり、「ホームに戻る」の
+  // 行き先が壊れてもビルドで気付けなくなる。
+  const locale = await resolveRequestLocale();
   const t = await getTranslations({locale, namespace: 'NotFound'});
 
   return (
@@ -13,7 +17,7 @@ export default async function NotFoundContent() {
       <div className="not-found-card hero-card">
         <h1 className="home-title">{t('title')}</h1>
         <p className="not-found-description hero-copy">{t('description')}</p>
-        <Link href={`/${locale}` as Route} className="button button-primary">
+        <Link href={`/${locale}`} className="button button-primary">
           {t('homeButton')}
         </Link>
       </div>

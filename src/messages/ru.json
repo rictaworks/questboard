@@ -112,8 +112,8 @@
     "intensityOff": "Выкл"
   },
   "NotFound": {
-    "title": "[TODO] translate",
-    "description": "[TODO] translate",
-    "homeButton": "[TODO] translate"
+    "title": "Страница не найдена",
+    "description": "Запрашиваемая страница не существует или была перемещена.",
+    "homeButton": "Вернуться на главную"
   }
 }

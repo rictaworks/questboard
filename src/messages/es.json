@@ -112,8 +112,8 @@
     "intensityOff": "Desactivada"
   },
   "NotFound": {
-    "title": "[TODO] translate",
-    "description": "[TODO] translate",
-    "homeButton": "[TODO] translate"
+    "title": "Página no encontrada",
+    "description": "La página que buscas no existe o se ha movido.",
+    "homeButton": "Volver al inicio"
   }
 }

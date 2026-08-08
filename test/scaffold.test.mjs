@@ -52,6 +52,24 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
+async function loadMiddlewareRouting() {
+  const source = await read('src/i18n/middleware-routing.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  const require = (specifier) => {
+    if (specifier === './routing') {
+      return {defaultLocale, locales};
+    }
+    throw new Error(`Unexpected import in middleware-routing: ${specifier}`);
+  };
+
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  return moduleShim.exports;
+}
+
 async function loadMiddleware() {
   const source = await read('src/middleware.ts');
   const {outputText} = ts.transpileModule(source, {
@@ -62,6 +80,12 @@ async function loadMiddleware() {
   const require = (specifier) => {
     if (specifier === 'next-intl/middleware') {
       return {__esModule: true, default: () => null};
+    }
+    if (specifier === 'next/server') {
+      return {NextResponse: {next: () => null}};
+    }
+    if (specifier === '@/i18n/middleware-routing') {
+      return middlewareRouting;
     }
     if (specifier === '@/i18n/routing') {
       return {defaultLocale, locales};
@@ -75,6 +99,9 @@ async function loadMiddleware() {
 
 const {defaultLocale, locales} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
+// src/middleware.ts が @/i18n/middleware-routing を読み込むため、
+// loadMiddleware() の require シムが返す実体をここで用意しておく。
+const middlewareRouting = await loadMiddlewareRouting();
 const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
 
 test('design tokens keep expected values', async () => {
@@ -185,7 +212,7 @@ test('UI source does not contain hardcoded JSX text', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('middleware matcher excludes API and static paths', async () => {
+test('middleware matcher only excludes build artifacts', async () => {
   const middlewareModule = await loadMiddleware();
   const matcher = middlewareModule.config?.matcher;
 
@@ -197,32 +224,68 @@ test('middleware matcher excludes API and static paths', async () => {
   const [catchAllPattern] = matcher;
   const matches = (pathname) => new RegExp(`^${catchAllPattern}$`).test(pathname);
 
-  // 1. HTML を返すパスはすべてミドルウェアを通す（ロケールが決まらないと
-  //    lang / dir を持たない Next 組み込みの 404 で返ってしまう）
+  // 1. アプリに届きうるパスはすべてミドルウェアを通す。matcher から外すと
+  //    そのパスではクライアントが送ったロケールヘッダーが上書きされず、
+  //    表示言語をリクエストヘッダーで操作できてしまう。
   assert.ok(matches('/'), '/ should match');
   assert.ok(matches('/b/token123'), '/b/token123 should match');
-  assert.ok(matches('/auth/google/callback'), '/auth/google/callback should match');
   for (const locale of locales) {
     assert.ok(matches(`/${locale}`), `/${locale} should match`);
     assert.ok(matches(`/${locale}/b/token123`), `/${locale}/b/token123 should match`);
   }
+  assert.ok(matches('/api/hello'), '/api/hello should match');
+  assert.ok(matches('/robots.txt'), '/robots.txt should match');
+  assert.ok(matches('/.well-known/acme-challenge/token'), '/.well-known/... should match');
+  assert.ok(matches('/wp-login.php'), '/wp-login.php should match');
 
-  // 2. 未知のパスも通す。拡張子が静的アセットのものでなければ HTML 扱いにする。
-  assert.ok(matches('/apiary'), '/apiary should match');
-  assert.ok(matches('/faviconXico'), '/faviconXico should match');
-  assert.ok(matches('/wp-login.php'), '/wp-login.php should match (HTML を期待するリクエスト)');
-  assert.ok(matches('/index.html'), '/index.html should match');
-
-  // 3. API・Next 内部・Vercel 計測・静的アセットは通さない
-  assert.equal(matches('/api'), false, '/api should NOT match');
-  assert.equal(matches('/api/hello'), false, '/api/hello should NOT match');
+  // 2. ビルド成果物と計測エンドポイントだけを外す
   assert.equal(matches('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
   assert.equal(matches('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
-  assert.equal(matches('/favicon.ico'), false, '/favicon.ico should NOT match');
-  assert.equal(matches('/sitemap.xml'), false, '/sitemap.xml should NOT match');
-  assert.equal(matches('/robots.txt'), false, '/robots.txt should NOT match');
-  assert.equal(matches('/logo.png'), false, '/logo.png should NOT match');
-  assert.equal(matches('/fonts/inter.woff2'), false, '/fonts/inter.woff2 should NOT match');
+});
+
+// ロケール解決（リダイレクトとロケールヘッダーの付与）を行うかどうかの判定。
+// ここを誤ると、public/ 配下の実ファイル要求がロケール URL へ飛ばされて
+// 証明書更新やドメイン所有権確認が壊れる。
+test('locale routing is skipped for real file requests but never for locale-prefixed paths', async () => {
+  const {shouldSkipLocaleRouting} = middlewareRouting;
+
+  // 1. 実ファイル要求は素通しする
+  for (const pathname of [
+    '/robots.txt',
+    '/favicon.ico',
+    '/sitemap.xml',
+    '/logo.png',
+    '/fonts/inter.woff2',
+    '/index.html',
+    '/googleabc.html',
+    '/api',
+    '/api/hello',
+    '/.well-known/acme-challenge/token',
+    '/apple-app-site-association'
+  ]) {
+    assert.equal(shouldSkipLocaleRouting(pathname), true, `${pathname} should skip locale routing`);
+  }
+
+  // 2. ロケール接頭辞付きのパスは、拡張子があっても必ずロケール解決の対象にする。
+  //    外すと /ar/data.json のようなパスで lang / dir が既定ロケールへ退行する。
+  for (const locale of locales) {
+    assert.equal(shouldSkipLocaleRouting(`/${locale}`), false, `/${locale} should be routed`);
+    assert.equal(
+      shouldSkipLocaleRouting(`/${locale}/data.json`),
+      false,
+      `/${locale}/data.json should be routed`
+    );
+    assert.equal(
+      shouldSkipLocaleRouting(`/${locale}/b/token123`),
+      false,
+      `/${locale}/b/token123 should be routed`
+    );
+  }
+
+  // 3. HTML を期待する通常のパスもロケール解決の対象
+  for (const pathname of ['/', '/b/token123', '/apiary', '/faviconXico']) {
+    assert.equal(shouldSkipLocaleRouting(pathname), false, `${pathname} should be routed`);
+  }
 });
 
 test('forbidden browser dialogs are not used', async () => {

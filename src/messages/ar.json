@@ -112,8 +112,8 @@
     "intensityOff": "إيقاف"
   },
   "NotFound": {
-    "title": "[TODO] translate",
-    "description": "[TODO] translate",
-    "homeButton": "[TODO] translate"
+    "title": "الصفحة غير موجودة",
+    "description": "الصفحة التي تبحث عنها غير موجودة أو تم نقلها.",
+    "homeButton": "العودة إلى الصفحة الرئيسية"
   }
 }
