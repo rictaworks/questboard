@@ -3,7 +3,7 @@
 import {faSpinner} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {FormEvent, useEffect, useMemo, useState} from 'react';
-import {useTranslations} from 'next-intl';
+import {useLocale, useTranslations} from 'next-intl';
 
 import {readGoogleAuthSettings} from '@/lib/google-auth';
 
@@ -20,6 +20,7 @@ type CreatedBoard = {
 export default function BoardCreatePanel() {
   const t = useTranslations('BoardCreate');
   const authT = useTranslations('Auth');
+  const locale = useLocale();
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
       ? {authenticated: true, displayName: authT('developmentDisplayName')}
@@ -109,9 +110,13 @@ export default function BoardCreatePanel() {
         board: {title: string; shareToken: string};
       };
 
+      // 共有 URL には作成者のロケールを付ける。付けないと受け取った側の
+      // Accept-Language / NEXT_LOCALE クッキーでロケールが決まり、翻訳が
+      // 未完了のロケール（fr / zh / ru / es / ar）では見出しもボタンも
+      // "[TODO] translate" のまま表示される。
       setCreatedBoard({
         title: payload.board.title,
-        shareUrl: new URL(`/b/${payload.board.shareToken}`, window.location.origin).toString()
+        shareUrl: new URL(`/${locale}/b/${payload.board.shareToken}`, window.location.origin).toString()
       });
       setTitle('');
       setErrorMessage(null);

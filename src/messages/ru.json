@@ -110,5 +110,10 @@
     "intensityFull": "Полная",
     "intensitySubtle": "Умеренная",
     "intensityOff": "Выкл"
+  },
+  "NotFound": {
+    "title": "Страница не найдена",
+    "description": "Запрашиваемая страница не существует или была перемещена.",
+    "homeButton": "Вернуться на главную"
   }
 }

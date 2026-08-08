@@ -110,5 +110,10 @@
     "intensityFull": "كامل",
     "intensitySubtle": "خفيف",
     "intensityOff": "إيقاف"
+  },
+  "NotFound": {
+    "title": "الصفحة غير موجودة",
+    "description": "الصفحة التي تبحث عنها غير موجودة أو تم نقلها.",
+    "homeButton": "العودة إلى الصفحة الرئيسية"
   }
 }

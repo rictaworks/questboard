@@ -52,8 +52,56 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
+async function loadMiddlewareRouting() {
+  const source = await read('src/i18n/middleware-routing.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  const require = (specifier) => {
+    if (specifier === './routing') {
+      return {defaultLocale, locales};
+    }
+    throw new Error(`Unexpected import in middleware-routing: ${specifier}`);
+  };
+
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  return moduleShim.exports;
+}
+
+async function loadMiddleware() {
+  const source = await read('src/middleware.ts');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+
+  const moduleShim = {exports: {}};
+  const require = (specifier) => {
+    if (specifier === 'next-intl/middleware') {
+      return {__esModule: true, default: () => null};
+    }
+    if (specifier === 'next/server') {
+      return {NextRequest: class {}, NextResponse: {next: () => null}};
+    }
+    if (specifier === '@/i18n/middleware-routing') {
+      return middlewareRouting;
+    }
+    if (specifier === '@/i18n/routing') {
+      return {defaultLocale, locales};
+    }
+    throw new Error(`Unexpected import in middleware: ${specifier}`);
+  };
+
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  return moduleShim.exports;
+}
+
 const {defaultLocale, locales} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
+// src/middleware.ts が @/i18n/middleware-routing を読み込むため、
+// loadMiddleware() の require シムが返す実体をここで用意しておく。
+const middlewareRouting = await loadMiddlewareRouting();
 const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
 
 test('design tokens keep expected values', async () => {
@@ -83,12 +131,18 @@ test('all locale files exist and placeholder locales stay scaffolded', async () 
     assert.ok(json.BoardInvite.notFoundDescription, `${locale} board invite notFoundDescription missing`);
     assert.ok(json.BoardCanvas, `${locale} board canvas namespace missing`);
     assert.ok(json.BoardCanvas.resetCamera, `${locale} board canvas resetCamera missing`);
+    assert.ok(json.NotFound, `${locale} NotFound namespace missing`);
+    assert.ok(json.NotFound.title, `${locale} NotFound title missing`);
+    assert.ok(json.NotFound.description, `${locale} NotFound description missing`);
+    assert.ok(json.NotFound.homeButton, `${locale} NotFound homeButton missing`);
   }
 
   const ja = JSON.parse(await read('src/messages/ja.json'));
   const en = JSON.parse(await read('src/messages/en.json'));
   assert.doesNotMatch(ja.Metadata.description, /^\[TODO]/);
   assert.doesNotMatch(en.Metadata.description, /^\[TODO]/);
+  assert.doesNotMatch(ja.NotFound.description, /^\[TODO]/);
+  assert.doesNotMatch(en.NotFound.description, /^\[TODO]/);
 
   for (const locale of pendingLocales) {
     const json = JSON.parse(await read(`src/messages/${locale}.json`));
@@ -158,12 +212,127 @@ test('UI source does not contain hardcoded JSX text', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('middleware matcher stays in sync with routing locales', async () => {
-  const middleware = await read('src/middleware.ts');
-  const matcherMatch = middleware.match(/matcher: \['\/', '\/\(([^)]+)\)\/:path\*'\]/);
+test('middleware matcher only excludes build artifacts', async () => {
+  const middlewareModule = await loadMiddleware();
+  const matcher = middlewareModule.config?.matcher;
 
-  assert.ok(matcherMatch, 'middleware matcher pattern not found');
-  assert.deepEqual(matcherMatch[1].split('|'), [...locales]);
+  assert.ok(Array.isArray(matcher), 'middleware matcher must be an array');
+  assert.equal(matcher.length, 1, 'middleware matcher should contain exactly 1 entry');
+
+  // パターンはミドルウェア本体から読む。テスト側にコピーを書くと、実装を変えても
+  // コピーを貼り直すだけでグリーンに戻せてしまい、挙動を検証しないテストになる。
+  const [catchAllPattern] = matcher;
+  const matches = (pathname) => new RegExp(`^${catchAllPattern}$`).test(pathname);
+
+  // 1. アプリに届きうるパスはすべてミドルウェアを通す。matcher から外すと
+  //    そのパスではクライアントが送ったロケールヘッダーが上書きされず、
+  //    表示言語をリクエストヘッダーで操作できてしまう。
+  assert.ok(matches('/'), '/ should match');
+  assert.ok(matches('/b/token123'), '/b/token123 should match');
+  for (const locale of locales) {
+    assert.ok(matches(`/${locale}`), `/${locale} should match`);
+    assert.ok(matches(`/${locale}/b/token123`), `/${locale}/b/token123 should match`);
+  }
+  assert.ok(matches('/api/hello'), '/api/hello should match');
+  assert.ok(matches('/robots.txt'), '/robots.txt should match');
+  assert.ok(matches('/.well-known/acme-challenge/token'), '/.well-known/... should match');
+  assert.ok(matches('/wp-login.php'), '/wp-login.php should match');
+
+  // 2. ビルド成果物と計測エンドポイントの「配下」だけを外す
+  assert.equal(matches('/_next/static/js/main.js'), false, '/_next/static/js/main.js should NOT match');
+  assert.equal(matches('/_vercel/insights/script.js'), false, '/_vercel/insights/script.js should NOT match');
+
+  // 3. `_next` / `_vercel` そのものは対象に含める。1セグメントのパスなので
+  //    [locale] に一致してしまい、外すとミドルウェアを通らないまま
+  //    クライアントが送ったロケール・パスのヘッダーがサーバーコンポーネントに届く。
+  assert.ok(matches('/_next'), '/_next should match');
+  assert.ok(matches('/_vercel'), '/_vercel should match');
+});
+
+// ロケール解決（リダイレクトとロケールヘッダーの付与）を行うかどうかの判定。
+// ここを誤ると、public/ 配下の実ファイル要求がロケール URL へ飛ばされて
+// 証明書更新やドメイン所有権確認が壊れる。
+test('locale routing is skipped for real file requests but never for locale-prefixed paths', async () => {
+  const {shouldSkipLocaleRouting} = middlewareRouting;
+
+  // 1. 実ファイル要求は素通しする。
+  //    ルート直下は拡張子の有無で絞らない。絞ると、拡張子を持たない所有権確認
+  //    ファイルや CDN のヘルスチェックパスが public/ から配信されなくなる。
+  for (const pathname of [
+    '/robots.txt',
+    '/favicon.ico',
+    '/sitemap.xml',
+    '/logo.png',
+    '/fonts/inter.woff2',
+    '/index.html',
+    '/googleabc.html',
+    '/googlehostedservice',
+    '/apple-app-site-association',
+    '/_next',
+    '/_vercel',
+    '/api',
+    '/api/hello',
+    '/.well-known/acme-challenge/token'
+  ]) {
+    assert.equal(shouldSkipLocaleRouting(pathname), true, `${pathname} should skip locale routing`);
+  }
+
+  // 2. ロケール接頭辞付きのパスは、拡張子があっても必ずロケール解決の対象にする。
+  //    外すと /ar/data.json のようなパスで lang / dir が既定ロケールへ退行する。
+  for (const locale of locales) {
+    assert.equal(shouldSkipLocaleRouting(`/${locale}`), false, `/${locale} should be routed`);
+    assert.equal(
+      shouldSkipLocaleRouting(`/${locale}/data.json`),
+      false,
+      `/${locale}/data.json should be routed`
+    );
+    assert.equal(
+      shouldSkipLocaleRouting(`/${locale}/b/token123`),
+      false,
+      `/${locale}/b/token123 should be routed`
+    );
+  }
+
+  // 3. ルート自身と多階層の通常パスはロケール解決の対象。
+  //    /b/token123 は過去に配布された（ロケール接頭辞の無い）共有リンクなので、
+  //    ここを素通しにすると既存のリンクがロケール解決されず 404 に落ちる。
+  for (const pathname of ['/', '/b/token123', '/auth/google/callback']) {
+    assert.equal(shouldSkipLocaleRouting(pathname), false, `${pathname} should be routed`);
+  }
+});
+
+// ロケール接頭辞の無い共有リンクは、受け取り側の Accept-Language で解決させない。
+// 翻訳が未完了のロケールに着地すると "[TODO] translate" だけが見える。
+test('locale-less share links go to the default locale, not the detected one', async () => {
+  const {requiresDefaultLocale} = middlewareRouting;
+
+  assert.equal(requiresDefaultLocale('/b/token123'), true, '/b/token123 must use the default locale');
+
+  // ロケール接頭辞が付いていればそのロケールを尊重する
+  for (const locale of locales) {
+    assert.equal(
+      requiresDefaultLocale(`/${locale}/b/token123`),
+      false,
+      `/${locale}/b/token123 must keep its locale`
+    );
+  }
+
+  // OAuth のコールバックは本人のクッキー由来の検出結果に任せる
+  assert.equal(requiresDefaultLocale('/auth/google/callback'), false);
+  // 前方一致で誤って拾わないこと
+  assert.equal(requiresDefaultLocale('/board'), false);
+  assert.equal(requiresDefaultLocale('/b'), false);
+});
+
+// 壊れたパスを next-intl に渡すと、リクエストヘッダーに触れないまま素通しされ、
+// クライアントが送ったロケールがサーバーコンポーネントに届く。
+test('malformed pathnames are classified as undecodable so next-intl never sees them', async () => {
+  const {isDecodablePathname} = middlewareRouting;
+
+  assert.equal(isDecodablePathname('/ja/%E7%B4%84'), true, 'valid escapes should decode');
+  assert.equal(isDecodablePathname('/ja/plain'), true, 'plain paths should decode');
+  assert.equal(isDecodablePathname('/%E0%A4%A'), false, 'truncated escape should not decode');
+  assert.equal(isDecodablePathname('/%ZZ'), false, 'invalid escape should not decode');
 });
 
 test('forbidden browser dialogs are not used', async () => {

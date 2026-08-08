@@ -4,7 +4,8 @@ import {faClone, faComment, faLock, faPenToSquare, faPalette, faRotateRight, faS
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
-import {useTranslations} from 'next-intl';
+import {useLocale, useTranslations} from 'next-intl';
+import {isRtlLocale} from '@/i18n/routing';
 
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
 import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
@@ -163,6 +164,8 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
 
 export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
+  const locale = useLocale();
+  const isRtl = isRtlLocale(locale);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
   const canvasInputControllerRef = useRef<CanvasInputController | null>(null);
@@ -1064,12 +1067,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       }
 
       if (current.kind === 'resize') {
+        const nextW = isRtl ? Math.max(48, current.origin.w - deltaX) : Math.max(48, current.origin.w + deltaX);
+        const actualDeltaX = isRtl ? current.origin.w - nextW : 0;
         setPreviewGeometry((previous) => ({
           ...previous,
           [current.objectId]: {
             ...current.origin,
-            w: Math.max(48, current.origin.w + deltaX),
+            w: nextW,
             h: Math.max(48, current.origin.h + deltaY),
+            x: current.origin.x + actualDeltaX,
           },
         }));
         return;
@@ -1132,10 +1138,21 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
           });
         }
       } else if (current.kind === 'resize') {
-        sendObjectRealtimeOp(targetObject.id, 'geometry', {
+        // RTL ではリサイズハンドルをミラーするため、幅を変えると左辺（x）も動く
+        // （handleMove の actualDeltaX）。LTR では x は動かない。
+        //
+        // x は move op と同じ geometry プロパティで、mergeGeometry() は届いたキーを
+        // すべて適用する。ロケールを見て一律に x を載せると、x が動いていない
+        // リサイズでも自分の古い x を送ってしまい、他ユーザーが同時に行った移動を
+        // 上書きして巻き戻す。実際に変化したときだけ送ること。
+        const payload: Record<string, number> = {
           w: Math.round(nextGeometry.w),
           h: Math.round(nextGeometry.h)
-        });
+        };
+        if (Math.round(nextGeometry.x) !== Math.round(targetObject.geometry.x)) {
+          payload.x = Math.round(nextGeometry.x);
+        }
+        sendObjectRealtimeOp(targetObject.id, 'geometry', payload);
       } else if (current.kind === 'rotate') {
         sendObjectRealtimeOp(targetObject.id, 'geometry', {
           rotation: Math.round(nextGeometry.rotation)
@@ -1150,7 +1167,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [interaction, sendObjectRealtimeOp, viewport]);
+  }, [interaction, isRtl, sendObjectRealtimeOp, viewport]);
 
   const visibleObjects = useMemo(() => objects.map((object) => {
     const draft = previewGeometry[object.id];

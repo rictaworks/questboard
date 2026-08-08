@@ -110,5 +110,10 @@
     "intensityFull": "Plein",
     "intensitySubtle": "Subtil",
     "intensityOff": "Désactivé"
+  },
+  "NotFound": {
+    "title": "Page introuvable",
+    "description": "La page que vous recherchez n'existe pas ou a été déplacée.",
+    "homeButton": "Retour à l'accueil"
   }
 }
