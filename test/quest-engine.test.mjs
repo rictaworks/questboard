@@ -110,14 +110,14 @@ test('questStateLabelKey returns a distinct translation key for every state', ()
   assert.equal(keys.every((key) => typeof key === 'string' && key.startsWith('questState')), true);
 });
 
-test('every quest state label key exists in the ja and en locale files', async () => {
-  for (const locale of ['ja', 'en']) {
-    const messages = JSON.parse(await readFile(path.join(root, `src/messages/${locale}.json`), 'utf8'));
-    for (const state of ALL_STATES) {
-      const key = questStateLabelKey(state);
-      assert.ok(messages.BoardCanvas[key], `${locale}.json is missing BoardCanvas.${key}`);
-    }
-    assert.ok(messages.BoardCanvas.questSyncError, `${locale}.json is missing BoardCanvas.questSyncError`);
-    assert.ok(messages.BoardCanvas.questActionFailed, `${locale}.json is missing BoardCanvas.questActionFailed`);
+test('every quest state label key exists in the message catalog', async () => {
+  const messages = JSON.parse(await readFile(path.join(root, 'src/messages/ja.json'), 'utf8'));
+
+  for (const state of ALL_STATES) {
+    const key = questStateLabelKey(state);
+    assert.ok(messages.BoardCanvas[key], `ja.json is missing BoardCanvas.${key}`);
   }
+
+  assert.ok(messages.BoardCanvas.questSyncError, 'ja.json is missing BoardCanvas.questSyncError');
+  assert.ok(messages.BoardCanvas.questActionFailed, 'ja.json is missing BoardCanvas.questActionFailed');
 });

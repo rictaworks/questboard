@@ -1,21 +1,10 @@
-import {redirect} from "next/navigation";
+import GoogleCallback from "@/components/google-callback";
 
-import {defaultLocale} from "@/i18n/routing";
-
-export default async function GoogleCallbackAliasPage({
+export default async function GoogleCallbackPage({
   searchParams
 }: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams: Promise<{code?: string; state?: string}>;
 }) {
   const params = await searchParams;
-  const query = new URLSearchParams();
-
-  for (const [key, value] of Object.entries(params)) {
-    if (typeof value === "string") {
-      query.set(key, value);
-    }
-  }
-
-  const suffix = query.toString();
-  redirect(suffix ? `/${defaultLocale}/auth/google/callback?${suffix}` : `/${defaultLocale}/auth/google/callback`);
+  return <GoogleCallback code={params.code ?? null} state={params.state ?? null} />;
 }

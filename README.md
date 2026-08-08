@@ -24,11 +24,11 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## Pages
 
-- `/` — デフォルトロケールへリダイレクト
-- `/{locale}` — Googleサインイン付きのロケール別ランディングページ（`ja`, `en`, `fr`, `zh`, `ru`, `es`, `ar`）
-- `/auth/google/callback` — Google OAuthコールバックのエイリアス
-- `/{locale}/auth/google/callback` — Google OAuthコールバック・reCAPTCHA検証
-- `/{locale}/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
+表示言語は日本語のみ。URL にロケール接頭辞は付かない。
+
+- `/` — Googleサインイン付きのランディングページ
+- `/auth/google/callback` — Google OAuthコールバック・reCAPTCHA検証
+- `/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
 
 ## API一覧
 

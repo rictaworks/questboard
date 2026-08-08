@@ -1,17 +1,17 @@
 import {getRequestConfig} from 'next-intl/server';
 
-import {defaultLocale, locales} from './routing';
+import messages from '../messages/ja.json';
 
-export default getRequestConfig(async ({requestLocale}) => {
-  const requestedLocale = await requestLocale;
-  const locale = locales.includes(requestedLocale as (typeof locales)[number])
-    ? (requestedLocale as (typeof locales)[number])
-    : defaultLocale;
+import {defaultLocale} from './routing';
 
-  const messages = (await import(`../messages/${locale}.json`)).default as Record<string, unknown>;
-
+// ロケールは常に日本語。URL・クッキー・Accept-Language のいずれも参照しない。
+//
+// メッセージは動的 import ではなく静的 import で読む。候補が1つしかないため
+// 動的にする理由が無く、静的にすることでビルド時に解決され、存在しない
+// メッセージファイルを参照した場合はビルドが失敗する。
+export default getRequestConfig(async () => {
   return {
-    locale,
+    locale: defaultLocale,
     messages
   };
 });
