@@ -25,7 +25,10 @@
     "callbackDescription": "認可コードと reCAPTCHA トークンを送信しています。",
     "callbackSuccess": "認証に成功しました",
     "callbackRedirecting": "元の画面へ戻ります",
+    "callbackErrorHeading": "認証を完了できませんでした",
     "callbackMissingCode": "認可コードが見つかりません",
+    "callbackDenied": "Google へのアクセス許可がキャンセルされました",
+    "callbackProviderError": "Google 側で認証が中断されました",
     "callbackStateMismatch": "認証状態が一致しません",
     "callbackFailure": "Google ログインに失敗しました",
     "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。"

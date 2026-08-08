@@ -45,7 +45,9 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## Localization
 
-Messages live in `src/messages/*.json` and should be referenced by translation keys only.
+表示言語は日本語のみで、多言語対応は行わない。メッセージカタログは `src/messages/ja.json` の1つだけで、
+UI の文字列はすべて翻訳キー経由で参照する（コンポーネントへの直書きは `test/scaffold.test.mjs` が検査する）。
+カタログを増やすと URL 接頭辞・ロケール検出・未翻訳の扱いが再び必要になるため、言語追加は方針変更（`CLAUDE.md`）を伴う。
 
 ## Design tokens
 

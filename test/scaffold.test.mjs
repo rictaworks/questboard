@@ -30,17 +30,6 @@ async function read(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8');
 }
 
-async function loadRouting() {
-  const source = await read('src/i18n/routing.ts');
-  const {outputText} = ts.transpileModule(source, {
-    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
-  });
-
-  const moduleShim = {exports: {}};
-  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
-  return moduleShim.exports;
-}
-
 async function loadSentryConfig() {
   const source = await read('src/lib/sentry-config.ts');
   const {outputText} = ts.transpileModule(source, {
@@ -52,7 +41,6 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
-const {defaultLocale} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
 
 test('design tokens keep expected values', async () => {
@@ -76,7 +64,11 @@ test('only the japanese message catalog exists', async () => {
   const files = (await walk('src/messages')).sort();
 
   assert.deepEqual(files, ['src/messages/ja.json']);
-  assert.equal(defaultLocale, 'ja');
+
+  // routing.ts は定数1つのモジュール。値を読むためだけに TypeScript を変換して
+  // new Function で評価すると、テストの本題より仕掛けのほうが大きくなる。
+  const routing = await read('src/i18n/routing.ts');
+  assert.match(routing, /^export const defaultLocale = 'ja';$/m);
 });
 
 test('the japanese message catalog covers every namespace and has no placeholders', async () => {
