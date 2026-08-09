@@ -11,8 +11,10 @@ export default function ClientErrorBridge() {
       return;
     }
 
+    // 送信結果はここでは使わない。購読しているのは window の error と
+    // unhandledrejection なので、失敗を扱おうとすると再通報のループに近づく。
     const reportError = (event: ErrorEvent) => {
-      reportClientError({
+      void reportClientError({
         column: event.colno,
         line: event.lineno,
         message: event.message,
@@ -23,7 +25,7 @@ export default function ClientErrorBridge() {
 
     const reportRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
-      reportClientError({
+      void reportClientError({
         message: reason.message,
         source: 'unhandledrejection',
         stack: reason.stack

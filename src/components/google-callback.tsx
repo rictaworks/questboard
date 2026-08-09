@@ -6,14 +6,31 @@ import {useEffect, useState} from "react";
 import {useRouter} from "next/navigation";
 import {useTranslations} from "next-intl";
 
+import {
+  isTopLevelDocument,
+  readSessionItem,
+  removeSessionItem,
+  writeSessionItem
+} from "@/lib/browser-storage";
 import {reportClientError} from "@/lib/client-error-report";
 import {
   googleAuthStorageKeys,
   loadRecaptchaToken,
   readGoogleAuthSettings
 } from "@/lib/google-auth";
+import {
+  buildCallbackReport,
+  deliverCallbackReportOnce,
+  type CallbackMissingParamKey
+} from "@/lib/oauth-callback-report";
 
 const callbackStateKey = googleAuthStorageKeys.state;
+
+// 通報済みのコールバックを覚えておく場所。ログインできない利用者がリロードを
+// 連打するのは自然な反応で、そのたびに送ると毎分10件/IP の枠を使い切る。
+const reportedCallbackKey = "questboard.google.reportedCallback";
+
+const reportSource = "google-callback";
 
 type CallbackStatus = "loading" | "success" | "error";
 
@@ -43,21 +60,8 @@ const callbackDescriptionKeys: Record<CallbackStatus, string | null> = {
 //
 // 生の値は画面に出さない。この経路は誰でも叩ける公開 GET で error は任意の文字列を
 // 取れるため、そのまま描画すると攻撃者が書いた文章を製品自身のエラーメッセージとして
-// 表示できてしまう。切り分けに要る生の値は reportClientError でバックエンドのログへ送る。
-// 通報に載せる長さの上限。state を確かめてから送るとはいえ、値そのものは
-// クエリ由来で長さを選べるため、ログを1件で埋められないようにしておく。
-const REPORTED_VALUE_MAX_LENGTH = 200;
-
-function truncate(value: string | null): string {
-  if (value === null) {
-    return "";
-  }
-
-  return value.length <= REPORTED_VALUE_MAX_LENGTH
-    ? value
-    : `${value.slice(0, REPORTED_VALUE_MAX_LENGTH)}…`;
-}
-
+// 表示できてしまう。切り分けに要る生の値は reportClientError でバックエンドのログへ送る
+// （何を載せるかの判断は @/lib/oauth-callback-report に切り出してある）。
 function readProviderErrorKey(error: string | null): "callbackDenied" | "callbackProviderError" | null {
   if (error === null || error.trim() === "") {
     return null;
@@ -84,10 +88,18 @@ export default function GoogleCallback({
   // 見ずに code 欠落として扱うと、同意画面でキャンセルしただけの利用者に
   // 「認可コードが見つかりません」という無関係な原因が示される。
   const providerErrorKey = readProviderErrorKey(error);
-  const isMissingParams = !code || !state;
-  const initialErrorMessage = providerErrorKey === null
-    ? (isMissingParams ? t("callbackMissingCode") : null)
-    : t(providerErrorKey);
+
+  // code の欠落と state の欠落を1つの真偽値に潰さない。潰すと、Google が実際には
+  // 認可コードを送っているのに「認可コードが見つかりません」と表示することになり、
+  // 利用者もサポートも存在しない問題を探し回る。state はプライバシー拡張による
+  // 除去や中間リダイレクトで単独で落ちうる。
+  const missingParamKey: CallbackMissingParamKey | null = !code
+    ? "callbackMissingCode"
+    : (!state ? "callbackMissingState" : null);
+
+  const initialErrorMessage = providerErrorKey !== null
+    ? t(providerErrorKey)
+    : (missingParamKey === null ? null : t(missingParamKey));
 
   // 失敗理由は props から毎回導出する。useState の遅延初期化に閉じ込めると、
   // クライアント遷移で同じインスタンスが使い回されたときに初期化関数が再実行されず、
@@ -106,28 +118,36 @@ export default function GoogleCallback({
   // ここを消すと、問い合わせを受けても client_id の設定ミスか redirect_uri の不一致か
   // 管理ポリシーによる遮断かを区別する手立てが無くなる。
   //
-  // 送るのは、自分が始めた認証の戻りだと確かめられた場合だけにする。
-  // このページは誰でも叩ける公開 GET なので、state を見ずに送ると、攻撃ページが
-  // iframe で任意の error を並べるだけで運用ログを汚染でき、しかも
-  // POST /client_errors は送信元 IP あたり毎分10件で頭打ちのため、被害者の枠を
-  // 使い切らせて正規のレポートまで落とせる。
-  //
-  // 空の ?error= も送らない。表示側は「エラー無し」と判定しており、ここだけ
-  // 通報すると成功したログインに対して失敗の記録が残る。
+  // 何を載せるか（state が確かめられたときだけ生の値を載せる、埋め込まれた文書からは
+  // 送らない）の判断は buildCallbackReport が持つ。ここはストレージと送信だけを担う。
   useEffect(() => {
-    if (providerErrorKey === null || state === null) {
-      return;
-    }
-
-    if (window.sessionStorage.getItem(callbackStateKey) !== state) {
-      return;
-    }
-
-    reportClientError({
-      message: `google oauth callback error=${truncate(error)} description=${truncate(errorDescription)}`,
-      source: "google-callback"
+    const report = buildCallbackReport({
+      embedded: !isTopLevelDocument(),
+      error,
+      errorDescription,
+      missingParamKey,
+      providerErrorKey,
+      state,
+      storedState: readSessionItem(callbackStateKey)
     });
-  }, [error, errorDescription, providerErrorKey, state]);
+
+    if (report === null) {
+      return;
+    }
+
+    // 同じコールバックからは1回だけ送る。ただし届かなかった通報を送信済みとして
+    // 抑止すると診断が永久に失われるため、印の管理は送信結果まで見る
+    // deliverCallbackReportOnce に任せる。ここはストレージと送信の実体を渡すだけ。
+    void deliverCallbackReportOnce(
+      report,
+      {
+        forget: () => removeSessionItem(reportedCallbackKey),
+        read: () => readSessionItem(reportedCallbackKey),
+        write: (value) => writeSessionItem(reportedCallbackKey, value)
+      },
+      (message) => reportClientError({message, source: reportSource})
+    );
+  }, [error, errorDescription, missingParamKey, providerErrorKey, state]);
 
   useEffect(() => {
     if (!code || !state || initialErrorMessage !== null || asyncState.status !== "loading") {
@@ -135,9 +155,9 @@ export default function GoogleCallback({
     }
 
     void (async () => {
-      const storedState = window.sessionStorage.getItem(callbackStateKey);
-      const codeVerifier = window.sessionStorage.getItem(googleAuthStorageKeys.codeVerifier);
-      const rawReturnTo = window.sessionStorage.getItem(googleAuthStorageKeys.returnTo);
+      const storedState = readSessionItem(callbackStateKey);
+      const codeVerifier = readSessionItem(googleAuthStorageKeys.codeVerifier);
+      const rawReturnTo = readSessionItem(googleAuthStorageKeys.returnTo);
       const returnTo = normalizeReturnTo(rawReturnTo);
 
       if (storedState !== state || !codeVerifier) {
@@ -171,9 +191,10 @@ export default function GoogleCallback({
           throw new Error(payload.error ?? t("callbackFailure"));
         }
 
-        window.sessionStorage.removeItem(googleAuthStorageKeys.codeVerifier);
-        window.sessionStorage.removeItem(googleAuthStorageKeys.state);
-        window.sessionStorage.removeItem(googleAuthStorageKeys.returnTo);
+        removeSessionItem(googleAuthStorageKeys.codeVerifier);
+        removeSessionItem(googleAuthStorageKeys.state);
+        removeSessionItem(googleAuthStorageKeys.returnTo);
+        removeSessionItem(reportedCallbackKey);
         setCallbackState({
           codeVerifier: null,
           errorMessage: null,

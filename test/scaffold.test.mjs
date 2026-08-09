@@ -134,13 +134,33 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
 // 構造的な保証は無くなった。渡し忘れても use-intl は例外を投げず、既定の
 // getMessageFallback がキーパス（例: NotFound.title）をそのまま描画するため、
 // 画面に出るまで気づけない。ページの一覧と、実際に呼ばれている名前空間を突き合わせる。
-test('each page passes every namespace its client components use', async () => {
-  // ページの一覧は書き写さない。書き写すと、後から追加されたページが黙って
-  // 未検査になる（同じ理由で test/not-found-http.test.mjs もロケール一覧を
-  // next.config.ts から読んでいる）。
-  const pages = (await walk('src/app')).filter((file) => path.basename(file) === 'page.tsx');
+// 起点は page.tsx だけではない。App Router は layout / error / template /
+// loading / not-found も描画するため、そこからしか辿れないクライアント
+// コンポーネントは、page.tsx 起点の走査では一度も見られない。
+//
+// たとえば useTranslations('Error') を呼ぶ src/app/error.tsx を足しても、
+// どの page.tsx もそれを描画しないので検査から漏れる。use-intl は名前空間が
+// 欠けても例外を投げず、既定の getMessageFallback がキーパスを描画するため、
+// 日本語のみの製品で利用者が "Error.title" という ASCII 文字列を目にする。
+// それでも lint・build・全テストは緑のまま通る。
+const ROUTE_ENTRY_BASENAMES = [
+  'page.tsx',
+  'layout.tsx',
+  'error.tsx',
+  'global-error.tsx',
+  'template.tsx',
+  'loading.tsx',
+  'not-found.tsx'
+];
 
-  assert.ok(pages.length > 0, 'src/app に page.tsx が1つも無い');
+test('each page passes every namespace its client components use', async () => {
+  // 一覧は書き写さない。書き写すと、後から追加されたページが黙って未検査に
+  // なる（同じ理由で test/not-found-http.test.mjs もロケール一覧を
+  // next.config.ts から読んでいる）。
+  const pages = (await walk('src/app'))
+    .filter((file) => ROUTE_ENTRY_BASENAMES.includes(path.basename(file)));
+
+  assert.ok(pages.length > 0, 'src/app にルートの入口ファイルが1つも無い');
 
   for (const page of pages) {
     const used = await collectUseTranslationsNamespaces(page);

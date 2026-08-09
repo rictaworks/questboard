@@ -37,7 +37,7 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 - Rails バックエンド: [`SPEC/api/rails-backend.md`](SPEC/api/rails-backend.md)
 - Go sync-server（WebSocket）: [`SPEC/api/sync-server.md`](SPEC/api/sync-server.md)
 - フロントエンド（Next.js Route Handler）: [`SPEC/api/frontend.md`](SPEC/api/frontend.md)
-  - `GET /api/health` — 稼働中の Next プロセスの死活とインスタンス識別子
+  - `GET /api/instance` — 送った識別子が稼働中の Next プロセスのものと一致するかを答える（テスト用。本番では未設定のため常に 404）
 
 ## Authentication
 

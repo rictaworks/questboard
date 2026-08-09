@@ -27,6 +27,7 @@
     "callbackRedirecting": "元の画面へ戻ります",
     "callbackErrorHeading": "認証を完了できませんでした",
     "callbackMissingCode": "認可コードが見つかりません",
+    "callbackMissingState": "認証状態が見つかりません",
     "callbackDenied": "Google へのアクセス許可がキャンセルされました",
     "callbackProviderError": "Google 側で認証が中断されました",
     "callbackStateMismatch": "認証状態が一致しません",

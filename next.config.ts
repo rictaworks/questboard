@@ -26,6 +26,13 @@ const nextConfig: NextConfig = {
     // 設定を直しても一度アクセスした利用者はキャッシュを消すまでそこへ到達できない。
     // Next の redirects は filesystem ルートより先に評価されるので、この予約は
     // 設定を消すまで効き続ける。旧 URL の救済という目的には 307 で足りる。
+    //
+    // 予約されるのは小文字だけではない。Next は source を大小文字を区別せずに
+    // 照合し、redirects には sensitive 相当の指定手段が無い（ロケール解決の
+    // ミドルウェアも置かない方針）。/JA や /EN/... も同じくここに吸われるため、
+    // 将来 public/EN/logo.png のような大文字を含む静的ファイルや /Es のルートを
+    // 置くと、接頭辞を剥いだ 404 へのリダイレクトが返る。
+    // test/not-found-http.test.mjs がこの挙動を固定している。
     return REMOVED_LOCALE_PREFIXES.flatMap((locale) => [
       // /ja → /
       {source: `/${locale}`, destination: '/', permanent: false},

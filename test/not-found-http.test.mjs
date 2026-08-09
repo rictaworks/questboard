@@ -23,7 +23,7 @@ const root = process.cwd();
 const READY_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 const START_ATTEMPTS = 3;
-const INSTANCE_PROBE_PATH = '/api/health';
+const INSTANCE_PROBE_PATH = '/api/instance';
 const INSTANCE_ENV_KEY = 'QUESTBOARD_INSTANCE_ID';
 
 let port = null;
@@ -113,32 +113,22 @@ async function waitUntilReady() {
 // 一度も見ないままテストが緑になる。
 //
 // 識別子は spawn 時の環境変数でこのプロセスにだけ渡すため、同じコードから
-// 起動された別インスタンスも一致しない。
+// 起動された別インスタンスも一致しない。サーバーは識別子を返さず、こちらが
+// 送った値と一致するかどうかだけを答える（204 か 404）。
 async function respondsAsOurInstance() {
   let response;
   try {
-    response = await fetch(`${baseUrl}${INSTANCE_PROBE_PATH}`, {redirect: 'manual'});
+    response = await fetch(instanceProbeUrl(instanceId), {redirect: 'manual'});
   } catch {
     // 接続拒否は起動途中。次の周回で再試行する。
     return false;
   }
 
-  if (response.status !== 200) {
-    return false;
-  }
+  return response.status === 204;
+}
 
-  const body = await response.text();
-
-  // 200 を返したのに JSON でないのは、このエンドポイントを持たない別のサーバーが
-  // ポートに居座っている場合。同定できない以上、準備完了とは見なさない。
-  let payload;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    return false;
-  }
-
-  return payload.instance === instanceId;
+function instanceProbeUrl(candidate) {
+  return `${baseUrl}${INSTANCE_PROBE_PATH}?instance=${encodeURIComponent(candidate)}`;
 }
 
 function assertServerAlive() {
@@ -279,19 +269,38 @@ after(stopServer);
 // 同定が壊れると、以降のテストは別インスタンスを検証したまま緑になり、
 // 退行が素通りする。同定の土台そのものをここで検査する。
 //
-// /api/health が静的化されると、起動時ではなくビルド時の環境変数（通常は未設定）を
-// 焼き込んだ応答を返し続けるため、このテストが落ちる。
-test('ヘルスチェックが起動時のインスタンス識別子を返す', async () => {
-  const {status, body} = await get(INSTANCE_PROBE_PATH);
+// /api/instance が静的化されると、起動時ではなくビルド時の環境変数（通常は未設定）で
+// 判定し続けるため、このテストが落ちる。
+test('正しいインスタンス識別子を送ると 204 が返る', async () => {
+  const response = await fetch(instanceProbeUrl(instanceId), {redirect: 'manual'});
 
-  assert.equal(status, 200);
-  assert.equal(JSON.parse(body).instance, instanceId);
+  assert.equal(response.status, 204);
+});
+
+// 識別子は返さない。返すと、認証の要らない公開エンドポイントから匿名の呼び出し元が
+// 値を読み、ポーリングでインスタンスの列挙とデプロイ・再起動タイミングを観測できる。
+test('インスタンス識別子を応答本文にもヘッダーにも出さない', async () => {
+  const response = await fetch(instanceProbeUrl(instanceId), {redirect: 'manual'});
+  const body = await response.text();
+  const headers = [...response.headers.entries()].map(([name, value]) => `${name}: ${value}`).join('\n');
+
+  assert.equal(body, '', '応答本文が空でない');
+  assert.doesNotMatch(headers, new RegExp(instanceId), 'ヘッダーに識別子が載っている');
+});
+
+// 識別子を知らない呼び出し元には、この経路の存在自体を見せない。
+test('識別子が違う・無い問い合わせは 404 になる', async () => {
+  const wrong = await fetch(instanceProbeUrl('00000000-0000-0000-0000-000000000000'), {redirect: 'manual'});
+  const missing = await fetch(`${baseUrl}${INSTANCE_PROBE_PATH}`, {redirect: 'manual'});
+
+  assert.equal(wrong.status, 404);
+  assert.equal(missing.status, 404);
 });
 
 // 識別子は起動ごとに変わる。ビルドに焼き込まれた固定値だと、同じ成果物を配信する
 // 別インスタンスと区別できず、同定として機能しない。
-test('インスタンス識別子が成果物に焼き込まれた固定値でない', async () => {
-  const source = readFileSync(path.join(root, 'src/app/api/health/route.ts'), 'utf8');
+test('インスタンス識別子が成果物に焼き込まれた固定値でない', () => {
+  const source = readFileSync(path.join(root, 'src/app/api/instance/route.ts'), 'utf8');
 
   assert.match(source, new RegExp(`process\\.env\\.${INSTANCE_ENV_KEY}`));
   assert.match(source, /export const dynamic = ['"]force-dynamic['"]/);
@@ -360,6 +369,27 @@ for (const locale of removedLocalePrefixes) {
 
     assert.equal(status, 307, `/${locale}/b/token123 が ${status} を返している`);
     assert.equal(location, '/b/token123');
+  });
+}
+
+// Next の redirects は source を大小文字を区別せずに照合する。redirects には
+// sensitive 相当の指定手段が無く、ミドルウェアも置かない方針なので、大文字・混在
+// 表記まで救済されるのは避けられない副作用として受け入れる。
+//
+// 挙動をここで固定しておく。redirects はファイルシステムルートより先に評価される
+// ため、将来 public/EN/logo.png のような大文字を含む静的ファイルや /Es のルートを
+// 置くと、接頭辞を剥いだ 404 へのリダイレクトが返る。そのとき原因がこの予約だと
+// すぐ分かるように、テストとして残す。
+for (const [pathname, expected] of [
+  ['/JA', '/'],
+  ['/Ja', '/'],
+  ['/EN/b/token123', '/b/token123']
+]) {
+  test(`${pathname} も大小文字を区別せず ${expected} へ救済される`, async () => {
+    const {status, location} = await get(pathname);
+
+    assert.equal(status, 307, `${pathname} が ${status} を返している`);
+    assert.equal(location, expected);
   });
 }
 
@@ -470,4 +500,26 @@ test('OAuth のパラメータ欠落は認可コード欠落として表示さ�
   assert.match(mainContent(body), /認証を完了できませんでした/);
   assert.match(mainContent(body), /認可コードが見つかりません/);
   assert.doesNotMatch(mainContent(body), /認証に成功しました/);
+});
+
+// code の欠落と state の欠落を1つの真偽値に潰すと、Google が実際には認可コードを
+// 送っているのに「認可コードが見つかりません」と表示される。利用者もサポートも
+// 存在しない問題を探し回ることになる。state はプライバシー拡張による除去や
+// 中間リダイレクトで単独で落ちうる。
+test('state だけが欠けたコールバックは認可コード欠落と区別して表示される', async () => {
+  const {status, body} = await get('/auth/google/callback?code=4%2F0AX4');
+
+  assert.equal(status, 200);
+  assert.match(mainContent(body), /認証状態が見つかりません/);
+  assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
+});
+
+// クエリを再付与するリバースプロキシやリダイレクト連鎖は、同じパラメータを
+// 重複させる。捨てるとそのデプロイでは Google ログインが一切成立しなくなる。
+test('重複した code と state でもサインインが止まらない', async () => {
+  const {status, body} = await get('/auth/google/callback?code=4%2F0AX4&code=4%2F0AX4&state=S1&state=S1');
+
+  assert.equal(status, 200);
+  assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
+  assert.doesNotMatch(mainContent(body), /認証状態が見つかりません/);
 });

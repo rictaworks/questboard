@@ -119,45 +119,49 @@ test('バックエンドへの送信が失敗しても未処理の reject を残
   );
 });
 
-test('sendBeacon が送信を断ったときは fetch へ回し、その失敗も内側で受け止める', async () => {
+// sendBeacon はキューに入れた時点で true を返し、その後の失敗を伝える手段が無い。
+// バックエンドは別オリジンにあり application/json は CORS セーフリスト外なので、
+// 許可オリジンの設定漏れがあると true を受け取った後に黙って捨てられ、
+// フォールバックも走らないまま通報が消える。使わないことを固定する。
+test('sendBeacon が使える環境でも beacon では送らない', async () => {
+  const beaconCalls = [];
   const attempts = [];
   const {reportClientError} = await loadReporter({
     fetchImpl: (url) => {
       attempts.push(url);
-      return Promise.reject(new Error('CORS blocked'));
+      return Promise.resolve({ok: true, status: 202});
     },
-    sendBeacon: () => false
-  });
-
-  const rejections = await collectUnhandledRejections(async () => {
-    reportClientError({message: 'oauth error', source: 'google-callback'});
-  });
-
-  assert.deepEqual(attempts, [`${BACKEND_URL}/client_errors`]);
-  assert.deepEqual(rejections, []);
-});
-
-// CSP で beacon が拒否されると sendBeacon は false ではなく例外を投げる。
-// これを通すと reportClientError の呼び出し元まで例外が抜け、window の error
-// イベント経由で同じ通報が繰り返される。
-test('sendBeacon が例外を投げても呼び出し元へ抜けず、fetch へ回る', async () => {
-  const attempts = [];
-  const {reportClientError} = await loadReporter({
-    fetchImpl: (url) => {
-      attempts.push(url);
-      return Promise.resolve();
-    },
-    sendBeacon: () => {
-      throw new Error('Refused to send beacon');
+    sendBeacon: (url) => {
+      beaconCalls.push(url);
+      return true;
     }
   });
 
-  const rejections = await collectUnhandledRejections(async () => {
-    reportClientError({message: 'oauth error', source: 'google-callback'});
+  reportClientError({message: 'oauth error', source: 'google-callback'});
+  await settle();
+
+  assert.deepEqual(beaconCalls, [], 'sendBeacon が呼ばれている');
+  assert.deepEqual(attempts, [`${BACKEND_URL}/client_errors`]);
+});
+
+// keepalive を落とすと、コールバック画面から遷移した瞬間に送信が打ち切られ、
+// ちょうど診断が要る失敗ほど届かなくなる。
+test('通報はページ遷移をまたぐ keepalive つきで送る', async () => {
+  const requests = [];
+  const {reportClientError} = await loadReporter({
+    fetchImpl: (url, options) => {
+      requests.push(options);
+      return Promise.resolve({ok: true, status: 202});
+    },
+    sendBeacon: undefined
   });
 
-  assert.deepEqual(attempts, [`${BACKEND_URL}/client_errors`]);
-  assert.deepEqual(rejections, []);
+  reportClientError({message: 'oauth error', source: 'google-callback'});
+  await settle();
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].keepalive, true);
+  assert.equal(requests[0].method, 'POST');
 });
 
 test('Sentry の読み込みに失敗しても未処理の reject を残さない', async () => {
@@ -200,4 +204,82 @@ test('Sentry 有効時はバックエンドへ送らず Sentry へ送る', async
   assert.equal(captured.length, 1);
   assert.equal(captured[0].message, 'oauth error');
   assert.equal(captured[0].options.tags.source, 'google-callback');
+});
+
+// ---------------------------------------------------------------------------
+// 届いたかどうかを呼び出し側へ返すこと
+//
+// google-callback は「同じコールバックからは1回だけ送る」ために印を残す。
+// 送れなかった通報まで送信済みとして扱うと、オフライン・CORS 拒否・Sentry の
+// 読み込み失敗で消えた診断が、その認証試行について二度と得られなくなる。
+// 呼び出し側が印を取り消せるよう、届いたかどうかを返す。
+// ---------------------------------------------------------------------------
+
+test('バックエンドが受理したら true を返す', async () => {
+  const {reportClientError} = await loadReporter({
+    fetchImpl: () => Promise.resolve({ok: true, status: 202}),
+    sendBeacon: undefined
+  });
+
+  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), true);
+});
+
+// オフライン・CORS 拒否・プリフライト遮断はいずれもここに落ちる。
+// 復旧しうる失敗なので、送信済みとして扱ってはならない。
+test('バックエンドへ届かなければ false を返す', async () => {
+  const {reportClientError} = await loadReporter({
+    fetchImpl: () => Promise.reject(new Error('Failed to fetch')),
+    sendBeacon: undefined
+  });
+
+  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+});
+
+test('バックエンドが受理しなければ false を返す', async () => {
+  const {reportClientError} = await loadReporter({
+    fetchImpl: () => Promise.resolve({ok: false, status: 500}),
+    sendBeacon: undefined
+  });
+
+  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+});
+
+// 送り先が無い状態は「送れなかった」であって「送った」ではない。
+test('バックエンドの URL が未設定なら false を返す', async () => {
+  const {reportClientError} = await loadReporter({
+    fetchImpl: () => {
+      throw new Error('URL 未設定のときに送ってはならない');
+    },
+    sendBeacon: undefined
+  });
+  delete process.env.NEXT_PUBLIC_BACKEND_URL;
+
+  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+  process.env.NEXT_PUBLIC_BACKEND_URL = BACKEND_URL;
+});
+
+test('Sentry へ送れたら true、読み込みに失敗したら false を返す', async () => {
+  const {reportClientError: captured} = await loadReporter({
+    fetchImpl: () => {
+      throw new Error('Sentry 有効時にバックエンドへ送ってはならない');
+    },
+    sendBeacon: undefined,
+    sentry: {captureMessage: () => {}}
+  });
+
+  assert.equal(await captured({message: 'oauth error', source: 'google-callback'}), true);
+
+  const {reportClientError: failed} = await loadReporter({
+    fetchImpl: () => {
+      throw new Error('Sentry 有効時にバックエンドへ送ってはならない');
+    },
+    sendBeacon: undefined,
+    sentry: {
+      captureMessage: () => {
+        throw new Error('Sentry capture failed');
+      }
+    }
+  });
+
+  assert.equal(await failed({message: 'oauth error', source: 'google-callback'}), false);
 });
