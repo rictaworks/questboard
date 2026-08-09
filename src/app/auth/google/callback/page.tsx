@@ -13,6 +13,19 @@ function readParam(value: string | string[] | undefined): string | null {
   return typeof value === "string" ? value : null;
 }
 
+// error は失敗の理由でしかなく、下流でトークン交換に使うことはない。重複して
+// 届いたからといって捨てると、キャンセルしただけの利用者に「認可コードが
+// 見つかりません」という無関係な原因が示される状態に戻ってしまう。
+// プロキシやリダイレクト連鎖でパラメータが重複しても理由を保てるよう、
+// 配列のときは最初の文字列を採る。
+function readErrorParam(value: string | string[] | undefined): string | null {
+  if (Array.isArray(value)) {
+    return value.find((entry) => entry.trim() !== "") ?? null;
+  }
+
+  return readParam(value);
+}
+
 export default async function GoogleCallbackPage({
   searchParams
 }: {
@@ -25,11 +38,16 @@ export default async function GoogleCallbackPage({
   // （?error=access_denied&error_description=...）。これを渡さないと code 欠落と
   // 同じ経路に落ち、利用者には「認証に成功しました」と「認可コードが見つかりません」が
   // 同時に出る画面になる。
+  //
+  // error_description も渡す。画面には出さないが、invalid_client（client_id の
+  // 設定ミス）・redirect_uri_mismatch・admin_policy_enforced を切り分けられるのは
+  // この2つだけで、捨てると問い合わせ時に原因を追えなくなる。
   return (
     <NextIntlClientProvider messages={messages}>
       <GoogleCallback
         code={readParam(params.code)}
-        error={readParam(params.error)}
+        error={readErrorParam(params.error)}
+        errorDescription={readErrorParam(params.error_description)}
         state={readParam(params.state)}
       />
     </NextIntlClientProvider>

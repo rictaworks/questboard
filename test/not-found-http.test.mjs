@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {access, readFile} from 'node:fs/promises';
+import {readFileSync} from 'node:fs';
+import {access} from 'node:fs/promises';
 import {createServer} from 'node:net';
 import path from 'node:path';
 import test, {after, before} from 'node:test';
@@ -20,11 +21,17 @@ import test, {after, before} from 'node:test';
 const root = process.cwd();
 const READY_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const PORT_COLLISION_GRACE_MS = 500;
 
 let port = null;
 let baseUrl = null;
 let server = null;
 let serverOutput = '';
+
+// 設定の読み取りはテストを1つも登録しないうちに済ませる。読み取りが失敗したら
+// モジュールの読み込み自体が失敗し、テストが静かに減るのではなくファイルごと
+// 失敗として報告される。
+const removedLocalePrefixes = readRemovedLocalePrefixes();
 
 // ポートは固定しない。固定すると、前回の実行が残した `next start`（`after` が
 // 走らない Ctrl+C 等で孤児になる）が居座るだけで、以後このファイルの全テストが
@@ -69,24 +76,27 @@ async function assertBuildExists() {
 // 一方、応答の有無だけで判定するのも危険で、ポートに別のサーバーが居座っていると
 // 古いビルドや無関係なサーバーを検証して全件緑になり、
 // 「src/app/not-found.tsx を消して組み込みの英語 404 に戻る」退行が通ってしまう。
-// そこで毎周回、子プロセスが生きていることを先に確認する。ポート自体も
-// reserveFreePort() で空きを確保してから渡しているため、応答者は自分が
-// 起動したプロセスに限られる。
+//
+// reserveFreePort() は spawn の前にプローブのソケットを閉じるため、next start の
+// 起動が終わるまでのあいだ、別のプロセスが同じ番号を奪う余地が残る。奪われた場合
+// next start は EADDRINUSE で終了する（Next 16 が空きポートを探し直すのは dev のみ）。
+// 応答が返ってから即座に返ると、その終了を見る前に他人のサーバーを掴んでしまう。
+// そこで応答後に猶予を置いてもう一度、子プロセスの生存と EADDRINUSE の不在を確かめる。
 async function waitUntilReady() {
   const deadline = Date.now() + READY_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      throw new Error(
-        `next start が起動直後に終了した（exitCode=${server.exitCode} signal=${server.signalCode}）。` +
-          `ポート ${port} を確保できなかった可能性がある。出力:\n${serverOutput}`
-      );
-    }
+    assertServerAlive();
 
     try {
       await fetch(`${baseUrl}/`, {redirect: 'manual'});
+      await new Promise((resolve) => setTimeout(resolve, PORT_COLLISION_GRACE_MS));
+      assertServerAlive();
       return;
-    } catch {
+    } catch (cause) {
+      if (cause instanceof PortCollisionError) {
+        throw cause;
+      }
       // 接続拒否は起動途中。次の周回で再試行する。
     }
 
@@ -95,6 +105,19 @@ async function waitUntilReady() {
 
   throw new Error(
     `next start が ${READY_TIMEOUT_MS}ms 以内にポート ${port} で応答しなかった。出力:\n${serverOutput}`
+  );
+}
+
+class PortCollisionError extends Error {}
+
+function assertServerAlive() {
+  if (server.exitCode === null && server.signalCode === null && !serverOutput.includes('EADDRINUSE')) {
+    return;
+  }
+
+  throw new PortCollisionError(
+    `next start が起動途中で終了した（exitCode=${server.exitCode} signal=${server.signalCode}）。` +
+      `確保したポート ${port} を別のプロセスに奪われた可能性がある。出力:\n${serverOutput}`
   );
 }
 
@@ -113,8 +136,13 @@ function mainContent(body) {
 
 // next.config.ts の一覧をテスト側で書き写すと、設定から要素を削ったときに
 // テストは緑のまま共有リンクだけが 404 になる。設定ファイルから読み出す。
-async function readRemovedLocalePrefixes() {
-  const source = await readFile(path.join(root, 'next.config.ts'), 'utf8');
+//
+// 同期で読む。ここで await するとモジュール評価がいったん中断し、node:test は
+// その時点で登録済みのテストと after フックを走らせてしまう。after は
+// next start を停止するため、await より後で登録されるテストは停止済みの
+// サーバーに対して実行されることになる。
+function readRemovedLocalePrefixes() {
+  const source = readFileSync(path.join(root, 'next.config.ts'), 'utf8');
   const declaration = source.match(/const REMOVED_LOCALE_PREFIXES = \[([^\]]*)\]/);
 
   assert.ok(declaration, 'next.config.ts に REMOVED_LOCALE_PREFIXES の宣言が見つからない');
@@ -225,8 +253,7 @@ for (const pathname of ['/robots.txt', '/wp-login.php', '/favicon.ico', '/sonzai
 
 // 一方、旧ロケール接頭辞つきの URL は 404 にせず、接頭辞を外した先へ送る。
 // 多言語をやめる前に配布された共有リンクとブックマークを生かすため。
-const removedLocalePrefixes = await readRemovedLocalePrefixes();
-
+//
 // 一覧そのものを固定する。「fr や ru は使われていない」と削る整理は自然に見えるが、
 // 削った瞬間、その接頭辞つきで配布された共有リンクが 404 になる。多言語をやめる前に
 // URL として到達可能だった7つは、リンクが出回っている可能性がある以上すべて残す。
@@ -324,6 +351,23 @@ test('OAuth のキャンセルが成功表示にならず、キャンセルと�
   assert.match(mainContent(body), /キャンセルされました/);
   assert.doesNotMatch(mainContent(body), /認証に成功しました/);
   assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
+});
+
+// プロキシやリダイレクト連鎖で error が重複しても、理由を取り違えない。
+test('OAuth の error が重複して届いてもキャンセルとして表示される', async () => {
+  const {body} = await get('/auth/google/callback?error=access_denied&error=access_denied');
+
+  assert.match(mainContent(body), /キャンセルされました/);
+  assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
+});
+
+// access_denied 以外は文面を丸めるが、切り分けに要る生の値は画面に残す。
+// 消えると、問い合わせを受けても設定ミスと管理ポリシーの区別がつかない。
+test('OAuth の設定由来のエラーは生の理由を添えて表示される', async () => {
+  const {body} = await get('/auth/google/callback?error=admin_policy_enforced');
+
+  assert.match(mainContent(body), /Google 側で認証が中断されました/);
+  assert.match(mainContent(body), /admin_policy_enforced/);
 });
 
 test('OAuth のパラメータ欠落は認可コード欠落として表示される', async () => {

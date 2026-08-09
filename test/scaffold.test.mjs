@@ -67,8 +67,12 @@ test('only the japanese message catalog exists', async () => {
 
   // routing.ts は定数1つのモジュール。値を読むためだけに TypeScript を変換して
   // new Function で評価すると、テストの本題より仕掛けのほうが大きくなる。
+  //
+  // 引用符・空白・as const の有無には依存させない。書式を揃えただけの変更で
+  // 「ロケールが変わった」ように見えるエラーを出すと、次の開発者を無駄に走らせる。
+  // 実際に配信される言語は test/not-found-http.test.mjs が <html lang="ja"> で検査する。
   const routing = await read('src/i18n/routing.ts');
-  assert.match(routing, /^export const defaultLocale = 'ja';$/m);
+  assert.match(routing, /export\s+const\s+defaultLocale\s*=\s*['"]ja['"]/);
 });
 
 test('the japanese message catalog covers every namespace and has no placeholders', async () => {
@@ -122,6 +126,96 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
   assert.equal(page.includes('design-tokens'), false);
   assert.equal(page.includes('#locales'), false);
 });
+
+// ルートレイアウトの NextIntlClientProvider を外し、ページごとに使う名前空間だけを
+// 渡すようにしたため、「どのクライアントコンポーネントからでも全名前空間が引ける」という
+// 構造的な保証は無くなった。渡し忘れても use-intl は例外を投げず、既定の
+// getMessageFallback がキーパス（例: NotFound.title）をそのまま描画するため、
+// 画面に出るまで気づけない。ページの一覧と、実際に呼ばれている名前空間を突き合わせる。
+test('each page passes every namespace its client components use', async () => {
+  const pages = [
+    'src/app/page.tsx',
+    'src/app/b/[shareToken]/page.tsx',
+    'src/app/auth/google/callback/page.tsx'
+  ];
+
+  for (const page of pages) {
+    const declared = await readClientMessageNamespaces(page);
+    const used = await collectUseTranslationsNamespaces(page);
+    const missing = [...used].filter((namespace) => !declared.includes(namespace)).sort();
+
+    assert.deepEqual(
+      missing,
+      [],
+      `${page} の clientMessages([...]) に ${missing.join(', ')} が無い。`
+        + 'このページから辿れるクライアントコンポーネントが useTranslations で使っている'
+    );
+  }
+});
+
+// clientMessages([...]) に並ぶ名前空間名を読む。
+async function readClientMessageNamespaces(relativePath) {
+  const source = await read(relativePath);
+  const call = source.match(/clientMessages\(\[([^\]]*)\]\)/);
+
+  assert.ok(call, `${relativePath} に clientMessages([...]) が無い`);
+
+  return [...call[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, namespace]) => namespace);
+}
+
+// ページから静的 import を辿り、道中の useTranslations('X') を集める。
+// getTranslations（Server Component 側）はプロバイダを必要としないので数えない。
+async function collectUseTranslationsNamespaces(entryPath) {
+  const namespaces = new Set();
+  const visited = new Set();
+  const queue = [entryPath];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    const source = await read(current);
+
+    for (const [, namespace] of source.matchAll(/useTranslations\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      namespaces.add(namespace);
+    }
+
+    for (const [, specifier] of source.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+      const resolved = await resolveProjectModule(specifier, current);
+      if (resolved !== null) {
+        queue.push(resolved);
+      }
+    }
+  }
+
+  return namespaces;
+}
+
+// プロジェクト内のモジュールだけを解決する。node_modules と型のみの参照は辿らない。
+async function resolveProjectModule(specifier, fromPath) {
+  let base;
+  if (specifier.startsWith('@/')) {
+    base = path.join('src', specifier.slice(2));
+  } else if (specifier.startsWith('.')) {
+    base = path.join(path.dirname(fromPath), specifier);
+  } else {
+    return null;
+  }
+
+  for (const candidate of [`${base}.tsx`, `${base}.ts`, path.join(base, 'index.tsx'), path.join(base, 'index.ts')]) {
+    try {
+      await readFile(path.join(root, candidate), 'utf8');
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
 
 test('UI source does not contain hardcoded JSX text', async () => {
   const files = (await walk('src')).filter((file) => file.endsWith('.tsx'));

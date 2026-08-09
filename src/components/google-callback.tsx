@@ -39,7 +39,8 @@ const callbackDescriptionKeys: Record<CallbackStatus, string | null> = {
 // Google が返す error の値は access_denied（利用者がキャンセル）のほか、
 // invalid_request や admin_policy_enforced など設定・ポリシー由来のものがある。
 // 利用者に伝えられるのは「キャンセルされた」か「Google 側で中断された」かの区別まで。
-// 生の値を画面に出すと意味が伝わらないので、2つのメッセージに寄せる。
+// 生の値をそのまま見せても意味が伝わらないので、2つのメッセージに寄せたうえで、
+// 切り分けに必要な生の値は reason として文面に添える（src/messages/ja.json）。
 function readProviderErrorKey(error: string | null): "callbackDenied" | "callbackProviderError" | null {
   if (error === null || error.trim() === "") {
     return null;
@@ -51,10 +52,12 @@ function readProviderErrorKey(error: string | null): "callbackDenied" | "callbac
 export default function GoogleCallback({
   code,
   error,
+  errorDescription,
   state
 }: {
   code: string | null;
   error: string | null;
+  errorDescription: string | null;
   state: string | null;
 }) {
   const t = useTranslations("Auth");
@@ -65,19 +68,37 @@ export default function GoogleCallback({
   // 「認可コードが見つかりません」という無関係な原因が示される。
   const providerErrorKey = readProviderErrorKey(error);
   const isMissingParams = !code || !state;
-  const initialErrorMessage = providerErrorKey === null
-    ? (isMissingParams ? t("callbackMissingCode") : null)
-    : t(providerErrorKey);
+  const providerErrorMessage = providerErrorKey === null
+    ? null
+    : t(providerErrorKey, {reason: error ?? ""});
+  const initialErrorMessage = providerErrorMessage ?? (isMissingParams ? t("callbackMissingCode") : null);
 
-  const [{errorMessage, status}, setCallbackState] = useState<CallbackState>(() => ({
+  // 失敗理由は props から毎回導出する。useState の遅延初期化に閉じ込めると、
+  // クライアント遷移で同じインスタンスが使い回されたときに初期化関数が再実行されず、
+  // 画面が「Google ログインを完了しています」のまま止まる。
+  const [asyncState, setCallbackState] = useState<CallbackState>({
     codeVerifier: null,
-    errorMessage: initialErrorMessage,
+    errorMessage: null,
     returnTo: "/",
-    status: initialErrorMessage === null ? "loading" : "error"
-  }));
+    status: "loading"
+  });
+
+  const status: CallbackStatus = initialErrorMessage === null ? asyncState.status : "error";
+  const errorMessage = initialErrorMessage ?? asyncState.errorMessage;
+
+  // 画面に出せるのは丸めたメッセージなので、切り分けに要る生の値はコンソールに残す。
+  // ここを消すと、問い合わせを受けても client_id の設定ミスか redirect_uri の不一致か
+  // 管理ポリシーによる遮断かを区別する手立てが無くなる。
+  useEffect(() => {
+    if (error === null) {
+      return;
+    }
+
+    console.error(`[google-callback] OAuth error=${error} description=${errorDescription ?? ""}`);
+  }, [error, errorDescription]);
 
   useEffect(() => {
-    if (isMissingParams || initialErrorMessage !== null || status !== "loading") {
+    if (!code || !state || initialErrorMessage !== null || asyncState.status !== "loading") {
       return;
     }
 
@@ -137,7 +158,7 @@ export default function GoogleCallback({
         });
       }
     })();
-  }, [code, initialErrorMessage, isMissingParams, router, state, status, t]);
+  }, [asyncState.status, code, initialErrorMessage, router, state, t]);
 
   // 見出しと本文は3つの状態それぞれに対応させる。error のときに success の文言を出すと、
   // 「認証に成功しました／元の画面へ戻ります」の下にエラーが並ぶ画面になる。
