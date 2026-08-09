@@ -24,11 +24,11 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## Pages
 
-- `/` — デフォルトロケールへリダイレクト
-- `/{locale}` — Googleサインイン付きのロケール別ランディングページ（`ja`, `en`, `fr`, `zh`, `ru`, `es`, `ar`）
-- `/auth/google/callback` — Google OAuthコールバックのエイリアス
-- `/{locale}/auth/google/callback` — Google OAuthコールバック・reCAPTCHA検証
-- `/{locale}/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
+表示言語は日本語のみ。URL にロケール接頭辞は付かない。
+
+- `/` — Googleサインイン付きのランディングページ
+- `/auth/google/callback` — Google OAuthコールバック・reCAPTCHA検証
+- `/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
 
 ## API一覧
 
@@ -36,6 +36,8 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 - Rails バックエンド: [`SPEC/api/rails-backend.md`](SPEC/api/rails-backend.md)
 - Go sync-server（WebSocket）: [`SPEC/api/sync-server.md`](SPEC/api/sync-server.md)
+- フロントエンド（Next.js Route Handler）: [`SPEC/api/frontend.md`](SPEC/api/frontend.md)
+  - `GET /api/instance` — 送った識別子が稼働中の Next プロセスのものと一致するかを答える（テスト用。本番では未設定のため常に 404）
 
 ## Authentication
 
@@ -45,7 +47,11 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## Localization
 
-Messages live in `src/messages/*.json` and should be referenced by translation keys only.
+表示言語は日本語のみで、多言語対応は行わない。メッセージカタログは `src/messages/ja.json` の1つだけで、
+UI の文字列はすべて翻訳キー経由で参照する（JSX に直書きしたテキストは `test/scaffold.test.mjs` の
+`UI source does not contain hardcoded JSX text` が検査する。`placeholder` や `aria-label` のように
+props へ渡す文字列は検査対象外なので、レビューで確認する）。
+カタログを増やすと URL 接頭辞・ロケール検出・未翻訳の扱いが再び必要になるため、言語追加は方針変更（`CLAUDE.md`）を伴う。
 
 ## Design tokens
 

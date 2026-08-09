@@ -1,24 +1,22 @@
-import {redirect} from 'next/navigation';
+import {NextIntlClientProvider} from 'next-intl';
 
-import {defaultLocale} from '@/i18n/routing';
+import BoardInvitePanel from '@/components/board-invite-panel';
+import {clientMessages} from '@/i18n/client-messages';
 
-export default async function BoardInviteAliasPage({
-  params,
-  searchParams
+export default async function BoardInvitePage({
+  params
 }: {
   params: Promise<{shareToken: string}>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const {shareToken} = await params;
-  const queryParams = await searchParams;
-  const query = new URLSearchParams();
+  // BoardInvitePanel は BoardInvite と Auth、その中の BoardCanvasPanel は BoardCanvas を使う。
+  const messages = await clientMessages(['Auth', 'BoardInvite', 'BoardCanvas']);
 
-  for (const [key, value] of Object.entries(queryParams)) {
-    if (typeof value === 'string') {
-      query.set(key, value);
-    }
-  }
-
-  const suffix = query.toString();
-  redirect(suffix ? `/${defaultLocale}/b/${shareToken}?${suffix}` : `/${defaultLocale}/b/${shareToken}`);
+  return (
+    <main className="home-shell">
+      <NextIntlClientProvider messages={messages}>
+        <BoardInvitePanel shareToken={shareToken} />
+      </NextIntlClientProvider>
+    </main>
+  );
 }

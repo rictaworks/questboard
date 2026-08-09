@@ -85,9 +85,9 @@ test('ClientErrorBridge respects sentryEnabled and does not call Sentry.init or 
         }
       };
     }
-    if (specifier === '@/lib/sentry-sanitizer') {
+    if (specifier === '@/lib/client-error-report') {
       return {
-        sanitizeClientErrorUrl: (url) => url
+        reportClientError: () => {}
       };
     }
     if (specifier === '@/lib/sentry-config') {

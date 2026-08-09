@@ -30,17 +30,6 @@ async function read(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8');
 }
 
-async function loadRouting() {
-  const source = await read('src/i18n/routing.ts');
-  const {outputText} = ts.transpileModule(source, {
-    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
-  });
-
-  const moduleShim = {exports: {}};
-  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
-  return moduleShim.exports;
-}
-
 async function loadSentryConfig() {
   const source = await read('src/lib/sentry-config.ts');
   const {outputText} = ts.transpileModule(source, {
@@ -52,9 +41,7 @@ async function loadSentryConfig() {
   return moduleShim.exports;
 }
 
-const {defaultLocale, locales} = await loadRouting();
 const {sentryEnabled} = await loadSentryConfig();
-const pendingLocales = locales.filter((locale) => locale !== defaultLocale && locale !== 'en');
 
 test('design tokens keep expected values', async () => {
   const colors = await read('src/styles/tokens/colors.css');
@@ -70,40 +57,51 @@ test('design tokens keep expected values', async () => {
   assert.match(effects, /--shadow-glow-md:\s*0 0 30px var\(--color-glow\), 0 0 60px var\(--color-glow-wide\);/);
 });
 
-test('all locale files exist and placeholder locales stay scaffolded', async () => {
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.ok(json.Metadata, `${locale} metadata namespace missing`);
-    assert.ok(json.Home, `${locale} message namespace missing`);
-    assert.ok(json.Auth, `${locale} auth namespace missing`);
-    assert.ok(json.BoardInvite, `${locale} board invite namespace missing`);
-    assert.ok(json.Home.title, `${locale} home title missing`);
-    assert.ok(json.Home.authSectionTitle, `${locale} auth section title missing`);
-    assert.ok(json.BoardInvite.notFoundHeading, `${locale} board invite notFoundHeading missing`);
-    assert.ok(json.BoardInvite.notFoundDescription, `${locale} board invite notFoundDescription missing`);
-    assert.ok(json.BoardCanvas, `${locale} board canvas namespace missing`);
-    assert.ok(json.BoardCanvas.resetCamera, `${locale} board canvas resetCamera missing`);
-  }
+// 対応言語は日本語のみ。メッセージファイルが1つであること自体を検査する。
+// 増やすと URL 接頭辞・ロケール検出・未翻訳の扱いが再び必要になるため、
+// 言語追加は方針変更（CLAUDE.md）を伴う判断として扱う。
+test('only the japanese message catalog exists', async () => {
+  const files = (await walk('src/messages')).sort();
 
-  const ja = JSON.parse(await read('src/messages/ja.json'));
-  const en = JSON.parse(await read('src/messages/en.json'));
-  assert.doesNotMatch(ja.Metadata.description, /^\[TODO]/);
-  assert.doesNotMatch(en.Metadata.description, /^\[TODO]/);
+  assert.deepEqual(files, ['src/messages/ja.json']);
 
-  for (const locale of pendingLocales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.match(json.Home.authSectionTitle, /^\[TODO] translate$/);
-  }
+  // routing.ts は定数1つのモジュール。値を読むためだけに TypeScript を変換して
+  // new Function で評価すると、テストの本題より仕掛けのほうが大きくなる。
+  //
+  // 引用符・空白・as const の有無には依存させない。書式を揃えただけの変更で
+  // 「ロケールが変わった」ように見えるエラーを出すと、次の開発者を無駄に走らせる。
+  // ただし行頭の宣言に限る。アンカーを外すとコメントアウトされた旧行にも一致し、
+  // 「別の値へ変えた」変更を素通りさせてしまう。
+  // 実際に配信される言語は test/not-found-http.test.mjs が <html lang="ja"> で検査する。
+  const routing = await read('src/i18n/routing.ts');
+  assert.match(routing, /^\s*export\s+const\s+defaultLocale\s*=\s*['"]ja['"]/m);
 });
 
-// 製品名はどのロケールでも同じ表記なので、翻訳待ちのロケールでも
-// プレースホルダのままにしない。ブラウザのタブに [TODO] translate と出る（Issue #100）。
-test('the product name is not left untranslated in any locale', async () => {
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    assert.equal(json.Metadata.title, 'Questboard', `${locale} metadata title differs`);
-    assert.equal(json.Home.title, 'Questboard', `${locale} home title differs`);
-  }
+test('the japanese message catalog covers every namespace and has no placeholders', async () => {
+  const json = JSON.parse(await read('src/messages/ja.json'));
+
+  assert.ok(json.Metadata, 'metadata namespace missing');
+  assert.ok(json.Home, 'home namespace missing');
+  assert.ok(json.Auth, 'auth namespace missing');
+  assert.ok(json.BoardInvite, 'board invite namespace missing');
+  assert.ok(json.Home.title, 'home title missing');
+  assert.ok(json.Home.authSectionTitle, 'auth section title missing');
+  assert.ok(json.BoardInvite.notFoundHeading, 'board invite notFoundHeading missing');
+  assert.ok(json.BoardInvite.notFoundDescription, 'board invite notFoundDescription missing');
+  assert.ok(json.BoardCanvas, 'board canvas namespace missing');
+  assert.ok(json.BoardCanvas.resetCamera, 'board canvas resetCamera missing');
+
+  // 翻訳待ちのプレースホルダが1つも残っていないこと。多言語をやめた以上、
+  // [TODO] translate が画面に出る状態は存在してはならない（Issue #103）。
+  assert.doesNotMatch(JSON.stringify(json), /\[TODO]/);
+});
+
+// タイトルが空だとブラウザのタブが生の URL 表示になる（Issue #100）。
+test('the product name is set for the tab title and the home heading', async () => {
+  const json = JSON.parse(await read('src/messages/ja.json'));
+
+  assert.equal(json.Metadata.title, 'Questboard');
+  assert.equal(json.Home.title, 'Questboard');
 });
 
 // トップページはアプリの入口であって製品紹介の LP ではない。開発用の雛形説明も
@@ -121,17 +119,154 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
     'localesDescription'
   ];
 
-  for (const locale of locales) {
-    const json = JSON.parse(await read(`src/messages/${locale}.json`));
-    for (const key of removedKeys) {
-      assert.equal(key in json.Home, false, `${locale} still defines Home.${key}`);
-    }
+  const json = JSON.parse(await read('src/messages/ja.json'));
+  for (const key of removedKeys) {
+    assert.equal(key in json.Home, false, `Home.${key} is still defined`);
   }
 
-  const page = await read('src/app/[locale]/page.tsx');
+  const page = await read('src/app/page.tsx');
   assert.equal(page.includes('design-tokens'), false);
   assert.equal(page.includes('#locales'), false);
 });
+
+// ルートレイアウトの NextIntlClientProvider を外し、ページごとに使う名前空間だけを
+// 渡すようにしたため、「どのクライアントコンポーネントからでも全名前空間が引ける」という
+// 構造的な保証は無くなった。渡し忘れても use-intl は例外を投げず、既定の
+// getMessageFallback がキーパス（例: NotFound.title）をそのまま描画するため、
+// 画面に出るまで気づけない。ページの一覧と、実際に呼ばれている名前空間を突き合わせる。
+// 起点は page.tsx だけではない。App Router は layout / error / template /
+// loading / not-found も描画するため、そこからしか辿れないクライアント
+// コンポーネントは、page.tsx 起点の走査では一度も見られない。
+//
+// たとえば useTranslations('Error') を呼ぶ src/app/error.tsx を足しても、
+// どの page.tsx もそれを描画しないので検査から漏れる。use-intl は名前空間が
+// 欠けても例外を投げず、既定の getMessageFallback がキーパスを描画するため、
+// 日本語のみの製品で利用者が "Error.title" という ASCII 文字列を目にする。
+// それでも lint・build・全テストは緑のまま通る。
+const ROUTE_ENTRY_BASENAMES = [
+  'page.tsx',
+  'layout.tsx',
+  'error.tsx',
+  'global-error.tsx',
+  'template.tsx',
+  'loading.tsx',
+  'not-found.tsx'
+];
+
+test('each page passes every namespace its client components use', async () => {
+  // 一覧は書き写さない。書き写すと、後から追加されたページが黙って未検査に
+  // なる（同じ理由で test/not-found-http.test.mjs もロケール一覧を
+  // next.config.ts から読んでいる）。
+  const pages = (await walk('src/app'))
+    .filter((file) => ROUTE_ENTRY_BASENAMES.includes(path.basename(file)));
+
+  assert.ok(pages.length > 0, 'src/app にルートの入口ファイルが1つも無い');
+
+  for (const page of pages) {
+    const used = await collectUseTranslationsNamespaces(page);
+
+    if (used.size === 0) {
+      continue;
+    }
+
+    const declared = await readClientMessageNamespaces(page);
+    const missing = [...used].filter((namespace) => !declared.includes(namespace)).sort();
+
+    assert.deepEqual(
+      missing,
+      [],
+      `${page} の clientMessages([...]) に ${missing.join(', ')} が無い。`
+        + 'このページから辿れるクライアントコンポーネントが useTranslations で使っている'
+    );
+  }
+});
+
+// clientMessages([...]) に並ぶ名前空間名を読む。
+async function readClientMessageNamespaces(relativePath) {
+  const source = await read(relativePath);
+  const call = source.match(/clientMessages\(\[([^\]]*)\]\)/);
+
+  assert.ok(call, `${relativePath} に clientMessages([...]) が無い`);
+
+  return [...call[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, namespace]) => namespace);
+}
+
+// ページから import を辿り、道中の useTranslations('X') を集める。
+// getTranslations（Server Component 側）はプロバイダを必要としないので数えない。
+//
+// 静的 import だけでなく import('...') 形式も辿る。動的にしただけで検査から
+// 外れると、名前空間の渡し忘れを緑のまま通してしまう。
+async function collectUseTranslationsNamespaces(entryPath) {
+  const namespaces = new Set();
+  const visited = new Set();
+  const queue = [entryPath];
+
+  while (queue.length > 0) {
+    const current = queue.pop();
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    const source = await read(current);
+
+    for (const [, namespace] of source.matchAll(/useTranslations\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      namespaces.add(namespace);
+    }
+
+    const specifiers = [
+      ...source.matchAll(/from\s+['"]([^'"]+)['"]/g),
+      ...source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)
+    ];
+
+    for (const [, specifier] of specifiers) {
+      const resolved = await resolveProjectModule(specifier, current);
+      if (resolved !== null) {
+        queue.push(resolved);
+      }
+    }
+  }
+
+  return namespaces;
+}
+
+const MODULE_EXTENSIONS = ['tsx', 'ts', 'mts', 'jsx', 'js', 'mjs'];
+
+// プロジェクト内のモジュールだけを解決する。node_modules への参照は辿らない。
+//
+// 見つからない（ENOENT）以外の読み取り失敗は握り潰さない。握り潰すと、権限や
+// 種別の問題で読めなかったファイルが「プロジェクト外」として素通りし、
+// そこにある useTranslations が検査から消える。
+async function resolveProjectModule(specifier, fromPath) {
+  let base;
+  if (specifier.startsWith('@/')) {
+    base = path.join('src', specifier.slice(2));
+  } else if (specifier.startsWith('.')) {
+    base = path.join(path.dirname(fromPath), specifier);
+  } else {
+    return null;
+  }
+
+  const candidates = [
+    ...MODULE_EXTENSIONS.map((extension) => `${base}.${extension}`),
+    ...MODULE_EXTENSIONS.map((extension) => path.join(base, `index.${extension}`))
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      await readFile(path.join(root, candidate), 'utf8');
+      return candidate;
+    } catch (cause) {
+      if (cause.code === 'ENOENT' || cause.code === 'EISDIR') {
+        continue;
+      }
+
+      throw new Error(`${candidate} を読めなかった（${cause.code}）。import の追跡を続行できない`, {cause});
+    }
+  }
+
+  return null;
+}
 
 test('UI source does not contain hardcoded JSX text', async () => {
   const files = (await walk('src')).filter((file) => file.endsWith('.tsx'));
@@ -158,12 +293,39 @@ test('UI source does not contain hardcoded JSX text', async () => {
   assert.deepEqual(violations, []);
 });
 
-test('middleware matcher stays in sync with routing locales', async () => {
-  const middleware = await read('src/middleware.ts');
-  const matcherMatch = middleware.match(/matcher: \['\/', '\/\(([^)]+)\)\/:path\*'\]/);
+// ロケールを URL 接頭辞に持たせる構成には戻さない。
+//
+// [locale] は1セグメントのパスなら何にでも一致するため、/robots.txt や
+// /wp-login.php までルートとして受けてしまい、それを打ち消すために
+// ミドルウェアでのロケール解決・素通し判定・専用の 404 シェルが必要になる。
+// PR #116 ではこの構成で 2 日間に 14 コミット・設計の往復 4 回を要し、
+// レビューで確認された不具合 20 件はすべてこの構成に由来していた。
+test('locale routing is not reintroduced via a [locale] segment or middleware', async () => {
+  const appFiles = await walk('src/app');
+  const localeSegments = appFiles.filter((file) => file.includes('[locale]'));
 
-  assert.ok(matcherMatch, 'middleware matcher pattern not found');
-  assert.deepEqual(matcherMatch[1].split('|'), [...locales]);
+  assert.deepEqual(localeSegments, [], '[locale] セグメントが復活している');
+
+  // Next はミドルウェアを src/ 直下とリポジトリ直下の両方から読み、名前も
+  // middleware / proxy（Next 16 の新名称）の2系統、拡張子も ts / js / mjs がある。
+  // 一部しか見ないと、見ていないパスに置くだけで検査を素通りできてしまう。
+  const middlewareBasenames = ['middleware', 'proxy'];
+  const middlewareExtensions = ['ts', 'tsx', 'js', 'mjs'];
+  const middlewareDirs = ['src', '.'];
+
+  for (const dir of middlewareDirs) {
+    for (const basename of middlewareBasenames) {
+      for (const extension of middlewareExtensions) {
+        const middlewarePath = path.join(dir, `${basename}.${extension}`);
+
+        await assert.rejects(
+          async () => read(middlewarePath),
+          /ENOENT/,
+          `${middlewarePath} が存在する。ロケール解決のためのミドルウェアは置かない`
+        );
+      }
+    }
+  }
 });
 
 test('forbidden browser dialogs are not used', async () => {
