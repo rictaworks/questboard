@@ -2,37 +2,8 @@
 
 import {useEffect} from 'react';
 
-import {sanitizeClientErrorUrl} from '@/lib/sentry-sanitizer';
+import {reportClientError} from '@/lib/client-error-report';
 import {sentryEnabled} from '@/lib/sentry-config';
-
-
-function sendClientError(payload: Record<string, unknown>) {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-  if (!backendUrl) {
-    return;
-  }
-
-  const body = JSON.stringify(payload);
-  if (navigator.sendBeacon) {
-    const sent = navigator.sendBeacon(
-      `${backendUrl}/client_errors`,
-      new Blob([body], {type: 'application/json'})
-    );
-    if (sent) {
-      return;
-    }
-  }
-
-  void fetch(`${backendUrl}/client_errors`, {
-    body,
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    keepalive: true,
-    method: 'POST',
-    mode: 'cors'
-  });
-}
 
 export default function ClientErrorBridge() {
   useEffect(() => {
@@ -41,25 +12,21 @@ export default function ClientErrorBridge() {
     }
 
     const reportError = (event: ErrorEvent) => {
-      sendClientError({
+      reportClientError({
         column: event.colno,
         line: event.lineno,
         message: event.message,
         source: event.filename,
-        stack: event.error instanceof Error ? event.error.stack : null,
-        url: sanitizeClientErrorUrl(window.location.href),
-        user_agent: navigator.userAgent
+        stack: event.error instanceof Error ? event.error.stack : null
       });
     };
 
     const reportRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason instanceof Error ? event.reason : new Error(String(event.reason));
-      sendClientError({
+      reportClientError({
         message: reason.message,
         source: 'unhandledrejection',
-        stack: reason.stack,
-        url: sanitizeClientErrorUrl(window.location.href),
-        user_agent: navigator.userAgent
+        stack: reason.stack
       });
     };
 

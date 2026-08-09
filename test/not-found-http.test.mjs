@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {randomUUID} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {access} from 'node:fs/promises';
 import {createServer} from 'node:net';
@@ -21,12 +22,15 @@ import test, {after, before} from 'node:test';
 const root = process.cwd();
 const READY_TIMEOUT_MS = 60_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
-const PORT_COLLISION_GRACE_MS = 500;
+const START_ATTEMPTS = 3;
+const INSTANCE_PROBE_PATH = '/api/health';
+const INSTANCE_ENV_KEY = 'QUESTBOARD_INSTANCE_ID';
 
 let port = null;
 let baseUrl = null;
 let server = null;
 let serverOutput = '';
+let instanceId = null;
 
 // 設定の読み取りはテストを1つも登録しないうちに済ませる。読み取りが失敗したら
 // モジュールの読み込み自体が失敗し、テストが静かに減るのではなくファイルごと
@@ -78,44 +82,71 @@ async function assertBuildExists() {
 // 「src/app/not-found.tsx を消して組み込みの英語 404 に戻る」退行が通ってしまう。
 //
 // reserveFreePort() は spawn の前にプローブのソケットを閉じるため、next start の
-// 起動が終わるまでのあいだ、別のプロセスが同じ番号を奪う余地が残る。奪われた場合
-// next start は EADDRINUSE で終了する（Next 16 が空きポートを探し直すのは dev のみ）。
-// 応答が返ってから即座に返ると、その終了を見る前に他人のサーバーを掴んでしまう。
-// そこで応答後に猶予を置いてもう一度、子プロセスの生存と EADDRINUSE の不在を確かめる。
+// 起動が終わるまでのあいだ、別のプロセスが同じ番号を奪う余地が残る。時間で待って
+// 生存を確かめる形にすると、負けた next start が猶予より遅く落ちた場合を取り逃がす。
+// 代わりに「返ってきた応答が今回起動したプロセスのものか」を毎回確かめる。
+// 応答者が別物なら準備完了とは見なさない。
 async function waitUntilReady() {
   const deadline = Date.now() + READY_TIMEOUT_MS;
 
   while (Date.now() < deadline) {
     assertServerAlive();
 
-    try {
-      await fetch(`${baseUrl}/`, {redirect: 'manual'});
-      await new Promise((resolve) => setTimeout(resolve, PORT_COLLISION_GRACE_MS));
+    if (await respondsAsOurInstance()) {
       assertServerAlive();
       return;
-    } catch (cause) {
-      if (cause instanceof PortCollisionError) {
-        throw cause;
-      }
-      // 接続拒否は起動途中。次の周回で再試行する。
     }
 
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   throw new Error(
-    `next start が ${READY_TIMEOUT_MS}ms 以内にポート ${port} で応答しなかった。出力:\n${serverOutput}`
+    `next start が ${READY_TIMEOUT_MS}ms 以内にポート ${port} で今回のインスタンス（${instanceId}）として応答しなかった。出力:\n${serverOutput}`
   );
 }
 
-class PortCollisionError extends Error {}
+// 応答者の同定は、画面の文言ではなく起動ごとのランダムな識別子で行う。
+//
+// 「日本語の 404 が返ること」で見分けようとすると、同じ成果物を配信する別の
+// インスタンス（前回の実行が残したプロセス、別のワークツリーで動いている同版）を
+// 今回のビルドだと誤認する。誤認したまま検証を始めると、退行した成果物を
+// 一度も見ないままテストが緑になる。
+//
+// 識別子は spawn 時の環境変数でこのプロセスにだけ渡すため、同じコードから
+// 起動された別インスタンスも一致しない。
+async function respondsAsOurInstance() {
+  let response;
+  try {
+    response = await fetch(`${baseUrl}${INSTANCE_PROBE_PATH}`, {redirect: 'manual'});
+  } catch {
+    // 接続拒否は起動途中。次の周回で再試行する。
+    return false;
+  }
+
+  if (response.status !== 200) {
+    return false;
+  }
+
+  const body = await response.text();
+
+  // 200 を返したのに JSON でないのは、このエンドポイントを持たない別のサーバーが
+  // ポートに居座っている場合。同定できない以上、準備完了とは見なさない。
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    return false;
+  }
+
+  return payload.instance === instanceId;
+}
 
 function assertServerAlive() {
   if (server.exitCode === null && server.signalCode === null && !serverOutput.includes('EADDRINUSE')) {
     return;
   }
 
-  throw new PortCollisionError(
+  throw new Error(
     `next start が起動途中で終了した（exitCode=${server.exitCode} signal=${server.signalCode}）。` +
       `確保したポート ${port} を別のプロセスに奪われた可能性がある。出力:\n${serverOutput}`
   );
@@ -166,16 +197,24 @@ async function get(pathname, headers = {}) {
   };
 }
 
-before(async () => {
-  await assertBuildExists();
-
+// 起動を試みる。ポートを奪われた場合は別のポートで取り直す。
+//
+// 起動ごとに識別子を作り直す。使い回すと、取り直しの前に起動しかけていた
+// プロセスが遅れて応答を返したとき、それを新しい試行のサーバーだと誤認する。
+async function startServer() {
   port = await reserveFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
+  serverOutput = '';
+  instanceId = randomUUID();
 
   server = spawn(
     process.execPath,
     [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', String(port)],
-    {cwd: root, stdio: ['ignore', 'pipe', 'pipe']}
+    {
+      cwd: root,
+      env: {...process.env, [INSTANCE_ENV_KEY]: instanceId},
+      stdio: ['ignore', 'pipe', 'pipe']
+    }
   );
 
   server.on('error', (error) => {
@@ -190,6 +229,23 @@ before(async () => {
   }
 
   await waitUntilReady();
+}
+
+before(async () => {
+  await assertBuildExists();
+
+  for (let attempt = 1; attempt <= START_ATTEMPTS; attempt += 1) {
+    try {
+      await startServer();
+      return;
+    } catch (cause) {
+      await stopServer();
+
+      if (attempt === START_ATTEMPTS) {
+        throw cause;
+      }
+    }
+  }
 });
 
 // 終了を待ってから抜ける。待たずに抜けると、`next start` が孤児として残り、
@@ -197,7 +253,7 @@ before(async () => {
 //
 // SIGTERM に応じない場合は SIGKILL まで上げる。待ち続けると node --test 自体が
 // 終わらなくなり、CI がジョブのタイムアウトまで戻らない。
-after(async () => {
+async function stopServer() {
   if (server === null || server.exitCode !== null || server.signalCode !== null) {
     return;
   }
@@ -211,6 +267,34 @@ after(async () => {
   } finally {
     clearTimeout(killTimer);
   }
+}
+
+after(stopServer);
+
+// ---------------------------------------------------------------------------
+// 応答しているのが今回起動したプロセスであること
+// ---------------------------------------------------------------------------
+
+// このファイルの全テストは「waitUntilReady が同定したサーバー」に対して走る。
+// 同定が壊れると、以降のテストは別インスタンスを検証したまま緑になり、
+// 退行が素通りする。同定の土台そのものをここで検査する。
+//
+// /api/health が静的化されると、起動時ではなくビルド時の環境変数（通常は未設定）を
+// 焼き込んだ応答を返し続けるため、このテストが落ちる。
+test('ヘルスチェックが起動時のインスタンス識別子を返す', async () => {
+  const {status, body} = await get(INSTANCE_PROBE_PATH);
+
+  assert.equal(status, 200);
+  assert.equal(JSON.parse(body).instance, instanceId);
+});
+
+// 識別子は起動ごとに変わる。ビルドに焼き込まれた固定値だと、同じ成果物を配信する
+// 別インスタンスと区別できず、同定として機能しない。
+test('インスタンス識別子が成果物に焼き込まれた固定値でない', async () => {
+  const source = readFileSync(path.join(root, 'src/app/api/health/route.ts'), 'utf8');
+
+  assert.match(source, new RegExp(`process\\.env\\.${INSTANCE_ENV_KEY}`));
+  assert.match(source, /export const dynamic = ['"]force-dynamic['"]/);
 });
 
 // ---------------------------------------------------------------------------
@@ -353,21 +437,30 @@ test('OAuth のキャンセルが成功表示にならず、キャンセルと�
   assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
 });
 
-// プロキシやリダイレクト連鎖で error が重複しても、理由を取り違えない。
-test('OAuth の error が重複して届いてもキャンセルとして表示される', async () => {
-  const {body} = await get('/auth/google/callback?error=access_denied&error=access_denied');
+// プロキシやリダイレクト連鎖で error が重複したり、空の値や前後の空白が
+// 付いたりしても、キャンセルはキャンセルとして伝える。
+for (const query of [
+  'error=&error=access_denied',
+  'error=invalid_request&error=access_denied',
+  'error=%20access_denied'
+]) {
+  test(`OAuth の ?${query} がキャンセルとして表示される`, async () => {
+    const {body} = await get(`/auth/google/callback?${query}`);
 
-  assert.match(mainContent(body), /キャンセルされました/);
-  assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
-});
+    assert.match(mainContent(body), /キャンセルされました/);
+    assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
+  });
+}
 
-// access_denied 以外は文面を丸めるが、切り分けに要る生の値は画面に残す。
-// 消えると、問い合わせを受けても設定ミスと管理ポリシーの区別がつかない。
-test('OAuth の設定由来のエラーは生の理由を添えて表示される', async () => {
-  const {body} = await get('/auth/google/callback?error=admin_policy_enforced');
+// error は誰でも与えられる公開 GET のクエリなので、画面には出さない。
+// 出すと、攻撃者が書いた文章を製品自身のエラーメッセージとして表示できてしまう。
+// 切り分けに要る生の値はバックエンドのログへ送る（reportClientError）。
+test('OAuth の error の生の値が画面に出ない', async () => {
+  const attackerText = 'sagi-no-annai-desu-0120-000-000';
+  const {body} = await get(`/auth/google/callback?error=${attackerText}`);
 
   assert.match(mainContent(body), /Google 側で認証が中断されました/);
-  assert.match(mainContent(body), /admin_policy_enforced/);
+  assert.doesNotMatch(mainContent(body), new RegExp(attackerText));
 });
 
 test('OAuth のパラメータ欠落は認可コード欠落として表示される', async () => {

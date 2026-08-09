@@ -6,6 +6,7 @@ import {useEffect, useState} from "react";
 import {useRouter} from "next/navigation";
 import {useTranslations} from "next-intl";
 
+import {reportClientError} from "@/lib/client-error-report";
 import {
   googleAuthStorageKeys,
   loadRecaptchaToken,
@@ -39,14 +40,30 @@ const callbackDescriptionKeys: Record<CallbackStatus, string | null> = {
 // Google が返す error の値は access_denied（利用者がキャンセル）のほか、
 // invalid_request や admin_policy_enforced など設定・ポリシー由来のものがある。
 // 利用者に伝えられるのは「キャンセルされた」か「Google 側で中断された」かの区別まで。
-// 生の値をそのまま見せても意味が伝わらないので、2つのメッセージに寄せたうえで、
-// 切り分けに必要な生の値は reason として文面に添える（src/messages/ja.json）。
+//
+// 生の値は画面に出さない。この経路は誰でも叩ける公開 GET で error は任意の文字列を
+// 取れるため、そのまま描画すると攻撃者が書いた文章を製品自身のエラーメッセージとして
+// 表示できてしまう。切り分けに要る生の値は reportClientError でバックエンドのログへ送る。
+// 通報に載せる長さの上限。state を確かめてから送るとはいえ、値そのものは
+// クエリ由来で長さを選べるため、ログを1件で埋められないようにしておく。
+const REPORTED_VALUE_MAX_LENGTH = 200;
+
+function truncate(value: string | null): string {
+  if (value === null) {
+    return "";
+  }
+
+  return value.length <= REPORTED_VALUE_MAX_LENGTH
+    ? value
+    : `${value.slice(0, REPORTED_VALUE_MAX_LENGTH)}…`;
+}
+
 function readProviderErrorKey(error: string | null): "callbackDenied" | "callbackProviderError" | null {
   if (error === null || error.trim() === "") {
     return null;
   }
 
-  return error === "access_denied" ? "callbackDenied" : "callbackProviderError";
+  return error.trim() === "access_denied" ? "callbackDenied" : "callbackProviderError";
 }
 
 export default function GoogleCallback({
@@ -68,10 +85,9 @@ export default function GoogleCallback({
   // 「認可コードが見つかりません」という無関係な原因が示される。
   const providerErrorKey = readProviderErrorKey(error);
   const isMissingParams = !code || !state;
-  const providerErrorMessage = providerErrorKey === null
-    ? null
-    : t(providerErrorKey, {reason: error ?? ""});
-  const initialErrorMessage = providerErrorMessage ?? (isMissingParams ? t("callbackMissingCode") : null);
+  const initialErrorMessage = providerErrorKey === null
+    ? (isMissingParams ? t("callbackMissingCode") : null)
+    : t(providerErrorKey);
 
   // 失敗理由は props から毎回導出する。useState の遅延初期化に閉じ込めると、
   // クライアント遷移で同じインスタンスが使い回されたときに初期化関数が再実行されず、
@@ -86,16 +102,32 @@ export default function GoogleCallback({
   const status: CallbackStatus = initialErrorMessage === null ? asyncState.status : "error";
   const errorMessage = initialErrorMessage ?? asyncState.errorMessage;
 
-  // 画面に出せるのは丸めたメッセージなので、切り分けに要る生の値はコンソールに残す。
+  // 画面に出せるのは丸めたメッセージなので、切り分けに要る生の値は運用側の経路へ送る。
   // ここを消すと、問い合わせを受けても client_id の設定ミスか redirect_uri の不一致か
   // 管理ポリシーによる遮断かを区別する手立てが無くなる。
+  //
+  // 送るのは、自分が始めた認証の戻りだと確かめられた場合だけにする。
+  // このページは誰でも叩ける公開 GET なので、state を見ずに送ると、攻撃ページが
+  // iframe で任意の error を並べるだけで運用ログを汚染でき、しかも
+  // POST /client_errors は送信元 IP あたり毎分10件で頭打ちのため、被害者の枠を
+  // 使い切らせて正規のレポートまで落とせる。
+  //
+  // 空の ?error= も送らない。表示側は「エラー無し」と判定しており、ここだけ
+  // 通報すると成功したログインに対して失敗の記録が残る。
   useEffect(() => {
-    if (error === null) {
+    if (providerErrorKey === null || state === null) {
       return;
     }
 
-    console.error(`[google-callback] OAuth error=${error} description=${errorDescription ?? ""}`);
-  }, [error, errorDescription]);
+    if (window.sessionStorage.getItem(callbackStateKey) !== state) {
+      return;
+    }
+
+    reportClientError({
+      message: `google oauth callback error=${truncate(error)} description=${truncate(errorDescription)}`,
+      source: "google-callback"
+    });
+  }, [error, errorDescription, providerErrorKey, state]);
 
   useEffect(() => {
     if (!code || !state || initialErrorMessage !== null || asyncState.status !== "loading") {

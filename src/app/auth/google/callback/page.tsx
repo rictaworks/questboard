@@ -17,13 +17,23 @@ function readParam(value: string | string[] | undefined): string | null {
 // 届いたからといって捨てると、キャンセルしただけの利用者に「認可コードが
 // 見つかりません」という無関係な原因が示される状態に戻ってしまう。
 // プロキシやリダイレクト連鎖でパラメータが重複しても理由を保てるよう、
-// 配列のときは最初の文字列を採る。
+// 配列も受ける。
+//
+// 前後の空白は落とす。下流は access_denied と厳密一致で「利用者がキャンセルした」と
+// 判定するため、" access_denied" が届くと設定エラー扱いになる。
+// 値が食い違うときは access_denied を優先する。利用者が同意画面でキャンセルした
+// という事実は、連鎖の途中で付いた別の理由より確かで、伝えるべき内容も変わる。
 function readErrorParam(value: string | string[] | undefined): string | null {
-  if (Array.isArray(value)) {
-    return value.find((entry) => entry.trim() !== "") ?? null;
+  const entries = (Array.isArray(value) ? value : [value])
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== "");
+
+  if (entries.length === 0) {
+    return null;
   }
 
-  return readParam(value);
+  return entries.includes("access_denied") ? "access_denied" : entries[0];
 }
 
 export default async function GoogleCallbackPage({
@@ -42,13 +52,22 @@ export default async function GoogleCallbackPage({
   // error_description も渡す。画面には出さないが、invalid_client（client_id の
   // 設定ミス）・redirect_uri_mismatch・admin_policy_enforced を切り分けられるのは
   // この2つだけで、捨てると問い合わせ時に原因を追えなくなる。
+  const code = readParam(params.code);
+  const error = readErrorParam(params.error);
+  const state = readParam(params.state);
+
+  // key を付けて、コールバックが変われば作り直させる。GoogleCallback は
+  // トークン交換の途中経過を useState に持つため、クライアント遷移で同じ
+  // インスタンスが使い回されると、前回失敗した理由（例: 認証状態が一致しません）を
+  // 抱えたまま新しい code を無視し続ける。
   return (
     <NextIntlClientProvider messages={messages}>
       <GoogleCallback
-        code={readParam(params.code)}
-        error={readErrorParam(params.error)}
+        key={`${code}|${state}|${error}`}
+        code={code}
+        error={error}
         errorDescription={readErrorParam(params.error_description)}
-        state={readParam(params.state)}
+        state={state}
       />
     </NextIntlClientProvider>
   );

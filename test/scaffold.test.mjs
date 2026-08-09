@@ -70,9 +70,11 @@ test('only the japanese message catalog exists', async () => {
   //
   // 引用符・空白・as const の有無には依存させない。書式を揃えただけの変更で
   // 「ロケールが変わった」ように見えるエラーを出すと、次の開発者を無駄に走らせる。
+  // ただし行頭の宣言に限る。アンカーを外すとコメントアウトされた旧行にも一致し、
+  // 「別の値へ変えた」変更を素通りさせてしまう。
   // 実際に配信される言語は test/not-found-http.test.mjs が <html lang="ja"> で検査する。
   const routing = await read('src/i18n/routing.ts');
-  assert.match(routing, /export\s+const\s+defaultLocale\s*=\s*['"]ja['"]/);
+  assert.match(routing, /^\s*export\s+const\s+defaultLocale\s*=\s*['"]ja['"]/m);
 });
 
 test('the japanese message catalog covers every namespace and has no placeholders', async () => {
@@ -133,15 +135,21 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
 // getMessageFallback がキーパス（例: NotFound.title）をそのまま描画するため、
 // 画面に出るまで気づけない。ページの一覧と、実際に呼ばれている名前空間を突き合わせる。
 test('each page passes every namespace its client components use', async () => {
-  const pages = [
-    'src/app/page.tsx',
-    'src/app/b/[shareToken]/page.tsx',
-    'src/app/auth/google/callback/page.tsx'
-  ];
+  // ページの一覧は書き写さない。書き写すと、後から追加されたページが黙って
+  // 未検査になる（同じ理由で test/not-found-http.test.mjs もロケール一覧を
+  // next.config.ts から読んでいる）。
+  const pages = (await walk('src/app')).filter((file) => path.basename(file) === 'page.tsx');
+
+  assert.ok(pages.length > 0, 'src/app に page.tsx が1つも無い');
 
   for (const page of pages) {
-    const declared = await readClientMessageNamespaces(page);
     const used = await collectUseTranslationsNamespaces(page);
+
+    if (used.size === 0) {
+      continue;
+    }
+
+    const declared = await readClientMessageNamespaces(page);
     const missing = [...used].filter((namespace) => !declared.includes(namespace)).sort();
 
     assert.deepEqual(
@@ -163,8 +171,11 @@ async function readClientMessageNamespaces(relativePath) {
   return [...call[1].matchAll(/['"]([^'"]+)['"]/g)].map(([, namespace]) => namespace);
 }
 
-// ページから静的 import を辿り、道中の useTranslations('X') を集める。
+// ページから import を辿り、道中の useTranslations('X') を集める。
 // getTranslations（Server Component 側）はプロバイダを必要としないので数えない。
+//
+// 静的 import だけでなく import('...') 形式も辿る。動的にしただけで検査から
+// 外れると、名前空間の渡し忘れを緑のまま通してしまう。
 async function collectUseTranslationsNamespaces(entryPath) {
   const namespaces = new Set();
   const visited = new Set();
@@ -183,7 +194,12 @@ async function collectUseTranslationsNamespaces(entryPath) {
       namespaces.add(namespace);
     }
 
-    for (const [, specifier] of source.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+    const specifiers = [
+      ...source.matchAll(/from\s+['"]([^'"]+)['"]/g),
+      ...source.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)
+    ];
+
+    for (const [, specifier] of specifiers) {
       const resolved = await resolveProjectModule(specifier, current);
       if (resolved !== null) {
         queue.push(resolved);
@@ -194,7 +210,13 @@ async function collectUseTranslationsNamespaces(entryPath) {
   return namespaces;
 }
 
-// プロジェクト内のモジュールだけを解決する。node_modules と型のみの参照は辿らない。
+const MODULE_EXTENSIONS = ['tsx', 'ts', 'mts', 'jsx', 'js', 'mjs'];
+
+// プロジェクト内のモジュールだけを解決する。node_modules への参照は辿らない。
+//
+// 見つからない（ENOENT）以外の読み取り失敗は握り潰さない。握り潰すと、権限や
+// 種別の問題で読めなかったファイルが「プロジェクト外」として素通りし、
+// そこにある useTranslations が検査から消える。
 async function resolveProjectModule(specifier, fromPath) {
   let base;
   if (specifier.startsWith('@/')) {
@@ -205,12 +227,21 @@ async function resolveProjectModule(specifier, fromPath) {
     return null;
   }
 
-  for (const candidate of [`${base}.tsx`, `${base}.ts`, path.join(base, 'index.tsx'), path.join(base, 'index.ts')]) {
+  const candidates = [
+    ...MODULE_EXTENSIONS.map((extension) => `${base}.${extension}`),
+    ...MODULE_EXTENSIONS.map((extension) => path.join(base, `index.${extension}`))
+  ];
+
+  for (const candidate of candidates) {
     try {
       await readFile(path.join(root, candidate), 'utf8');
       return candidate;
-    } catch {
-      continue;
+    } catch (cause) {
+      if (cause.code === 'ENOENT' || cause.code === 'EISDIR') {
+        continue;
+      }
+
+      throw new Error(`${candidate} を読めなかった（${cause.code}）。import の追跡を続行できない`, {cause});
     }
   }
 
