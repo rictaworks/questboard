@@ -276,7 +276,7 @@ RSpec.describe "Comments", type: :request do
     object_id = object_payload.fetch("id")
 
     post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(Comment.count).to eq(0)
   end
 

@@ -139,7 +139,7 @@ RSpec.describe "Object ops", type: :request do
 
     apply_op(share_token:, object_id:, property: "geometry", value: { x: true, rotation: "bogus" }, lamport_ts: 1, client_id: "client-a")
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(BoardObject.find(object_id).geometry).to include("x" => 1, "rotation" => 0)
     expect(ObjectOp.where(object_id:).count).to eq(0)
   end
@@ -337,7 +337,7 @@ RSpec.describe "Object ops", type: :request do
     expect(response).to have_http_status(:ok)
 
     apply_op(share_token:, object_id:, property: "text_crdt", value: { text: "old" }, lamport_ts: 1, client_id: "client-b")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("Hello")
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(1)
   end
@@ -706,7 +706,7 @@ RSpec.describe "Object ops", type: :request do
       value: { ops: [ { retain: 1 } ], ref_revision: base_revision },
       lamport_ts: 2, client_id: "client-a"
     )
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("😀")
   end
 
@@ -841,7 +841,7 @@ RSpec.describe "Object ops", type: :request do
     # touched that range (see PR #55 review). These must never be persisted in the first
     # place.
     apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "x", attributes: "" } ] }, lamport_ts: 1, client_id: "client-a")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(0)
   end
 
@@ -863,7 +863,7 @@ RSpec.describe "Object ops", type: :request do
       value: { ops: [ { delete: -1 } ], ref_revision: base_revision },
       lamport_ts: 2, client_id: "client-a"
     )
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(plain_text(BoardObject.find(object_id).text_crdt)).to eq("abc")
   end
 
@@ -1016,7 +1016,7 @@ RSpec.describe "Object ops", type: :request do
 
     sign_in(editor)
     apply_op(share_token:, object_id:, property: "unknown", value: { x: 10 }, lamport_ts: 1, client_id: "client-a")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
   end
 
   it "rejects an external op whose client_id is the reserved legacy client id" do
@@ -1030,7 +1030,7 @@ RSpec.describe "Object ops", type: :request do
 
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 10, y: 20 }, lamport_ts: 1, client_id: "legacy")
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(ObjectOp.where(object_id:, client_id: "legacy").count).to eq(0)
   end
 
@@ -1069,7 +1069,7 @@ RSpec.describe "Object ops", type: :request do
     # otherwise be rejected as stale forever, since no client-supplied value could ever
     # exceed it again.
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 30, y: 30 }, lamport_ts: 9_223_372_036_854_775_807, client_id: "attacker")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
 
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 11, y: 21 }, lamport_ts: 11, client_id: "client-a")
     expect(response).to have_http_status(:ok)
@@ -1089,7 +1089,7 @@ RSpec.describe "Object ops", type: :request do
     # recorded" check has nothing to compare against — the jump must still be bounded
     # against a zero baseline, or the very first op could strand the property forever.
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 30, y: 30 }, lamport_ts: 9_223_372_036_854_775_807, client_id: "attacker")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
 
     apply_op(share_token:, object_id:, property: "geometry", value: { x: 5, y: 5 }, lamport_ts: 1, client_id: "client-a")
     expect(response).to have_http_status(:ok)
@@ -1121,7 +1121,7 @@ RSpec.describe "Object ops", type: :request do
 
     # ボードの時計を基準にしても、極端な値でプロパティを永久に固定させないガードは効く。
     apply_op(share_token:, object_id: new_object_id, property: "geometry", value: { x: 6, y: 6 }, lamport_ts: 9_223_372_036_854_775_807, client_id: "attacker")
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
   end
 
   it "accepts a large but plausible lamport_ts jump within the allowed bound" do
@@ -1230,7 +1230,7 @@ RSpec.describe "Object ops", type: :request do
 
     patch "/boards/#{share_token}/objects/#{object_id}/move", params: { geometry: { x: true } }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(BoardObject.find(object_id).geometry).to include("x" => 1)
     expect(ObjectOp.where(object_id:).count).to eq(0)
   end
@@ -1373,7 +1373,7 @@ RSpec.describe "Object ops", type: :request do
     allow(KpiEvent).to receive(:create!).and_raise(ActiveRecord::RecordInvalid.new(KpiEvent.new))
 
     patch "/boards/#{share_token}/objects/#{object_id}/color", params: { color_id: color.id }, as: :json
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
   end
 
   it "allows large CRDT apply_op payloads exceeding 64KB (up to 256KB) to succeed, avoiding limiter middleware block" do

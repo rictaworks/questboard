@@ -120,7 +120,7 @@ RSpec.describe "KPI events", type: :request do
       ]
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/Unknown attributes|PII/i)
     expect(KpiEvent.count).to eq(0)
   end
@@ -142,7 +142,7 @@ RSpec.describe "KPI events", type: :request do
       ]
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/invalid value/i)
     expect(KpiEvent.count).to eq(0)
   end
@@ -162,7 +162,7 @@ RSpec.describe "KPI events", type: :request do
       ]
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "userId must match the active Google sub")
     expect(KpiEvent.count).to eq(0)
   end
@@ -184,7 +184,7 @@ RSpec.describe "KPI events", type: :request do
       ]
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/Direct submission of event/i)
     expect(KpiEvent.count).to eq(0)
   end
@@ -206,7 +206,7 @@ RSpec.describe "KPI events", type: :request do
 
     post "/kpi_events", params: { events: }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/batch size exceeds limit/i)
     expect(KpiEvent.count).to eq(0)
   end
