@@ -1,7 +1,7 @@
 require "rails_helper"
-require "ripper"
 require_relative "../support/backend_source_tree"
 require_relative "../support/japanese_text"
+require_relative "../support/ruby_token_scanner"
 
 # 表示言語は日本語のみ（CLAUDE.md）。default_locale は :ja で、production の
 # config.i18n.fallbacks は I18n.default_locale へ落とす設定なので、:ja のフォールバック先は
@@ -31,11 +31,19 @@ RSpec.describe "日本語ロケールカタログ" do
     node.flat_map { |key, value| leaf_keys(value, prefix + [ key ]) }
   end
 
+  # マイグレーションの中で定義される一時的なモデルクラス（BackfillXxx::MigrationYyy など）は
+  # 利用者に見せるものではないので対象外にする。判定はテーブルの有無ではなくソースの場所で
+  # 行う。table_exists? で絞ると、テーブルが用意できていないアプリのモデルまで黙って
+  # 検査から外れてしまう。
+  def model_definition_path(model)
+    BackendSourceTree.root.join("app/models/#{model.name.underscore}.rb")
+  end
+
   def validated_models
     Rails.application.eager_load!
     ActiveRecord::Base.descendants
       .reject(&:abstract_class?)
-      .select(&:table_exists?)
+      .select { |model| model_definition_path(model).file? }
       .sort_by(&:name)
   end
 
@@ -43,22 +51,24 @@ RSpec.describe "日本語ロケールカタログ" do
   # メソッドの中で errors.add している属性は含まれない。そこだけ和名が無いと
   # 「Deleted atを入力してください」のような半英語の文言が緑のまま出荷される。
   # 宣言からは辿れないため、モデルのソースから errors.add の第一引数を拾う。
+  #
+  # モデル本体のファイルだけを見ると、検証を concern に切り出した時点で検査から外れる。
+  # 実際に読み込まれている祖先モジュールのファイルまで含めて走査する。
+  def model_source_paths(model)
+    root = BackendSourceTree.root
+    candidates = [ root.join("app/models/#{model.name.underscore}.rb") ]
+
+    model.ancestors.each do |ancestor|
+      next if ancestor.is_a?(Class) || ancestor.name.nil?
+
+      candidates << root.join("app/models/concerns/#{ancestor.name.underscore}.rb")
+    end
+
+    candidates.uniq.select(&:file?)
+  end
+
   def errors_add_attributes(model)
-    path = BackendSourceTree.root.join("app/models/#{model.name.underscore}.rb")
-    return [] unless path.file?
-
-    tokens = Ripper.lex(path.read)
-    tokens.each_with_index.filter_map do |(_position, type, token, _state), index|
-      next unless type == :on_ident && token == "errors"
-
-      following = tokens[(index + 1)..].reject { |(_p, kind, _v, _s)| kind == :on_sp }
-      next unless following[0]&.at(2) == "." && following[1]&.at(2) == "add"
-      # errors.add(:attribute, …) の :attribute を取り出す。
-      symbol_index = following.index { |(_p, kind, _v, _s)| kind == :on_symbeg }
-      next if symbol_index.nil?
-
-      following[symbol_index + 1]&.at(2)&.to_sym
-    end.uniq
+    model_source_paths(model).flat_map { |path| RubyTokenScanner.errors_add_attributes(path.read) }.uniq
   end
 
   def validated_attributes(model)
@@ -152,6 +162,57 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(error).not_to be_nil
     expect(error.message).not_to include("Translation missing")
     expect(error.message).to include("コメント")
+  end
+
+  it "すべてのモデルが日本語のモデル名を持つ" do
+    # restrict_dependent_destroy などは %{record} にモデル名を差し込む。ここが未定義だと
+    # 「User settingsが存在しているので削除できません」のような半英語の文言になる。
+    offenders = validated_models.filter_map do |model|
+      human = model.model_name.human
+      next if JapaneseText.japanese?(human)
+
+      "  #{model.name} => #{human.inspect}"
+    end
+
+    expect(offenders).to be_empty, <<~MESSAGE
+      日本語のモデル名が無い。config/locales/ja.yml の activerecord.models に追加すること。
+
+      #{offenders.join("\n")}
+    MESSAGE
+  end
+
+  it "モデル名を差し込むメッセージが日本語で組み立つ" do
+    # キーの存在だけを見ていると、補間の中身が英語のまま残っていても緑になる。
+    message = I18n.t(
+      "activerecord.errors.messages.restrict_dependent_destroy.has_many",
+      record: UserSetting.model_name.human(count: :many)
+    )
+
+    expect(message).to eq("ユーザー設定が存在しているので削除できません")
+  end
+
+  it "app/models にあるモデルをすべて検査している" do
+    # 検査対象が減っていることに気付けないと、違反ゼロという結果が「無かった」ではなく
+    # 「見ていない」を意味してしまう。ファイル数と対象数を突き合わせる。
+    defined_in_app = BackendSourceTree.ruby_paths("app/models")
+      .reject { |path| path.to_s.include?("/concerns/") }
+      .map { |path| BackendSourceTree.relative(path).to_s.sub("app/models/", "").sub(".rb", "") }
+      .reject { |name| name == "application_record" }
+
+    expect(validated_models.map { |model| model.name.underscore }).to match_array(defined_in_app)
+  end
+
+  it "errors.add の第一引数だけを属性として扱う" do
+    # 引数リストを越えてシンボルを探すと、動的な指定の第二引数を属性名と誤認する。
+    # :base はレコード全体に対するエラーで属性ではないため、和名を要求してはいけない。
+    source = <<~RUBY
+      errors.add(:base, :some_error)
+      errors.add(attribute, :blank)
+      errors.add(:parent_frame_id, :invalid_parent_frame)
+      errors.add :locked_by, :already_locked
+    RUBY
+
+    expect(RubyTokenScanner.errors_add_attributes(source)).to eq([ :parent_frame_id, :locked_by ])
   end
 
   it "errors.add でしか使われない属性も検査対象に含めている" do

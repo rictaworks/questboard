@@ -1,5 +1,6 @@
 class CommentsController < ApplicationController
   class KpiEventConfigurationError < StandardError; end
+  class InvalidCommentBodyError < StandardError; end
 
   before_action :require_current_user!
 
@@ -28,6 +29,8 @@ class CommentsController < ApplicationController
     end
 
     render json: serialize_comment(comment), status: :created
+  rescue InvalidCommentBodyError => e
+    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -43,6 +46,8 @@ class CommentsController < ApplicationController
 
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
+  rescue InvalidCommentBodyError => e
+    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -119,21 +124,27 @@ class CommentsController < ApplicationController
     board.board_members.includes(:role).find_by(user: current_user)
   end
 
-  # body が無い場合も空文字として扱い、Comment の presence バリデーションに判定を任せる。
-  # ここで ParameterMissing を投げると「本文が空」という同じ事象に対して
-  # RecordInvalid とは別の応答経路ができ、両方が同じ文言を返し続ける保証が必要になる。
+  # body が無い場合は空文字として扱い、Comment の presence バリデーションに判定を任せる。
+  # ここで別の例外を投げると「本文が空」という同じ事象に対して RecordInvalid とは別の
+  # 応答経路ができ、両方が同じ文言を返し続ける保証が必要になる。
   #
-  # ただし JSON の値は文字列とは限らない。配列やハッシュをそのまま to_s すると
-  # "[]" や "{\"a\" => \"b\"}" という空でない文字列になり、空判定を通り抜けて本文として
-  # 保存される（更新では既存の本文を破壊する）。文字列以外は本文が無いものとして扱う。
+  # 一方、値の型が違う場合は「空」ではない。JSON の値は文字列とは限らず、配列やハッシュを
+  # そのまま to_s すると "[]" や "{\"a\" => \"b\"}" という空でない文字列になって本文として
+  # 保存されてしまう（更新では既存の本文を破壊する）。かといって空として扱うと、
+  # 内容を送っているのに「コメントを入力してください」と返ることになり、利用者は原因に
+  # たどり着けない。空とは区別できる文言を返す。
   def normalized_comment_body
     body = params[:body]
-    unless body.is_a?(String)
-      logger.warn("[CommentsController##{action_name}] body is not a string: #{body.class}") unless body.nil?
-      return ""
-    end
+    return "" if body.nil?
+    raise InvalidCommentBodyError, "expected String but got #{body.class}" unless body.is_a?(String)
 
     body.strip
+  end
+
+  def invalid_body_message(error)
+    logger.warn("[CommentsController##{action_name}] #{error.message}")
+
+    I18n.t("api.errors.invalid_comment_body")
   end
 
   def record_comment_kpi_event!(board:, comment:)

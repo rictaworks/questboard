@@ -10,6 +10,12 @@
 # 落とす設定のため、フォールバック先が :ja 自身になる）。
 # 網羅性は spec/lib/locale_catalog_spec.rb が検査している。
 ja:
+  # コントローラが返すユーザー向け文言。モデルのバリデーション由来ではないものはここに置く。
+  # コントローラ側への直書きは spec/lib/controller_message_literals_spec.rb で検査している。
+  api:
+    errors:
+      invalid_comment_body: "コメントの形式が正しくありません"
+
   # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
   # 参照されるため、モデルごとに同じ和名を書き写さずに済む。
   attributes:
@@ -18,6 +24,29 @@ ja:
     user: "ユーザー"
 
   activerecord:
+    # モデル名。restrict_dependent_destroy のように %{record} / %{model} を補間する
+    # メッセージで使われる。未定義だと「User settingsが存在しているので削除できません」の
+    # ように英語のモデル名が混ざる。
+    models:
+      board: "ボード"
+      board_member: "ボードメンバー"
+      board_object: "オブジェクト"
+      color_palette: "カラーパレット"
+      comment: "コメント"
+      effect_master: "エフェクト"
+      event_def: "イベント定義"
+      frame_lock: "フレームロック"
+      intensity_master: "表示強度"
+      kpi_event: "KPIイベント"
+      object_op: "オブジェクト操作"
+      object_type: "オブジェクト種別"
+      quest: "クエスト"
+      radial_menu_item: "ラジアルメニュー項目"
+      role: "権限"
+      user: "ユーザー"
+      user_quest: "ユーザークエスト"
+      user_setting: "ユーザー設定"
+
     attributes:
       board:
         title: "タイトル"

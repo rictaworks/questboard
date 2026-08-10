@@ -282,6 +282,13 @@ RSpec.describe "Comments", type: :request do
       expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
     end
 
+    # 型が違う場合は「空」ではない。空と同じ文言を返すと、内容を送っているのに
+    # 「入力してください」と言われることになり、利用者が原因にたどり着けない。
+    def expect_invalid_body_rejection
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "コメントの形式が正しくありません")
+    end
+
     it "rejects a whitespace-only body on create" do
       sign_in(owner)
       object_id = create_sticky_object(share_token)
@@ -304,14 +311,15 @@ RSpec.describe "Comments", type: :request do
 
     # JSON の値は文字列とは限らない。配列やハッシュを to_s すると "[]" や
     # "{\"a\" => \"b\"}" という空でない文字列になり、本文として保存されてしまう。
-    [ [], {}, { "a" => "b" }, 123 ].each do |non_string|
+    # 空の場合とは原因が違うため、返す文言も分ける。
+    [ [], {}, { "a" => "b" }, 123, true ].each do |non_string|
       it "rejects a #{non_string.class.name.downcase} body on create" do
         sign_in(owner)
         object_id = create_sticky_object(share_token)
 
         post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: non_string }, as: :json
 
-        expect_blank_body_rejection
+        expect_invalid_body_rejection
         expect(Comment.count).to eq(0)
       end
 
@@ -322,7 +330,7 @@ RSpec.describe "Comments", type: :request do
 
         patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: non_string }, as: :json
 
-        expect_blank_body_rejection
+        expect_invalid_body_rejection
         expect(Comment.find(comment_id).body).to eq("Valid comment")
       end
     end
