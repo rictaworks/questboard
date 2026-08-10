@@ -1,12 +1,11 @@
 # Rails 8.1 の新デフォルトに対する、このアプリでの判断を記録するファイル。
 #
 # config/application.rb は既に `config.load_defaults 8.1` なので、8.1 の既定値は全て
-# 適用済みである。ここは「既定のまま受け入れた項目」と「意図して 8.0 までの値に戻した項目」を
-# 残す場所であり、次に `bin/rails app:update` を走らせる人が同じ調査をやり直さずに済むようにする。
+# 適用済みである。5 項目すべてを既定のまま採用したため、このファイルに実行される設定は無い。
+# 次に `bin/rails app:update` を走らせる人が同じ調査をやり直さずに済むよう、
+# 何を確認して採用したのかだけを残す。
 #
 # 判断: 2026-08-10 / 対象: Rails 8.0 → 8.1 アップグレード（Issue #117）
-#
-# ── 既定のまま採用した項目（下で上書きしていないもの）──
 #
 # * action_controller.escape_json_responses = false
 #     JSON レスポンス中の `<` `>` `&` を \uXXXX へ逃がす処理が無効になる。
@@ -30,12 +29,12 @@
 # * action_view.render_tracker = :ruby / action_view.remove_hidden_field_autocomplete = true
 #     ビューは管理画面の 2 テンプレートのみで、form_with もフラグメント依存も無い。
 #
-# ── 既定を採らず、8.0 までの値に固定した項目 ──
-
-# Rails 8.1 は本番環境で YJIT を既定で有効にする（load_defaults 8.1 が
-# `self.yjit = !Rails.env.local?` を設定する）。YJIT は実行速度と引き換えに
-# メモリを追加で確保するが、このバックエンドのデプロイ先は無料プランで、
-# メモリ上限に対する実測値がまだ無い。OOM は全ユーザーの障害に直結するため、
-# 実測できるまでは 8.0 までと同じく無効にしておく。
-# 有効化するときは、この行を消すのではなく true にして、実測値を PR に添えること。
-Rails.application.config.yjit = false
+# * yjit
+#     8.1 の `self.yjit = !Rails.env.local?` は本番の挙動を変えない。
+#     8.0 が読み込む 7.2 の既定が既に `self.yjit = true`（railties の
+#     rails/application/configuration.rb）で、本番では以前から YJIT が有効だったためである。
+#     8.1 が変えるのは development と test を対象外にした点だけなので、そのまま採用する。
+#     メモリ実測を根拠に本番で止めたくなった場合は、このファイルではなく
+#     config/environments/production.rb に書くこと。このファイルは Rails の
+#     アップグレードガイドが「新デフォルト採用後に削除してよい」と案内する場所であり、
+#     消えても気付けない設定を置く場所ではない。
