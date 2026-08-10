@@ -1,6 +1,6 @@
 require "spec_helper"
 require "ripper"
-require "pathname"
+require_relative "../support/backend_source_tree"
 
 # コントローラが返すユーザー向け文言は config/locales のカタログに置き、コントローラ側には
 # 直書きしない。日本語をコントローラに直書きすると、カタログ側の文言を直したときに
@@ -19,21 +19,16 @@ require "pathname"
 # 整理が必要な日本語リテラルが残っているため、それらは本検査の範囲外とする。
 RSpec.describe "コントローラのユーザー向け文言" do
   # ここでの定数代入は Object の定数になりスイート全体へ漏れるため、メソッドで返す。
+  #
+  # 範囲を「ひらがな・カタカナ・漢字」だけにすると、長音符「ー」(U+30FC)・繰り返し符号
+  # 「々」(U+3005)・波ダッシュ・全角括弧や読点だけで構成された文言を取りこぼす。
+  # 拡張漢字（U+9FA6 以降、CJK 拡張 A）も同様に漏れるため、まとめて対象にする。
   def japanese_pattern
-    /[ぁ-んァ-ヶ一-龥]/
-  end
-
-  # spec ファイルからの相対パスでルートを決めると、spec を 1 階層移動しただけで走査対象が
-  # 空になり、検査が緑のまま空転する。Gemfile のある場所を遡って探す。
-  def backend_root
-    root = Pathname.new(__dir__).ascend.find { |directory| directory.join("Gemfile").file? }
-    raise "Gemfile が見つからず、バックエンドのルートを決められない" if root.nil?
-
-    root
+    /[\p{Hiragana}\p{Katakana}\p{Han}\p{-Uideo}ー々〆〜｜、。「」『』・！？]/
   end
 
   def controller_paths
-    backend_root.join("app/controllers").glob("**/*.rb")
+    BackendSourceTree.ruby_paths("app/controllers")
   end
 
   # 文字列リテラルの中身だけを取り出す。:on_tstring_content は "..." / '...' / heredoc の
@@ -52,8 +47,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
       literals = japanese_string_literals(path)
       next if literals.empty?
 
-      formatted = literals.map { |line, token| "  #{path.relative_path_from(backend_root)}:#{line} #{token.inspect}" }
-      formatted.join("\n")
+      literals.map { |line, token| "  #{BackendSourceTree.relative(path)}:#{line} #{token.inspect}" }.join("\n")
     end
 
     expect(offenders).to be_empty, <<~MESSAGE
@@ -69,7 +63,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
 
     # 走査が空振りしていれば、違反ゼロという結果は「無かった」ではなく「見ていない」を意味する。
     expect(paths).not_to be_empty
-    expect(paths.map { |path| path.relative_path_from(backend_root).to_s })
+    expect(paths.map { |path| BackendSourceTree.relative(path).to_s })
       .to include("app/controllers/comments_controller.rb")
   end
 
@@ -85,5 +79,12 @@ RSpec.describe "コントローラのユーザー向け文言" do
     japanese_tokens = tokens.select { |_position, _type, token, _state| token.match?(japanese_pattern) }
 
     expect(japanese_tokens.map { |_position, type, _token, _state| type }).to eq([ :on_comment ])
+  end
+
+  it "長音符・繰り返し符号・全角記号だけの文言も検出する" do
+    # 「エラー」「時々」「（注）」のように、漢字・かなの範囲指定だけでは漏れる文字がある。
+    %w[ー 々 「 」 、 。 ・ ！ ？ 〜].each do |character|
+      expect(character).to match(japanese_pattern), "#{character.inspect} が検出範囲から漏れている"
+    end
   end
 end

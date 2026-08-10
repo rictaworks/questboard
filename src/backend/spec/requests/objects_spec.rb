@@ -479,7 +479,9 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body).fetch("error")).to match(/parent frame/i)
+    # 部分一致だと項目名とメッセージが区切りなく連結される不具合（errors.format）を
+    # 見逃すため、利用者に出る文言をそのまま突き合わせる。
+    expect(JSON.parse(response.body).fetch("error")).to eq("親フレームは同じボード上の有効なフレームを指定してください")
   end
 
   it "safely creates an object when geometry parameter is omitted" do

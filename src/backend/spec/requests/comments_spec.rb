@@ -263,47 +263,66 @@ RSpec.describe "Comments", type: :request do
     expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_nil
   end
 
-  it "rejects blank or missing comment bodies with an unprocessable_entity response for both create and update" do
-    board_payload = create_board
-    share_token = board_payload.fetch("board").fetch("shareToken")
+  # 本文が空という同じ事象に対して、空白のみ・キー欠落・作成・更新のどの経路でも
+  # 同じ応答になることを確かめる。1 つの example にまとめると最初の失敗で残りが実行されず、
+  # 同時に壊れた経路が見えなくなるため、経路ごとに分ける。
+  describe "comment body validation" do
+    let(:share_token) { create_board.fetch("board").fetch("shareToken") }
 
-    sign_in(owner)
-    object_payload = create_object(
-      share_token:,
-      object_type_code: "sticky",
-      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
-    )
-    object_id = object_payload.fetch("id")
+    def create_sticky_object(share_token)
+      create_object(
+        share_token:,
+        object_type_code: "sticky",
+        geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+      ).fetch("id")
+    end
 
-    # 1. Create - Blank body
-    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+    def expect_blank_body_rejection
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+    end
 
-    # 2. Create - Missing body parameter
-    post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+    it "rejects a whitespace-only body on create" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
 
-    expect(Comment.count).to eq(0)
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
 
-    # Valid comment creation for testing update
-    comment_payload = create_comment(share_token:, object_id:, body: "Valid comment")
-    comment_id = comment_payload.fetch("id")
-    expect(Comment.count).to eq(1)
+      expect_blank_body_rejection
+      expect(Comment.count).to eq(0)
+    end
 
-    # 3. Update - Blank body
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: "   " }, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+    it "rejects a missing body parameter on create" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
 
-    # 4. Update - Missing body parameter
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: {}, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
 
-    # Ensure body wasn't changed to blank
-    expect(Comment.find(comment_id).body).to eq("Valid comment")
+      expect_blank_body_rejection
+      expect(Comment.count).to eq(0)
+    end
+
+    it "rejects a whitespace-only body on update and keeps the stored comment" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+      patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: "   " }, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.find(comment_id).body).to eq("Valid comment")
+    end
+
+    it "rejects a missing body parameter on update and keeps the stored comment" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+      patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: {}, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.find(comment_id).body).to eq("Valid comment")
+    end
   end
 
   it "returns not_found for comment operations against a nonexistent object or comment" do

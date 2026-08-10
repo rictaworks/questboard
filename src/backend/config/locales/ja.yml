@@ -1,27 +1,46 @@
 # 表示言語は日本語のみとし、多言語対応は行わない（CLAUDE.md の方針）。
-# en.yml は Rails 本体や gem が :en を前提に参照する経路が残っているため置いたままにする。
-# ロケール切替のための入口ではないので、URL やヘッダからロケールを解決する仕組みは足さない。
+# このファイルは翻訳のためではなく、日本語の文言をコードから分離して置くカタログとして使う。
+#
+# Rails 本体が出すメッセージ（バリデーション文言・RecordInvalid の例外文・to_sentence の
+# 連結詞・日付書式）は rails-i18n gem が供給する。ここに書き写すと二重管理になり、
+# gem 側が直っても古い文言が残るため、ここにはアプリ固有の項目名と文言だけを置く。
+#
+# ja に無いキーは英語に落ちず "Translation missing: ja.…" という文字列になって
+# 利用者とログに出る（production の config.i18n.fallbacks は default_locale = :ja へ
+# 落とす設定のため、フォールバック先が :ja 自身になる）。
+# 網羅性は spec/lib/locale_catalog_spec.rb が検査している。
 ja:
   # コントローラが返すユーザー向け文言。モデルのバリデーション由来ではないものはここに置く。
   # コントローラ側への直書きは spec/lib/controller_message_literals_spec.rb で検査している。
   api:
     errors:
       parameter_missing: "リクエストの内容が正しくありません"
-  errors:
-    format: "%{attribute}%{message}"
-    messages:
-      blank: "を入力してください"
-      inclusion: "は一覧にありません"
-      taken: "はすでに使用されています"
-      greater_than: "は%{count}より大きい値にしてください"
-      greater_than_or_equal_to: "は%{count}以上の値にしてください"
-      not_a_number: "は数値で入力してください"
+
+  # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
+  # 参照されるため、モデルごとに同じ和名を書き写さずに済む。
+  attributes:
+    board: "ボード"
+    board_object: "オブジェクト"
+    user: "ユーザー"
+
   activerecord:
     attributes:
       board:
         title: "タイトル"
+      board_member:
+        role: "権限"
+      board_object:
+        color_palette: "カラーパレット"
+        object_type: "オブジェクト種別"
+        parent_frame_id: "親フレーム"
       comment:
         body: "コメント"
+      event_def:
+        effect_master: "エフェクト"
+      frame_lock:
+        locked_by_user: "ロックしたユーザー"
+      kpi_event:
+        event_def: "イベント定義"
       object_op:
         property: "プロパティ"
         client_id: "クライアントID"
@@ -36,8 +55,17 @@ ja:
         google_sub: "Googleサブ"
         display_name: "表示名"
       user_quest:
+        quest: "クエスト"
         state: "状態"
         progress: "進捗"
         user_id: "ユーザー"
       user_setting:
         intensity_master: "表示強度"
+
+    errors:
+      models:
+        board_object:
+          attributes:
+            parent_frame_id:
+              # BoardObject#parent_frame_must_belong_to_same_board から参照する。
+              invalid_parent_frame: "は同じボード上の有効なフレームを指定してください"

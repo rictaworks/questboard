@@ -2,6 +2,13 @@ source "https://rubygems.org"
 
 gem "rails", "~> 8.1.3"
 
+# Rails 本体が I18n 経由で出すメッセージ（バリデーション文言・RecordInvalid の例外文・
+# to_sentence の連結詞・日付書式）の日本語カタログ。default_locale が :ja のとき、
+# ここに無いキーは "Translation missing: ja.…" という文字列になってそのまま利用者に出る。
+# 自前で書き写すと新しいバリデーションを使うたびに漏れるため、公式カタログを使う。
+# 多言語対応のための gem ではなく、日本語カタログの供給元として入れている。
+gem "rails-i18n", "~> 8.1"
+
 gem "puma", ">= 5.0"
 
 gem "sqlite3", ">= 2.1"

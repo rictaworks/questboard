@@ -31,7 +31,9 @@ class BoardObject < ApplicationRecord
 
     parent = board&.board_objects&.active&.find_by(id: parent_frame_id) || BoardObject.active.find_by(id: parent_frame_id)
     if parent.nil? || parent.board_id != board_id || parent.object_type&.code != "frame"
-      errors.add(:parent_frame_id, "must be a valid active frame on the same board")
+      # 文言は config/locales/ja.yml に置く。ここに直書きすると
+      # errors.format（"%{attribute}%{message}"）と噛み合わず、項目名と繋がって表示される。
+      errors.add(:parent_frame_id, :invalid_parent_frame)
     end
   end
 end

@@ -119,35 +119,20 @@ class CommentsController < ApplicationController
     board.board_members.includes(:role).find_by(user: current_user)
   end
 
+  # body が無い場合も空文字として扱い、Comment の presence バリデーションに判定を任せる。
+  # ここで ParameterMissing を投げると「本文が空」という同じ事象に対して
+  # RecordInvalid とは別の応答経路ができ、両方が同じ文言を返し続ける保証が必要になる。
   def normalized_comment_body
-    body = params.require(:body).to_s.strip
-    raise ActionController::ParameterMissing, :body if body.blank?
-
-    body
+    params[:body].to_s.strip
   end
 
-  # body が空文字のときは Comment のバリデーション（RecordInvalid）が
-  # blank_comment_body_message と同じ文言を返す。body キーごと欠落したときだけ別の文言に
-  # なると、利用者から見て同じ「コメントが空」なのに理由の表示が変わってしまうため揃える。
-  #
-  # body 以外（share_token / object_id / id）はルーティング上のパスパラメータで、欠けた
-  # リクエストはそもそもこのアクションに到達しない。到達した場合は想定外なので、
-  # e.message（英語かつ内部のパラメータ名を含む）を利用者に見せず、ログにだけ残す。
+  # 到達するのは share_token / object_id / id が欠けた場合だけで、これらはルーティング上の
+  # パスパラメータのため通常このアクションには届かない。想定外の経路なので、
+  # e.message（英語かつ内部のパラメータ名を含む）は利用者に見せずログにだけ残す。
   def parameter_missing_message(error)
     logger.warn("[CommentsController##{action_name}] parameter missing: #{error.param}")
-    return blank_comment_body_message if error.param.to_s == "body"
 
     I18n.t("api.errors.parameter_missing")
-  end
-
-  # ja.yml の attribute 名と blank メッセージから組み立てる。ここで日本語を直書きすると
-  # ja.yml を直したときにこの文字列だけ古いまま残る。
-  def blank_comment_body_message
-    I18n.t(
-      "errors.format",
-      attribute: Comment.human_attribute_name(:body),
-      message: I18n.t("errors.messages.blank")
-    )
   end
 
   def record_comment_kpi_event!(board:, comment:)
