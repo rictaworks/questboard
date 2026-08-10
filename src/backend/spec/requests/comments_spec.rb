@@ -277,6 +277,7 @@ RSpec.describe "Comments", type: :request do
 
     post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
     expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
     expect(Comment.count).to eq(0)
   end
 

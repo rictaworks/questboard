@@ -63,6 +63,15 @@ RSpec.describe "Boards", type: :request do
     expect(membership.role.code).to eq("owner")
   end
 
+  it "returns a Japanese validation message when the board title is blank" do
+    sign_in(owner)
+
+    post "/boards", params: { title: "   " }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "タイトルを入力してください")
+  end
+
   it "shows the persisted board canvas state to members" do
     seed_object_support
     board_payload = create_board(title: "Canvas Board")
