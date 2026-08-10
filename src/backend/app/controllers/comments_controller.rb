@@ -29,11 +29,7 @@ class CommentsController < ApplicationController
 
     render json: serialize_comment(comment), status: :created
   rescue ActionController::ParameterMissing => e
-    if e.param.to_s == "body"
-      render json: { error: "コメントを入力してください" }, status: :unprocessable_content
-    else
-      render json: { error: e.message }, status: :unprocessable_content
-    end
+    render json: { error: parameter_missing_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -50,11 +46,7 @@ class CommentsController < ApplicationController
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
   rescue ActionController::ParameterMissing => e
-    if e.param.to_s == "body"
-      render json: { error: "コメントを入力してください" }, status: :unprocessable_content
-    else
-      render json: { error: e.message }, status: :unprocessable_content
-    end
+    render json: { error: parameter_missing_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -132,6 +124,30 @@ class CommentsController < ApplicationController
     raise ActionController::ParameterMissing, :body if body.blank?
 
     body
+  end
+
+  # body が空文字のときは Comment のバリデーション（RecordInvalid）が
+  # blank_comment_body_message と同じ文言を返す。body キーごと欠落したときだけ別の文言に
+  # なると、利用者から見て同じ「コメントが空」なのに理由の表示が変わってしまうため揃える。
+  #
+  # body 以外（share_token / object_id / id）はルーティング上のパスパラメータで、欠けた
+  # リクエストはそもそもこのアクションに到達しない。到達した場合は想定外なので、
+  # e.message（英語かつ内部のパラメータ名を含む）を利用者に見せず、ログにだけ残す。
+  def parameter_missing_message(error)
+    logger.warn("[CommentsController##{action_name}] parameter missing: #{error.param}")
+    return blank_comment_body_message if error.param.to_s == "body"
+
+    I18n.t("api.errors.parameter_missing")
+  end
+
+  # ja.yml の attribute 名と blank メッセージから組み立てる。ここで日本語を直書きすると
+  # ja.yml を直したときにこの文字列だけ古いまま残る。
+  def blank_comment_body_message
+    I18n.t(
+      "errors.format",
+      attribute: Comment.human_attribute_name(:body),
+      message: I18n.t("errors.messages.blank")
+    )
   end
 
   def record_comment_kpi_event!(board:, comment:)

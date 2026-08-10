@@ -1,4 +1,12 @@
+# 表示言語は日本語のみとし、多言語対応は行わない（CLAUDE.md の方針）。
+# en.yml は Rails 本体や gem が :en を前提に参照する経路が残っているため置いたままにする。
+# ロケール切替のための入口ではないので、URL やヘッダからロケールを解決する仕組みは足さない。
 ja:
+  # コントローラが返すユーザー向け文言。モデルのバリデーション由来ではないものはここに置く。
+  # コントローラ側への直書きは spec/lib/controller_message_literals_spec.rb で検査している。
+  api:
+    errors:
+      parameter_missing: "リクエストの内容が正しくありません"
   errors:
     format: "%{attribute}%{message}"
     messages:
