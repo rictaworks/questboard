@@ -28,8 +28,6 @@ class CommentsController < ApplicationController
     end
 
     render json: serialize_comment(comment), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: parameter_missing_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -45,8 +43,6 @@ class CommentsController < ApplicationController
 
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: parameter_missing_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -69,16 +65,20 @@ class CommentsController < ApplicationController
     head :unauthorized unless current_user
   end
 
+  # share_token / object_id / id は routes.rb のパスセグメントで、欠けたリクエストは
+  # このコントローラに届かない。require で ActionController::ParameterMissing を
+  # 起こしても到達不能な rescue が増えるだけなので、見つからない場合の RecordNotFound に
+  # 一本化する。
   def find_board!
-    Board.active.find_by!(share_token: params.require(:share_token))
+    Board.active.find_by!(share_token: params[:share_token])
   end
 
   def find_board_object!(board)
-    board.board_objects.active.find(params.require(:object_id))
+    board.board_objects.active.find(params[:object_id])
   end
 
   def find_board_comment!(object)
-    object.comments.find(params.require(:id))
+    object.comments.find(params[:id])
   end
 
   def find_authorized_comments!(board:, action:)
@@ -134,15 +134,6 @@ class CommentsController < ApplicationController
     end
 
     body.strip
-  end
-
-  # 到達するのは share_token / object_id / id が欠けた場合だけで、これらはルーティング上の
-  # パスパラメータのため通常このアクションには届かない。想定外の経路なので、
-  # e.message（英語かつ内部のパラメータ名を含む）は利用者に見せずログにだけ残す。
-  def parameter_missing_message(error)
-    logger.warn("[CommentsController##{action_name}] parameter missing: #{error.param}")
-
-    I18n.t("api.errors.parameter_missing")
   end
 
   def record_comment_kpi_event!(board:, comment:)

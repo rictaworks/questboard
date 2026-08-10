@@ -10,12 +10,6 @@
 # 落とす設定のため、フォールバック先が :ja 自身になる）。
 # 網羅性は spec/lib/locale_catalog_spec.rb が検査している。
 ja:
-  # コントローラが返すユーザー向け文言。モデルのバリデーション由来ではないものはここに置く。
-  # コントローラ側への直書きは spec/lib/controller_message_literals_spec.rb で検査している。
-  api:
-    errors:
-      parameter_missing: "リクエストの内容が正しくありません"
-
   # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
   # 参照されるため、モデルごとに同じ和名を書き写さずに済む。
   attributes:

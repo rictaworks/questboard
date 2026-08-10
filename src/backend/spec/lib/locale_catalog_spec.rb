@@ -1,4 +1,7 @@
 require "rails_helper"
+require "ripper"
+require_relative "../support/backend_source_tree"
+require_relative "../support/japanese_text"
 
 # 表示言語は日本語のみ（CLAUDE.md）。default_locale は :ja で、production の
 # config.i18n.fallbacks は I18n.default_locale へ落とす設定なので、:ja のフォールバック先は
@@ -10,12 +13,6 @@ require "rails_helper"
 # バリデーションのキーが欠けていても緑のまま通る。欠落は本番で初めて表面化する。
 # そのため、カタログ側の網羅性をここで直接検査する。
 RSpec.describe "日本語ロケールカタログ" do
-  # ここでの定数代入は Object の定数になりスイート全体へ漏れるため、メソッドで返す。
-  def japanese_pattern
-    # 「ー」(U+30FC)・「々」(U+3005)・全角記号を含む範囲。項目名は漢字だけとは限らない。
-    /[ぁ-んァ-ヶー々一-龥]/
-  end
-
   # 解決できなかったことを確実に見分けるためのセンチネル。I18n.t は既定で
   # "Translation missing: …" という *文字列* を返すため、戻り値を見ただけでは
   # 正常な翻訳と区別しづらい。
@@ -27,6 +24,13 @@ RSpec.describe "日本語ロケールカタログ" do
     I18n.t(key, default: missing_sentinel, **options)
   end
 
+  # ネストしたカタログを "a.b.c" 形式のキー列に平坦化する。
+  def leaf_keys(node, prefix = [])
+    return [ prefix.join(".") ] unless node.is_a?(Hash)
+
+    node.flat_map { |key, value| leaf_keys(value, prefix + [ key ]) }
+  end
+
   def validated_models
     Rails.application.eager_load!
     ActiveRecord::Base.descendants
@@ -35,12 +39,37 @@ RSpec.describe "日本語ロケールカタログ" do
       .sort_by(&:name)
   end
 
+  # model.validators に現れるのは validates で宣言した属性だけで、カスタムの validate
+  # メソッドの中で errors.add している属性は含まれない。そこだけ和名が無いと
+  # 「Deleted atを入力してください」のような半英語の文言が緑のまま出荷される。
+  # 宣言からは辿れないため、モデルのソースから errors.add の第一引数を拾う。
+  def errors_add_attributes(model)
+    path = BackendSourceTree.root.join("app/models/#{model.name.underscore}.rb")
+    return [] unless path.file?
+
+    tokens = Ripper.lex(path.read)
+    tokens.each_with_index.filter_map do |(_position, type, token, _state), index|
+      next unless type == :on_ident && token == "errors"
+
+      following = tokens[(index + 1)..].reject { |(_p, kind, _v, _s)| kind == :on_sp }
+      next unless following[0]&.at(2) == "." && following[1]&.at(2) == "add"
+      # errors.add(:attribute, …) の :attribute を取り出す。
+      symbol_index = following.index { |(_p, kind, _v, _s)| kind == :on_symbeg }
+      next if symbol_index.nil?
+
+      following[symbol_index + 1]&.at(2)&.to_sym
+    end.uniq
+  end
+
+  def validated_attributes(model)
+    (model.validators.flat_map(&:attributes) + errors_add_attributes(model)).uniq.sort
+  end
+
   it "バリデーション対象の属性はすべて日本語の項目名を持つ" do
     offenders = validated_models.flat_map do |model|
-      attributes = model.validators.flat_map(&:attributes).uniq.sort
-      attributes.filter_map do |attribute|
+      validated_attributes(model).filter_map do |attribute|
         human = model.human_attribute_name(attribute)
-        next if human.match?(japanese_pattern)
+        next if JapaneseText.japanese?(human)
 
         "  #{model.name}##{attribute} => #{human.inspect}"
       end
@@ -123,6 +152,41 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(error).not_to be_nil
     expect(error.message).not_to include("Translation missing")
     expect(error.message).to include("コメント")
+  end
+
+  it "errors.add でしか使われない属性も検査対象に含めている" do
+    # validators だけを見ていると、この属性は検査から漏れる。走査が空振りしていないことを
+    # 実物で固定する。
+    expect(BoardObject.validators.flat_map(&:attributes)).not_to include(:parent_frame_id)
+    expect(errors_add_attributes(BoardObject)).to include(:parent_frame_id)
+    expect(validated_attributes(BoardObject)).to include(:parent_frame_id)
+  end
+
+  it "ja.yml に書いたキーがすべて解決できる" do
+    # rails-i18n が供給するキーだけを検査していると、アプリが自分で足したキーの
+    # 打ち間違いや、そもそも ja.yml が読み込まれていない状態を検出できない。
+    catalog = YAML.load_file(BackendSourceTree.root.join("config/locales/ja.yml")).fetch("ja")
+
+    unresolved = leaf_keys(catalog).reject do |key|
+      translation(key, count: 1, attribute: "属性", message: "メッセージ", record: "レコード", model: "モデル", errors: "エラー") != missing_sentinel
+    end
+
+    expect(unresolved).to be_empty, <<~MESSAGE
+      ja.yml に書いてあるのに I18n から引けないキーがある。
+      available_locales の設定漏れや、読み込み対象から外れている可能性がある。
+
+      #{unresolved.join("
+")}
+    MESSAGE
+  end
+
+  it "アプリ固有の文言が日本語で解決できる" do
+    # モデルのカスタムバリデーションが参照するキー。ここが欠けると
+    # "Translation missing: ja.…" がそのまま API のエラー本文に出る。
+    board_object = BoardObject.new
+    board_object.errors.add(:parent_frame_id, :invalid_parent_frame)
+
+    expect(board_object.errors.full_messages.first).to eq("親フレームは同じボード上の有効なフレームを指定してください")
   end
 
   it "検査対象のモデルを実際に読んでいる" do
