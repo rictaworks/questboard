@@ -5,106 +5,136 @@ require "ripper"
 # 走査そのものを spec ごとに書くと、片方だけ解析を直したときにもう片方が古いまま残る。
 # 行単位の grep ではコメント中の文字列とリテラルを区別できないため、走査は必ず
 # トークン列に対して行う（:on_comment と :on_tstring_content が分かれる）。
+#
+# 1つのソースを複数の観点で調べるため、字句解析は `scan` で一度だけ行い、結果を使い回す。
 module RubyTokenScanner
   # Ripper.lex の要素は [[行, 桁], 種別, 文字列, 状態]。
   Token = Struct.new(:line, :type, :value)
 
+  # `label: <値式>` の値式が何であるかの分類。
+  #   :literal            … 補間のない文字列リテラル。文言をその場に書いている
+  #   :exception_message  … 例外のメッセージを応答に載せている（"#{e.message}" や e.to_s を含む）
+  #   :other              … I18n.t や変数など。検査対象外
+  LabelValue = Struct.new(:line, :kind, :value)
+
+  IGNORED_TOKEN_TYPES = [ :on_sp, :on_nl, :on_ignored_nl ].freeze
+
+  # 値式の終わりとみなす区切り。深さ 0 で現れたところで値が終わる。
+  VALUE_TERMINATORS = [ :on_comma, :on_rbrace, :on_rparen, :on_semicolon ].freeze
+  NESTING_OPEN = [ :on_lparen, :on_lbrace, :on_lbracket, :on_embexpr_beg ].freeze
+  NESTING_CLOSE = [ :on_rparen, :on_rbrace, :on_rbracket ].freeze
+
   module_function
 
-  def tokens(source)
-    Ripper.lex(source).map { |(line, _column), type, value, _state| Token.new(line, type, value) }
+  def scan(source)
+    Scanned.new(
+      Ripper.lex(source).map { |(line, _column), type, value, _state| Token.new(line, type, value) }
+    )
   end
 
-  # 空白と改行を落としたトークン列。位置関係を index で辿るために、毎回 reject せず
-  # 一度だけ作る（呼び出しごとに残り配列を複製すると走査がソース長の二乗になる）。
-  def significant_tokens(source)
-    tokens(source).reject { |token| [ :on_sp, :on_nl, :on_ignored_nl ].include?(token.type) }
-  end
-
-  # `label: "文字列"` の形で書かれた文字列リテラルを [行, 中身] で返す。
-  def string_literals_after_label(source, label)
-    list = significant_tokens(source)
-
-    list.each_with_index.filter_map do |token, index|
-      next unless token.type == :on_label && token.value == label
-
-      opening = list[index + 1]
-      content = list[index + 2]
-      next unless opening&.type == :on_tstring_beg && content&.type == :on_tstring_content
-
-      [ content.line, content.value ]
+  class Scanned
+    def initialize(tokens)
+      @tokens = tokens
+      # 位置関係を index で辿るため、空白を落とした列を一度だけ作る。
+      # 走査のたびに残り配列を複製すると、ソース長に対して二乗の手間になる。
+      @significant = tokens.reject { |token| IGNORED_TOKEN_TYPES.include?(token.type) }
     end
-  end
 
-  # `raise SomeError, "文字列"` の形で書かれた文字列リテラルを [行, 中身] で返す。
-  #
-  # raise で組み立てたメッセージは rescue 節で `error: e.message` として応答に載るため、
-  # 直接 error: に書いた文字列と同じく利用者の目に触れる。
-  # 引数が次の行に続くことは稀なので、raise と同じ行にあるものを対象にする。
-  def string_literals_after_raise(source)
-    list = significant_tokens(source)
+    # コメントを除いた文字列リテラルを [行, 中身] で返す。
+    def string_literals
+      @tokens.filter_map do |token|
+        next unless token.type == :on_tstring_content
 
-    list.each_with_index.flat_map do |token, index|
-      # raise はキーワードではなくメソッド呼び出しとして字句解析される（:on_ident）。
-      next [] unless token.type == :on_ident && token.value == "raise"
-
-      list[(index + 1)..]
-        .take_while { |following| following.line == token.line }
-        .select { |following| following.type == :on_tstring_content }
-        .map { |following| [ following.line, following.value ] }
+        [ token.line, token.value ]
+      end
     end
-  end
 
-  # `error: e.message` のように、例外のメッセージをそのまま応答に載せている箇所を
-  # [行, receiver] で返す。
-  #
-  # raise 側に書かれた文字列は Ripper だけでは「ログ用の内部メッセージ」と
-  # 「利用者に見せる文言」を区別できない。区別できるのは受け側で、例外メッセージを
-  # 応答に載せた瞬間にそれは利用者向けの文言になる。経路そのものを検査対象にする。
-  def exception_message_renders(source)
-    list = significant_tokens(source)
+    # `label: <値式>` を見つけ、値式を分類して返す。
+    #
+    # 「文字列リテラルが直後にあるか」だけを見ると、`error: "#{e.message}"` や
+    # `error: e.to_s` がどちらの検査にも掛からない。しかも件数は減るため、
+    # 書き換えた側には「違反が1件直った」ように見えてしまう。値式全体を見て分類する。
+    def label_values(label)
+      @significant.each_with_index.filter_map do |token, index|
+        next unless token.type == :on_label && token.value == label
 
-    list.each_with_index.filter_map do |token, index|
-      next unless token.type == :on_label && token.value == "error:"
+        value_tokens = value_expression_from(index + 1)
+        next if value_tokens.empty?
 
-      receiver = list[index + 1]
-      next unless receiver&.type == :on_ident
-      next unless list[index + 2]&.value == "." && list[index + 3]&.value == "message"
-
-      [ receiver.line, receiver.value ]
+        LabelValue.new(token.line, classify(value_tokens), literal_text(value_tokens))
+      end
     end
-  end
 
-  # `errors.add(:attribute, …)` の第一引数を返す。
-  #
-  # 第一引数だけを見る。後続の引数までシンボルを探しに行くと、`errors.add(attribute, :blank)`
-  # のような動的な指定で第二引数（:blank）を属性名と誤認する。
-  # :base はレコード全体に対するエラーで属性ではないため除く。
-  def errors_add_attributes(source)
-    list = significant_tokens(source)
+    # `errors.add(:attribute, :message_key)` の第一・第二引数を [属性, メッセージ] で返す。
+    # メッセージがシンボルでない場合（文字列や省略）は nil。
+    #
+    # 第一引数だけを見る。引数リストを越えてシンボルを探すと、`errors.add(attribute, :blank)`
+    # のような動的な指定で第二引数を属性名と誤認する。
+    # :base はレコード全体に対するエラーで属性ではないため除く。
+    def errors_add_pairs
+      @significant.each_with_index.filter_map do |token, index|
+        next unless token.type == :on_ident && token.value == "errors"
+        next unless @significant[index + 1]&.value == "." && @significant[index + 2]&.value == "add"
 
-    list.each_with_index.filter_map do |token, index|
-      next unless token.type == :on_ident && token.value == "errors"
-      next unless list[index + 1]&.value == "." && list[index + 2]&.value == "add"
+        # errors.add(:foo, :bar) と errors.add :foo, :bar の両方を受ける。
+        cursor = @significant[index + 3]&.type == :on_lparen ? index + 4 : index + 3
+        attribute = symbol_at(cursor)
+        next if attribute.nil? || attribute == :base
 
-      # errors.add(:foo) と errors.add :foo の両方を受ける。
-      first_argument = list[index + 3]&.type == :on_lparen ? index + 4 : index + 3
-      next unless list[first_argument]&.type == :on_symbeg
+        message = @significant[cursor + 2]&.type == :on_comma ? symbol_at(cursor + 3) : nil
+        [ attribute, message ]
+      end.uniq
+    end
 
-      name = list[first_argument + 1]
-      next unless name&.type == :on_ident
-      next if name.value == "base"
+    private
+
+    # index から値式の終わりまでのトークンを返す。入れ子の中の区切りでは終わらない。
+    def value_expression_from(index)
+      depth = 0
+
+      @significant[index..].to_a.take_while do |token|
+        if NESTING_OPEN.include?(token.type)
+          depth += 1
+          true
+        elsif NESTING_CLOSE.include?(token.type)
+          depth -= 1
+          depth >= 0
+        elsif VALUE_TERMINATORS.include?(token.type)
+          depth.positive?
+        else
+          true
+        end
+      end
+    end
+
+    def classify(value_tokens)
+      return :exception_message if exception_message?(value_tokens)
+      return :literal if value_tokens.first&.type == :on_tstring_beg && value_tokens.none? { |token| token.type == :on_embexpr_beg }
+
+      :other
+    end
+
+    # e.message / e.to_s / "#{e.message}" のいずれか。補間の中身も同じ列に現れる。
+    def exception_message?(value_tokens)
+      value_tokens.each_with_index.any? do |token, index|
+        next false unless token.type == :on_period
+
+        method_name = value_tokens[index + 1]
+        method_name&.type == :on_ident && [ "message", "to_s" ].include?(method_name.value)
+      end
+    end
+
+    def literal_text(value_tokens)
+      value_tokens.select { |token| token.type == :on_tstring_content }.map(&:value).join
+    end
+
+    def symbol_at(index)
+      return nil unless @significant[index]&.type == :on_symbeg
+
+      name = @significant[index + 1]
+      return nil unless name && [ :on_ident, :on_const ].include?(name.type)
 
       name.value.to_sym
-    end.uniq
-  end
-
-  # コメントを除いた文字列リテラルのうち、条件に合うものを [行, 中身] で返す。
-  def string_literals(source)
-    tokens(source).filter_map do |token|
-      next unless token.type == :on_tstring_content
-
-      [ token.line, token.value ]
     end
   end
 end

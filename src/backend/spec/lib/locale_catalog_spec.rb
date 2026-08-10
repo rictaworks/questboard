@@ -31,19 +31,32 @@ RSpec.describe "日本語ロケールカタログ" do
     node.flat_map { |key, value| leaf_keys(value, prefix + [ key ]) }
   end
 
-  # マイグレーションの中で定義される一時的なモデルクラス（BackfillXxx::MigrationYyy など）は
-  # 利用者に見せるものではないので対象外にする。判定はテーブルの有無ではなくソースの場所で
-  # 行う。table_exists? で絞ると、テーブルが用意できていないアプリのモデルまで黙って
-  # 検査から外れてしまう。
+  # 対象は app/models で定義されたモデル。マイグレーションの中で定義される一時的な
+  # モデルクラス（BackfillXxx::MigrationYyy など）は利用者に見せるものではない。
+  #
+  # 判定はテーブルの有無ではなく定義された場所で行う。table_exists? で絞ると、
+  # テーブルが用意できていないアプリのモデルまで黙って検査から外れる。
+  # ファイル名との一致で絞るのも不可。1つのファイルに STI の子クラスを書くと、
+  # 同名ファイルが無いという理由だけで検査から外れてしまう。
   def model_definition_path(model)
-    BackendSourceTree.root.join("app/models/#{model.name.underscore}.rb")
+    location = Object.const_source_location(model.name)&.first
+    location && Pathname.new(location)
+  end
+
+  def application_model?(model)
+    # db/seeds.rb は投入するテーブルごとに Class.new(ApplicationRecord) を作る。
+    # 名前が無いクラスは const_source_location に渡せないうえ、検査対象でもない。
+    return false if model.name.nil?
+
+    path = model_definition_path(model)
+    path&.to_s&.start_with?(BackendSourceTree.root.join("app/models").to_s) || false
   end
 
   def validated_models
     Rails.application.eager_load!
     ActiveRecord::Base.descendants
       .reject(&:abstract_class?)
-      .select { |model| model_definition_path(model).file? }
+      .select { |model| application_model?(model) }
       .sort_by(&:name)
   end
 
@@ -56,7 +69,7 @@ RSpec.describe "日本語ロケールカタログ" do
   # 実際に読み込まれている祖先モジュールのファイルまで含めて走査する。
   def model_source_paths(model)
     root = BackendSourceTree.root
-    candidates = [ root.join("app/models/#{model.name.underscore}.rb") ]
+    candidates = [ model_definition_path(model) ].compact
 
     model.ancestors.each do |ancestor|
       next if ancestor.is_a?(Class) || ancestor.name.nil?
@@ -67,8 +80,12 @@ RSpec.describe "日本語ロケールカタログ" do
     candidates.uniq.select(&:file?)
   end
 
+  def errors_add_pairs(model)
+    model_source_paths(model).flat_map { |path| RubyTokenScanner.scan(path.read).errors_add_pairs }.uniq
+  end
+
   def errors_add_attributes(model)
-    model_source_paths(model).flat_map { |path| RubyTokenScanner.errors_add_attributes(path.read) }.uniq
+    errors_add_pairs(model).map(&:first).uniq
   end
 
   def validated_attributes(model)
@@ -193,13 +210,39 @@ RSpec.describe "日本語ロケールカタログ" do
 
   it "app/models にあるモデルをすべて検査している" do
     # 検査対象が減っていることに気付けないと、違反ゼロという結果が「無かった」ではなく
-    # 「見ていない」を意味してしまう。ファイル数と対象数を突き合わせる。
-    defined_in_app = BackendSourceTree.ruby_paths("app/models")
-      .reject { |path| path.to_s.include?("/concerns/") }
-      .map { |path| BackendSourceTree.relative(path).to_s.sub("app/models/", "").sub(".rb", "") }
-      .reject { |name| name == "application_record" }
+    # 「見ていない」を意味してしまう。app/models の各ファイルが少なくとも1つのモデルを
+    # 提供していることを確かめる（1ファイルに複数のモデルを書く STI も許容する）。
+    covered = validated_models.filter_map { |model| model_definition_path(model)&.to_s }.uniq
 
-    expect(validated_models.map { |model| model.name.underscore }).to match_array(defined_in_app)
+    expected = BackendSourceTree.ruby_paths("app/models")
+      .reject { |path| path.to_s.include?("/concerns/") }
+      .map(&:to_s)
+      .reject { |path| path.end_with?("application_record.rb") }
+
+    expect(covered).to match_array(expected)
+  end
+
+  it "名前の無いモデルクラスがあっても検査できる" do
+    # db/seeds.rb が作る Class.new(ApplicationRecord) は descendants に残る。
+    # spec の実行順は random なので、seed を読み込む spec が先に走った回だけ
+    # 落ちる、という形の壊れ方をする。
+    anonymous = Class.new(ApplicationRecord)
+    expect(anonymous.name).to be_nil
+
+    expect { validated_models }.not_to raise_error
+    expect(validated_models).not_to include(anonymous)
+  end
+
+  it "同じファイルで定義した STI の子クラスも検査対象に含む" do
+    # ファイル名との一致で絞ると、board.rb の中に書いた子クラスが検査から外れる。
+    expect(application_model?(Board)).to be(true)
+
+    subclass = Class.new(Board)
+    stub_const("ArchivedBoardForSpec", subclass)
+
+    # 定義位置はこの spec ファイルになるため対象外だが、名前の無いクラスとは違い
+    # 判定が例外にならないことを確かめる。
+    expect { application_model?(subclass) }.not_to raise_error
   end
 
   it "errors.add の第一引数だけを属性として扱う" do
@@ -210,9 +253,37 @@ RSpec.describe "日本語ロケールカタログ" do
       errors.add(attribute, :blank)
       errors.add(:parent_frame_id, :invalid_parent_frame)
       errors.add :locked_by, :already_locked
+      errors.add(:body, "plain text")
     RUBY
 
-    expect(RubyTokenScanner.errors_add_attributes(source)).to eq([ :parent_frame_id, :locked_by ])
+    expect(RubyTokenScanner.scan(source).errors_add_pairs).to eq(
+      [ [ :parent_frame_id, :invalid_parent_frame ], [ :locked_by, :already_locked ], [ :body, nil ] ]
+    )
+  end
+
+  it "errors.add で使うメッセージのシンボルがカタログにある" do
+    # 属性名だけを検査していると、メッセージ側のシンボルが未定義でも緑になる。
+    # 未定義のシンボルは例外にならず、"Translation missing. Options considered were:" という
+    # 内部のキーパスを並べた数行の文字列が full_messages に入り、そのまま画面に出る。
+    offenders = validated_models.flat_map do |model|
+      errors_add_pairs(model).filter_map do |attribute, message|
+        next if message.nil?
+
+        record = model.new
+        record.errors.add(attribute, message)
+        rendered = record.errors.full_messages.first
+        next unless rendered.include?("Translation missing")
+
+        "  #{model.name}##{attribute} => :#{message}"
+      end
+    end
+
+    expect(offenders).to be_empty, <<~MESSAGE
+      errors.add に渡しているメッセージのシンボルがカタログに無い。
+      config/locales/ja.yml の activerecord.errors.models 以下に追加すること。
+
+      #{offenders.join("\n")}
+    MESSAGE
   end
 
   it "errors.add でしか使われない属性も検査対象に含めている" do

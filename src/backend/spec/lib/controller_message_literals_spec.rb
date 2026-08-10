@@ -1,4 +1,5 @@
 require "spec_helper"
+require "digest"
 require_relative "../support/backend_source_tree"
 require_relative "../support/japanese_text"
 require_relative "../support/ruby_token_scanner"
@@ -17,22 +18,25 @@ require_relative "../support/ruby_token_scanner"
 # raise 側の文字列を数えると、ログ用の内部メッセージ（利用者に出ない）まで巻き込む。
 # 内部用か利用者向けかを分けられるのは受け側なので、経路 2 そのものを違反として扱う。
 RSpec.describe "コントローラのユーザー向け文言" do
-  # #125 で ja.yml へ移すまで残る既知の違反。**件数**で持つ。
+  # #125 で ja.yml へ移すまで残る既知の違反。
   #
-  # 文字列そのものを並べると、i18n と関係のない言い回しの修正でこの spec が赤くなり、
-  # かつ #125 で1件消すたびにここも編集することになる。件数なら「増えていないこと」と
-  # 「減ったのにリストが古いこと」の両方を、内容の二重管理なしに検出できる。
+  # 文字列をそのまま並べると、i18n と関係のない言い回しの修正でこの spec が赤くなり、
+  # #125 で1件消すたびにここも編集することになる。かといって件数だけで持つと、
+  # 1件を ja.yml に移しつつ別の1件を足す差し引きゼロの変更を見逃す。
+  # ソートした文言列のダイジェストで持てば、内容の二重管理を避けたまま
+  # 増加・減少・入れ替えのいずれも検出できる。
   def known_message_literals
     {
-      "app/controllers/boards_controller.rb" => 7,
-      "app/controllers/comments_controller.rb" => 5,
-      "app/controllers/concerns/request_origin_guard.rb" => 2,
-      "app/controllers/kpi_events_controller.rb" => 1,
-      "app/controllers/objects_controller.rb" => 10,
-      "app/controllers/quests_controller.rb" => 4
+      "app/controllers/boards_controller.rb" => "4976fe84ce39c87b",
+      "app/controllers/comments_controller.rb" => "8073cb4c58833c1b",
+      "app/controllers/concerns/request_origin_guard.rb" => "80681692ad70c711",
+      "app/controllers/kpi_events_controller.rb" => "5189e31d848d693d",
+      "app/controllers/objects_controller.rb" => "d19e2d8770634113",
+      "app/controllers/quests_controller.rb" => "a32cafc04d37ebd0"
     }
   end
 
+  # 例外メッセージの露出は文言そのものがコントローラに無いため、件数で持つ。
   def known_exception_message_renders
     {
       "app/controllers/auth/google_sessions_controller.rb" => 3,
@@ -47,46 +51,60 @@ RSpec.describe "コントローラのユーザー向け文言" do
     BackendSourceTree.ruby_paths("app/controllers")
   end
 
-  def count_by_file
-    controller_paths.each_with_object({}) do |path, collected|
-      count = yield(path.read).size
-      next if count.zero?
-
-      collected[BackendSourceTree.relative(path).to_s] = count
+  # 1ファイルにつき字句解析は一度だけ行い、複数の観点で使い回す。
+  def scanned_controllers
+    @scanned_controllers ||= controller_paths.to_h do |path|
+      [ BackendSourceTree.relative(path).to_s, RubyTokenScanner.scan(path.read) ]
     end
   end
 
-  # 既知の件数と実測を突き合わせ、ずれを人間が読める形にする。
-  def compare_with_known(actual, known, label)
-    (actual.keys | known.keys).sort.filter_map do |file|
-      counted = actual.fetch(file, 0)
-      allowed = known.fetch(file, 0)
-      next if counted == allowed
+  def error_values(kind)
+    scanned_controllers.each_with_object({}) do |(file, scanned), collected|
+      values = scanned.label_values("error:").select { |value| value.kind == kind }
+      next if values.empty?
 
-      if counted > allowed
-        "  #{file}: #{label}が #{allowed} 件から #{counted} 件に増えている"
-      else
-        "  #{file}: #{label}が #{allowed} 件から #{counted} 件に減っている（リストを更新すること）"
-      end
+      collected[file] = values
     end
+  end
+
+  def digest_of(literals)
+    Digest::SHA256.hexdigest(literals.sort.join("\n"))[0, 16]
   end
 
   it "応答に載せる文言をコントローラに直書きしていない" do
-    actual = count_by_file { |source| RubyTokenScanner.string_literals_after_label(source, "error:") }
-    differences = compare_with_known(actual, known_message_literals, "直書きの文言")
+    actual = error_values(:literal).transform_values { |values| values.map(&:value) }
+    known = known_message_literals
+
+    differences = (actual.keys | known.keys).sort.filter_map do |file|
+      literals = actual.fetch(file, [])
+      current = literals.empty? ? nil : digest_of(literals)
+      next if current == known[file]
+
+      "  #{file}\n    既知: #{known.fetch(file, '(なし)')}\n    実際: #{current || '(なし)'}\n" \
+        "    現在の文言: #{literals.sort.inspect}"
+    end
 
     expect(differences).to be_empty, <<~MESSAGE
-      応答に載せる文言の直書き件数が既知の状態と食い違っている。
+      直書きされた文言が既知の状態と食い違っている。
       新しく足したなら config/locales/ja.yml に置くこと。#125 で消したなら
-      spec/lib/controller_message_literals_spec.rb の known_message_literals を更新すること。
+      spec/lib/controller_message_literals_spec.rb の known_message_literals を
+      「実際」の値へ更新すること。
 
       #{differences.join("\n")}
     MESSAGE
   end
 
   it "例外のメッセージをそのまま応答に載せていない" do
-    actual = count_by_file { |source| RubyTokenScanner.exception_message_renders(source) }
-    differences = compare_with_known(actual, known_exception_message_renders, "例外メッセージの露出")
+    actual = error_values(:exception_message).transform_values(&:size)
+    known = known_exception_message_renders
+
+    differences = (actual.keys | known.keys).sort.filter_map do |file|
+      counted = actual.fetch(file, 0)
+      allowed = known.fetch(file, 0)
+      next if counted == allowed
+
+      "  #{file}: #{allowed} 件から #{counted} 件になっている"
+    end
 
     expect(differences).to be_empty, <<~MESSAGE
       例外メッセージを応答に載せている箇所の件数が既知の状態と食い違っている。
@@ -100,15 +118,12 @@ RSpec.describe "コントローラのユーザー向け文言" do
   it "コントローラに日本語の文字列リテラルを直書きしていない" do
     # 応答本文以外（logger など）も含めて日本語を禁止する。日本語が出てくる時点で
     # 利用者に見せる文言である可能性が高く、カタログに置くべきものだから。
-    offenders = controller_paths.filter_map do |path|
-      literals = RubyTokenScanner.string_literals(path.read).filter_map do |line, value|
+    offenders = scanned_controllers.flat_map do |file, scanned|
+      scanned.string_literals.filter_map do |line, value|
         next unless JapaneseText.japanese?(value)
 
-        "  #{BackendSourceTree.relative(path)}:#{line} #{value.inspect}"
+        "  #{file}:#{line} #{value.inspect}"
       end
-      next if literals.empty?
-
-      literals.join("\n")
     end
 
     expect(offenders).to be_empty, <<~MESSAGE
@@ -119,54 +134,64 @@ RSpec.describe "コントローラのユーザー向け文言" do
     MESSAGE
   end
 
-  it "新しく直書きされた文言を検出できる" do
-    # 検査そのものが動いていることを確かめる。既知の件数で緑になっている以上、
-    # 検出ロジックが壊れても「違反ゼロ」と見分けがつかないため。
-    source = <<~RUBY
-      render json: { error: "Something went wrong" }, status: :not_found
-    RUBY
+  describe "検査そのものの動作" do
+    # 既知の状態で緑になる以上、検出が壊れても「違反ゼロ」と見分けがつかない。
+    # 分類の境目を実物のソースで固定する。
+    def classify(source)
+      RubyTokenScanner.scan(source).label_values("error:").map { |value| [ value.kind, value.value ] }
+    end
 
-    expect(RubyTokenScanner.string_literals_after_label(source, "error:"))
-      .to eq([ [ 1, "Something went wrong" ] ])
-  end
+    it "直書きの文言を検出する" do
+      expect(classify('render json: { error: "Something went wrong" }, status: :not_found'))
+        .to eq([ [ :literal, "Something went wrong" ] ])
+    end
 
-  it "例外メッセージの露出を検出できる" do
-    source = <<~RUBY
-      render json: { error: e.message }, status: :unprocessable_content
-    RUBY
+    it "例外メッセージの露出を検出する" do
+      expect(classify("render json: { error: e.message }, status: :x").map(&:first))
+        .to eq([ :exception_message ])
+    end
 
-    expect(RubyTokenScanner.exception_message_renders(source)).to eq([ [ 1, "e" ] ])
-  end
+    it "文字列に埋め込んだ例外メッセージも露出として検出する" do
+      # ここを取りこぼすと、e.message を "#{e.message}" に書き換えるだけで件数が減り、
+      # 「違反が1件直った」ように見えてしまう。
+      expect(classify('render json: { error: "#{e.message}" }, status: :x').map(&:first))
+        .to eq([ :exception_message ])
+    end
 
-  it "文言以外の error: 指定は違反として扱わない" do
-    # I18n.t やローカル変数を渡している箇所まで拾うと、正しく直したコードが赤くなる。
-    source = <<~RUBY
-      render json: { error: I18n.t("api.errors.example") }, status: :not_found
-      render json: { error: message }, status: :not_found
-      render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
-    RUBY
+    it "to_s による露出も検出する" do
+      expect(classify("render json: { error: e.to_s }, status: :x").map(&:first))
+        .to eq([ :exception_message ])
+    end
 
-    expect(RubyTokenScanner.string_literals_after_label(source, "error:")).to be_empty
-    expect(RubyTokenScanner.exception_message_renders(source)).to be_empty
+    it "カタログ参照や変数は違反として扱わない" do
+      source = <<~RUBY
+        render json: { error: I18n.t("api.errors.example") }, status: :x
+        render json: { error: message }, status: :x
+        render json: { error: e.record.errors.full_messages.to_sentence }, status: :x
+      RUBY
+
+      expect(classify(source).map(&:first)).to eq([ :other, :other, :other ])
+    end
+
+    it "文言の入れ替えをダイジェストが検出する" do
+      # 件数だけで持つと、1件を ja.yml へ移しつつ別の1件を足す変更が素通りする。
+      expect(digest_of([ "A", "B" ])).not_to eq(digest_of([ "A", "C" ]))
+      expect(digest_of([ "A", "B" ])).to eq(digest_of([ "B", "A" ]))
+    end
+
+    it "日本語コメントは違反として扱わない" do
+      source = <<~RUBY
+        # 日本語のコメント
+        value = "ascii only"
+      RUBY
+
+      expect(RubyTokenScanner.scan(source).string_literals.map(&:last)).to eq([ "ascii only" ])
+    end
   end
 
   it "走査対象のコントローラを実際に読んでいる" do
-    paths = controller_paths
-
     # 走査が空振りしていれば、違反ゼロという結果は「無かった」ではなく「見ていない」を意味する。
-    expect(paths).not_to be_empty
-    expect(paths.map { |path| BackendSourceTree.relative(path).to_s })
-      .to include("app/controllers/comments_controller.rb")
-  end
-
-  it "日本語コメントは違反として扱わない" do
-    # コメント中の日本語まで禁止すると設計意図を書けなくなる。トークン種別を見分けている
-    # 以上ここは通るはずだが、正規表現ベースの実装に書き換えられたときに気付けるよう残す。
-    source = <<~RUBY
-      # 日本語のコメント
-      value = "ascii only"
-    RUBY
-
-    expect(RubyTokenScanner.string_literals(source).map(&:last)).to eq([ "ascii only" ])
+    expect(scanned_controllers.keys).to include("app/controllers/comments_controller.rb")
+    expect(scanned_controllers.size).to be >= known_message_literals.size
   end
 end

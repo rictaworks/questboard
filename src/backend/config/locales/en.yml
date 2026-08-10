@@ -1,3 +1,15 @@
+# このファイルは読み込まれるが、中身はすべて捨てられる。
+#
+# 表示言語は日本語のみとし、多言語対応は行わない方針（CLAUDE.md）のため、
+# config/application.rb で available_locales を [:ja] に絞っている。:en は利用可能な
+# ロケールに含まれないため、ここに書いた翻訳は I18n から一切引けない。
+# 参照しようとすると（I18n.t("...", locale: :en)）I18n::InvalidLocale で失敗する。
+#
+# つまりこのファイルに文字列を足しても効果は無い。文言は config/locales/ja.yml に置くこと。
+# Rails 本体や gem が出す英語メッセージはこのファイルではなく gem 側の locale が持っており、
+# その日本語版は rails-i18n が供給している。
+# 以下はジェネレータが置いた雛形のまま（どこからも参照していない）。
+#
 # Files in the config/locales directory are used for internationalization and
 # are automatically loaded by Rails. If you want to use locales other than
 # English, add the necessary files in this directory.
