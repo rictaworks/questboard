@@ -40,9 +40,9 @@ class BoardsController < ApplicationController
     end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def join
@@ -50,18 +50,18 @@ class BoardsController < ApplicationController
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
-      render json: { error: "Unsupported invite role" }, status: :unprocessable_entity
+      render json: { error: "Unsupported invite role" }, status: :unprocessable_content
       return
     end
 
     membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def update_member_role
@@ -80,7 +80,7 @@ class BoardsController < ApplicationController
       target_member = board.board_members.includes(:role).find_by!(user_id:)
 
       if demotes_last_owner?(board:, target_member:, new_role: role)
-        render json: { error: "Cannot remove the last owner" }, status: :unprocessable_entity
+        render json: { error: "Cannot remove the last owner" }, status: :unprocessable_content
         return
       end
 
@@ -88,11 +88,11 @@ class BoardsController < ApplicationController
       render json: serialize_board(board, target_member)
     end
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy

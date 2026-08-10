@@ -48,10 +48,10 @@ class KpiEventsController < ApplicationController
 
     render json: { accepted: persisted.length }, status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue KpiEventValidationError => e
     logger.warn("[KpiEventsController#create] #{e.message}")
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   end

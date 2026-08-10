@@ -15,7 +15,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot skip quest" }, status: :unprocessable_entity
+      render json: { error: "Cannot skip quest" }, status: :unprocessable_content
     end
   end
 
@@ -25,7 +25,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot reopen quest" }, status: :unprocessable_entity
+      render json: { error: "Cannot reopen quest" }, status: :unprocessable_content
     end
   end
 
@@ -35,7 +35,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot claim reward" }, status: :unprocessable_entity
+      render json: { error: "Cannot claim reward" }, status: :unprocessable_content
     end
   end
 
