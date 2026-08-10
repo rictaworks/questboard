@@ -29,7 +29,11 @@ class CommentsController < ApplicationController
 
     render json: serialize_comment(comment), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
+    if e.param.to_s == "body"
+      render json: { error: "コメントを入力してください" }, status: :unprocessable_content
+    else
+      render json: { error: e.message }, status: :unprocessable_content
+    end
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -46,7 +50,11 @@ class CommentsController < ApplicationController
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
+    if e.param.to_s == "body"
+      render json: { error: "コメントを入力してください" }, status: :unprocessable_content
+    else
+      render json: { error: e.message }, status: :unprocessable_content
+    end
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e

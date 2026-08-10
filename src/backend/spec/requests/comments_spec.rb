@@ -263,7 +263,7 @@ RSpec.describe "Comments", type: :request do
     expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_nil
   end
 
-  it "rejects blank comment bodies with an unprocessable_entity response" do
+  it "rejects blank or missing comment bodies with an unprocessable_entity response for both create and update" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
 
@@ -275,10 +275,35 @@ RSpec.describe "Comments", type: :request do
     )
     object_id = object_payload.fetch("id")
 
+    # 1. Create - Blank body
     post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
     expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+
+    # 2. Create - Missing body parameter
+    post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+
     expect(Comment.count).to eq(0)
+
+    # Valid comment creation for testing update
+    comment_payload = create_comment(share_token:, object_id:, body: "Valid comment")
+    comment_id = comment_payload.fetch("id")
+    expect(Comment.count).to eq(1)
+
+    # 3. Update - Blank body
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: "   " }, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+
+    # 4. Update - Missing body parameter
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: {}, as: :json
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+
+    # Ensure body wasn't changed to blank
+    expect(Comment.find(comment_id).body).to eq("Valid comment")
   end
 
   it "returns not_found for comment operations against a nonexistent object or comment" do
