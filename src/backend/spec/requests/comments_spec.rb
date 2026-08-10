@@ -302,6 +302,31 @@ RSpec.describe "Comments", type: :request do
       expect(Comment.count).to eq(0)
     end
 
+    # JSON の値は文字列とは限らない。配列やハッシュを to_s すると "[]" や
+    # "{\"a\" => \"b\"}" という空でない文字列になり、本文として保存されてしまう。
+    [ [], {}, { "a" => "b" }, 123 ].each do |non_string|
+      it "rejects a #{non_string.class.name.downcase} body on create" do
+        sign_in(owner)
+        object_id = create_sticky_object(share_token)
+
+        post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: non_string }, as: :json
+
+        expect_blank_body_rejection
+        expect(Comment.count).to eq(0)
+      end
+
+      it "rejects a #{non_string.class.name.downcase} body on update and keeps the stored comment" do
+        sign_in(owner)
+        object_id = create_sticky_object(share_token)
+        comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+        patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: non_string }, as: :json
+
+        expect_blank_body_rejection
+        expect(Comment.find(comment_id).body).to eq("Valid comment")
+      end
+    end
+
     it "rejects a whitespace-only body on update and keeps the stored comment" do
       sign_in(owner)
       object_id = create_sticky_object(share_token)

@@ -122,8 +122,18 @@ class CommentsController < ApplicationController
   # body が無い場合も空文字として扱い、Comment の presence バリデーションに判定を任せる。
   # ここで ParameterMissing を投げると「本文が空」という同じ事象に対して
   # RecordInvalid とは別の応答経路ができ、両方が同じ文言を返し続ける保証が必要になる。
+  #
+  # ただし JSON の値は文字列とは限らない。配列やハッシュをそのまま to_s すると
+  # "[]" や "{\"a\" => \"b\"}" という空でない文字列になり、空判定を通り抜けて本文として
+  # 保存される（更新では既存の本文を破壊する）。文字列以外は本文が無いものとして扱う。
   def normalized_comment_body
-    params[:body].to_s.strip
+    body = params[:body]
+    unless body.is_a?(String)
+      logger.warn("[CommentsController##{action_name}] body is not a string: #{body.class}") unless body.nil?
+      return ""
+    end
+
+    body.strip
   end
 
   # 到達するのは share_token / object_id / id が欠けた場合だけで、これらはルーティング上の
