@@ -47,7 +47,7 @@ RSpec.describe "JSON レスポンスの HTML エスケープ方針", type: :requ
 
   it "HTML 特殊文字をエスケープせずそのまま返す（Rails 8.1 の既定を採用している）" do
     sign_in(owner)
-    title = "<script>alert(1)</script> & more"
+    title = "<script>x=1</script> & more"
 
     post "/boards", params: { title: }, as: :json
 
@@ -61,7 +61,7 @@ RSpec.describe "JSON レスポンスの HTML エスケープ方針", type: :requ
 
   it "エスケープの有無にかかわらず、復号した値は入力どおりである" do
     sign_in(owner)
-    title = "<script>alert(1)</script> & more"
+    title = "<script>x=1</script> & more"
 
     post "/boards", params: { title: }, as: :json
 
