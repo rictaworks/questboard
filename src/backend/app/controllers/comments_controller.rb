@@ -29,11 +29,11 @@ class CommentsController < ApplicationController
 
     render json: serialize_comment(comment), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue KpiEventConfigurationError => e
     logger.error("[CommentsController#create] #{e.message}")
     render json: { error: "Comment could not be recorded" }, status: :internal_server_error
@@ -46,11 +46,11 @@ class CommentsController < ApplicationController
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy

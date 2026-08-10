@@ -478,7 +478,7 @@ RSpec.describe "Objects", type: :request do
       geometry: { x: 10, y: 10, w: 20, h: 20, rotation: 0 }
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body).fetch("error")).to match(/parent frame/i)
   end
 

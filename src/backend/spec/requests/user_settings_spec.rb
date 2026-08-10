@@ -65,7 +65,7 @@ RSpec.describe "User settings", type: :request do
 
     patch "/user_settings", params: { intensity: "loud" }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "Invalid intensity")
     expect(UserSetting.find_by(user_id: user.id)).to be_nil
   end

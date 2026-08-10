@@ -80,11 +80,11 @@ class ObjectsController < ApplicationController
 
     render json: serialize_object(object), status: :created
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object type not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def move
@@ -119,7 +119,7 @@ class ObjectsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def recolor
@@ -140,11 +140,11 @@ class ObjectsController < ApplicationController
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy
@@ -161,7 +161,7 @@ class ObjectsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def lock
@@ -178,7 +178,7 @@ class ObjectsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
     render json: { error: "Object was locked by another user" }, status: :conflict
   end
@@ -200,7 +200,7 @@ class ObjectsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   # Applies a Lamport-ordered operation coming from the sync-server. Unlike move/resize/
@@ -314,15 +314,15 @@ class ObjectsController < ApplicationController
 
     render json: serialize_op(confirmed_op, duplicate:)
   rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   rescue ArgumentError, TypeError
-    render json: { error: "lamport_ts must be an integer" }, status: :unprocessable_entity
+    render json: { error: "lamport_ts must be an integer" }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
     # A concurrent request won the insert race for this exact (object_id, client_id,
     # lamport_ts). Echo back that record's own value/lamport_ts/client_id, same as the
@@ -416,9 +416,9 @@ class ObjectsController < ApplicationController
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_entity
+    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue InvalidOpValueError => e
-    render json: { error: e.message }, status: :unprocessable_entity
+    render json: { error: e.message }, status: :unprocessable_content
   end
 
   def lock_resolver_for(object)

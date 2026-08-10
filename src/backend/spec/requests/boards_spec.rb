@@ -261,7 +261,7 @@ RSpec.describe "Boards", type: :request do
     sign_in(owner)
     patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "viewer" }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "Cannot remove the last owner")
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: owner).role.code).to eq("owner")
   end

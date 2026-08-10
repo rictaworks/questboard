@@ -56,7 +56,7 @@ RSpec.describe "Google authentication", type: :request do
       recaptcha_token: "bad-token"
     }, as: :json
 
-    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "reCAPTCHA verification failed")
 
     get "/session"
