@@ -9,6 +9,14 @@ class ApplicationController < ActionController::API
   # 内部のパラメータ名を利用者に見せることにもなる。受け側で一度だけ扱う。
   rescue_from ActionController::ParameterMissing, with: :render_parameter_missing
 
+  # production では config.i18n.raise_on_missing_translations が development/test と
+  # 揃えて true になっている（config/environments/production.rb 参照）。フォールバックに
+  # 頼らず失敗を明示する（CLAUDE.md「フォールバック処理は禁止。例外処理をしっかり書くこと」）
+  # ための設定だが、rescue が無いと単に例外が生の 500 として素通しされ、フロントが
+  # 期待する JSON ボディ（{ error: "..." }）が返らずレスポンスの解釈に失敗する。
+  # ここで受けて、通常の500応答と同じ形に揃える。
+  rescue_from I18n::MissingTranslationData, with: :render_missing_translation
+
   private
 
   def render_parameter_missing(error)
@@ -16,6 +24,13 @@ class ApplicationController < ActionController::API
     logger.warn("[#{self.class.name}##{action_name}] #{error.message}")
 
     render json: { error: I18n.t("api.errors.parameter_missing") }, status: :unprocessable_content
+  end
+
+  def render_missing_translation(error)
+    # 欠けているキー名は調査に要るため、応答ではなくログに残す（キー名を利用者に見せない）。
+    logger.error("[#{self.class.name}##{action_name}] #{error.message}")
+
+    render json: { error: I18n.t("api.errors.internal_server_error") }, status: :internal_server_error
   end
 
   # 「型不正（空とは別の事象）」を検出したときにログへ残す定型処理。

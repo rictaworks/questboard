@@ -17,6 +17,10 @@ ja:
       invalid_board_title: "タイトルの形式が正しくありません"
       parameter_missing: "必要な項目が指定されていません"
       invalid_comment_body: "コメントの形式が正しくありません"
+      # I18n::MissingTranslationData を ApplicationController#render_missing_translation
+      # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
+      # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。
+      internal_server_error: "サーバーエラーが発生しました"
 
   # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
   # 参照されるため、モデルごとに同じ和名を書き写さずに済む。

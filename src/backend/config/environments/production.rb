@@ -66,6 +66,15 @@ Rails.application.configure do
   # the I18n.default_locale when a translation cannot be found).
   config.i18n.fallbacks = true
 
+  # available_locales は [ :ja ] で、上の fallbacks の落ち先も :ja 自身になる。
+  # つまりここを false のまま（既定値）にしていると、:ja に無いキーは英語に落ちるのではなく
+  # 例外にもならず "Translation missing: ja.…" という文字列がそのまま API 応答本文や
+  # ログに載ってしまう。development/test（config/environments/development.rb 参照）では
+  # 既に true にして検出しているが、production だけ揃っていなかった。ここでの未定義キー
+  # 参照は ApplicationController#render_missing_translation が受けて構造化 JSON の
+  # 500 応答に変換するため、生の例外や英語混じりの応答にはならない。
+  config.i18n.raise_on_missing_translations = true
+
   # Do not dump schema after migrations.
   config.active_record.dump_schema_after_migration = false
 
