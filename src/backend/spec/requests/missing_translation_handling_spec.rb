@@ -21,14 +21,17 @@ RSpec.describe "未定義の翻訳キーの扱い", type: :request do
     end
   end
 
-  around do |example|
+  before do
+    # stub_const は rspec-mocks のテストライフサイクル内（before/it）でのみ使える。
+    # around フックはそのライフサイクルの外側で動くため、そちらに置くと
+    # "outside of the per-test lifecycle" エラーになる。
     stub_const("MissingTranslationTestController", controller_class)
     Rails.application.routes.draw do
       get "/__spec/missing_translation_test", to: "missing_translation_test#index"
     end
+  end
 
-    example.run
-  ensure
+  after do
     Rails.application.reload_routes!
   end
 
