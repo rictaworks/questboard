@@ -64,6 +64,23 @@ RSpec.describe "Google authentication", type: :request do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  it "rejects the session when Google OAuth exchange fails" do
+    allow(session_creator).to receive(:call).and_raise(Auth::GoogleOauthClient::Error, "Google OAuth response was missing an expected field")
+
+    post "/auth/google_sessions", params: {
+      code: "bad-code",
+      code_verifier: "pkce-verifier",
+      recaptcha_token: "recaptcha-token"
+    }, as: :json
+
+    expect(response).to have_http_status(:bad_gateway)
+    expect(JSON.parse(response.body)).to eq("error" => "Googleログインに失敗しました")
+
+    get "/session"
+
+    expect(response).to have_http_status(:unauthorized)
+  end
+
   it "logs out the current session" do
     allow(session_creator).to receive(:call).and_return(user)
 

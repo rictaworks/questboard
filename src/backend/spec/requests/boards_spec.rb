@@ -565,4 +565,15 @@ RSpec.describe "Boards", type: :request do
     # lock lookup would scale with the 40 objects created above.
     expect(query_count).to be < 20
   end
+
+  it "returns unprocessable_content when joining with an unsupported invite role" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "owner" }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "招待された権限に対応していません")
+  end
 end

@@ -13,7 +13,7 @@ module Auth
 
     def initialize(secret_key: ENV["RECAPTCHA_SECRET_KEY"])
       @secret_key = secret_key.to_s.strip
-      raise Error, I18n.t("api.errors.google_oauth_failed") if @secret_key.empty?
+      raise Error, "RECAPTCHA_SECRET_KEY is required" if @secret_key.empty?
     end
 
     def verify!(token:, expected_action: DEFAULT_EXPECTED_ACTION, min_score: DEFAULT_MIN_SCORE, remote_ip: nil)
@@ -29,24 +29,24 @@ module Auth
       end
 
       unless response.is_a?(Net::HTTPSuccess)
-        raise Error, I18n.t("api.errors.recaptcha_verification_failed")
+        raise Error, "reCAPTCHA request failed with #{response.code}"
       end
 
       payload = JSON.parse(response.body)
-      raise Error, I18n.t("api.errors.recaptcha_verification_failed") unless payload["success"] == true
+      raise Error, "reCAPTCHA verification failed" unless payload["success"] == true
 
       if expected_action && payload["action"] != expected_action
-        raise Error, I18n.t("api.errors.recaptcha_verification_failed")
+        raise Error, "reCAPTCHA action mismatch"
       end
 
       score = payload["score"].to_f
       if min_score && score < min_score.to_f
-        raise Error, I18n.t("api.errors.recaptcha_verification_failed")
+        raise Error, "reCAPTCHA score too low"
       end
 
       true
     rescue JSON::ParserError => e
-      raise Error, I18n.t("api.errors.recaptcha_verification_failed")
+      raise Error, "reCAPTCHA response was invalid JSON: #{e.message}"
     end
 
     private

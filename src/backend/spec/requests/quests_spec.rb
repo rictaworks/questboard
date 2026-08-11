@@ -97,4 +97,34 @@ RSpec.describe "Quests API", type: :request do
       expect(json.first["state"]).to eq("in_progress")
     end
   end
+
+  describe "POST /quests/:id/skip" do
+    it "returns unprocessable_content if the quest cannot be skipped (e.g. already skipped)" do
+      sign_in
+      post "/quests/#{CGI.escape('付箋を3枚作る')}/skip", params: { share_token: board.share_token }, as: :json
+      expect(response).to have_http_status(:ok)
+
+      post "/quests/#{CGI.escape('付箋を3枚作る')}/skip", params: { share_token: board.share_token }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "クエストをスキップできません")
+    end
+  end
+
+  describe "POST /quests/:id/reopen" do
+    it "returns unprocessable_content if the quest cannot be reopened (e.g. not skipped)" do
+      sign_in
+      post "/quests/#{CGI.escape('付箋を3枚作る')}/reopen", params: { share_token: board.share_token }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "クエストを再開できません")
+    end
+  end
+
+  describe "POST /quests/:id/claim" do
+    it "returns unprocessable_content if the reward cannot be claimed (e.g. not achieved)" do
+      sign_in
+      post "/quests/#{CGI.escape('付箋を3枚作る')}/claim", params: { share_token: board.share_token }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "報酬を受け取れません")
+    end
+  end
 end

@@ -35,13 +35,8 @@ RSpec.describe "コントローラのユーザー向け文言" do
   # 増加・減少・入れ替えのいずれも検出できる。
   def known_message_literals
     {
-      "app/controllers/boards_controller.rb" => "e3b0c44298fc1c14",
-      "app/controllers/comments_controller.rb" => "e3b0c44298fc1c14",
-      "app/controllers/concerns/request_origin_guard.rb" => "e3b0c44298fc1c14",
       "app/controllers/health_controller.rb" => "6437c52449b723e4",
-      "app/controllers/kpi_events_controller.rb" => "e3b0c44298fc1c14",
-      "app/controllers/objects_controller.rb" => "45ca6edf00af9a20",
-      "app/controllers/quests_controller.rb" => "e3b0c44298fc1c14"
+      "app/controllers/objects_controller.rb" => "45ca6edf00af9a20"
     }
   end
 
@@ -57,7 +52,6 @@ RSpec.describe "コントローラのユーザー向け文言" do
   # 受けるようになったため、ここに残っているのは各コントローラ固有の例外だけ。
   def known_exception_message_renders
     {
-      "app/controllers/auth/google_sessions_controller.rb" => "e3b0c44298fc1c14",
       "app/controllers/kpi_events_controller.rb" => "8b28a6bf999c0dc6",
       "app/controllers/objects_controller.rb" => "3e71c986e023bd70",
       "app/controllers/user_settings_controller.rb" => "c96299a5d84cdf87"

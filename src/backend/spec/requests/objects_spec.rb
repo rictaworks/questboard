@@ -654,4 +654,49 @@ RSpec.describe "Objects", type: :request do
     # client_id so none of it scales with board size either.
     expect(query_count).to be < 20
   end
+
+  it "returns conflict when ActiveRecord::RecordNotUnique is raised on locking" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    # Simulate database unique constraint violation
+    allow_any_instance_of(FrameLock).to receive(:save!).and_raise(ActiveRecord::RecordNotUnique.new("Duplicate key"))
+
+    post "/boards/#{share_token}/objects/#{object_id}/lock", as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(JSON.parse(response.body)).to eq("error" => "オブジェクトは別のユーザーにロックされています")
+  end
+
+  it "returns unprocessable_content when lamport_ts is not an integer" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+      property: "geometry",
+      value: { x: 1, y: 1, w: 1, h: 1, rotation: 0 },
+      lamport_ts: "invalid",
+      client_id: "client-1"
+    }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "Lamport時刻は整数で入力してください")
+  end
 end
