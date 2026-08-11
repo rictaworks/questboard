@@ -78,7 +78,11 @@ class BoardsController < ApplicationController
       return
     end
 
-    user_id = params.require(:user_id)
+    # user_id も share_token と同じくパスセグメント（routes.rb の :user_id）。require で
+    # ActionController::ParameterMissing を起こすと、空白セグメントが 422「必要な項目が
+    # 指定されていません」に化けてしまい、本来の 404「Board not found」に届かなくなる
+    # （このメソッド冒頭の share_token と同じ理由）。
+    user_id = params[:user_id]
     role = Role.find_by!(code: role_code_param)
 
     board.with_lock do
@@ -153,7 +157,7 @@ class BoardsController < ApplicationController
   end
 
   def invalid_title_message(error)
-    logger.warn("[BoardsController##{action_name}] #{error.message}")
+    log_invalid_input(error)
 
     I18n.t("api.errors.invalid_board_title")
   end

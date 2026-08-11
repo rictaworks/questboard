@@ -436,6 +436,18 @@ RSpec.describe "Boards", type: :request do
     expect(JSON.parse(response.body)).to eq("error" => "Board not found")
   end
 
+  # user_id も share_token と同じくパスセグメント（routes.rb の :user_id）。
+  it "returns not found (not the parameter-missing message) for a blank user id on #update_member_role" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/members/%20", params: { role_code: "editor" }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board not found")
+  end
+
   it "allows an owner to demote themselves once another owner exists" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")

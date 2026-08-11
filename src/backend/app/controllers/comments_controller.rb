@@ -142,7 +142,7 @@ class CommentsController < ApplicationController
   end
 
   def invalid_body_message(error)
-    logger.warn("[CommentsController##{action_name}] #{error.message}")
+    log_invalid_input(error)
 
     I18n.t("api.errors.invalid_comment_body")
   end
