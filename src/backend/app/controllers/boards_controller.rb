@@ -15,13 +15,8 @@ class BoardsController < ApplicationController
     end
   end
 
-  # share_token は routes.rb のパスセグメントで、欠けたリクエストはこのコントローラに
-  # 届かない。require で ActionController::ParameterMissing を起こすと、空白だけの
-  # セグメント（"%20" 等）まで「必要な項目が指定されていません」（422）に化けてしまい、
-  # 本来の「ボードが見つからない」（404）に届かなくなる（CommentsController#find_board! と
-  # 同じ理由）。見つからない場合の RecordNotFound に一本化する。
   def show
-    board = Board.active.find_by!(share_token: params[:share_token])
+    board = find_board!
     membership = board_membership_for(board)
     return unless authorize_board_view!(board:, membership:)
 
@@ -53,7 +48,7 @@ class BoardsController < ApplicationController
   end
 
   def join
-    board = Board.active.find_by!(share_token: params[:share_token])
+    board = find_board!
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
@@ -70,7 +65,7 @@ class BoardsController < ApplicationController
   end
 
   def update_member_role
-    board = Board.active.find_by!(share_token: params[:share_token])
+    board = find_board!
     actor_member = board.member_for!(current_user)
 
     unless PermissionService.new.authorize(actor_member.role.code, :change_role, {})
@@ -81,7 +76,7 @@ class BoardsController < ApplicationController
     # user_id も share_token と同じくパスセグメント（routes.rb の :user_id）。require で
     # ActionController::ParameterMissing を起こすと、空白セグメントが 422「必要な項目が
     # 指定されていません」に化けてしまい、本来の 404「Board not found」に届かなくなる
-    # （このメソッド冒頭の share_token と同じ理由）。
+    # （find_board! の share_token と同じ理由）。
     user_id = params[:user_id]
     role = Role.find_by!(code: role_code_param)
 
@@ -103,9 +98,7 @@ class BoardsController < ApplicationController
   end
 
   def destroy
-    board = Board.active.find_by(share_token: params[:share_token])
-    return render json: { error: "Board not found" }, status: :not_found unless board
-
+    board = find_board!
     membership = board_membership_for(board)
     return render json: { error: "Board not found" }, status: :not_found unless membership
 
@@ -117,12 +110,25 @@ class BoardsController < ApplicationController
     deleted_at = board.tombstone!
     notify_board_deleted(board:, deleted_at:)
     head :no_content
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board not found" }, status: :not_found
   end
 
   private
 
   def require_current_user!
     head :unauthorized unless current_user
+  end
+
+  # share_token は routes.rb のパスセグメントで、欠けたリクエストはこのコントローラに
+  # 届かない。require で ActionController::ParameterMissing を起こすと、空白だけの
+  # セグメント（"%20" 等）まで「必要な項目が指定されていません」（422）に化けてしまい、
+  # 本来の「ボードが見つからない」（404）に届かなくなる（CommentsController#find_board! と
+  # 同じ理由）。見つからない場合の RecordNotFound に一本化する。
+  # show/join/update_member_role/destroy の全アクションがこのメソッドを経由する
+  # （検索ロジックを変更する際はここ1箇所を直せば全アクションに反映される）。
+  def find_board!
+    Board.active.find_by!(share_token: params[:share_token])
   end
 
   # title が無い場合は空文字として扱い、Board の presence バリデーションに判定を任せる。

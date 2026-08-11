@@ -309,6 +309,18 @@ RSpec.describe "Comments", type: :request do
       expect(Comment.count).to eq(0)
     end
 
+    it "logs when the body key itself is missing, unlike a deliberately blank body" do
+      # 応答は同じ日本語メッセージになるため、キー名の取り違え（例: commentBody）と
+      # 意図的な空欄をログ側で見分けられるようにしておく（BoardsController#normalized_board_title と同じ理由）。
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      allow(Rails.logger).to receive(:warn)
+
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
+
+      expect(Rails.logger).to have_received(:warn).with(/body key missing from params/)
+    end
+
     # JSON の値は文字列とは限らない。配列やハッシュを to_s すると "[]" や
     # "{\"a\" => \"b\"}" という空でない文字列になり、本文として保存されてしまう。
     # 空の場合とは原因が違うため、返す文言も分ける。

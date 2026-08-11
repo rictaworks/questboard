@@ -133,7 +133,17 @@ class CommentsController < ApplicationController
   # 保存されてしまう（更新では既存の本文を破壊する）。かといって空として扱うと、
   # 内容を送っているのに「コメントを入力してください」と返ることになり、利用者は原因に
   # たどり着けない。空とは区別できる文言を返す。
+  #
+  # キーそのものが無い場合（{"commentBody": "..."} のようなキー名の取り違え等）は、
+  # 空欄で送った場合と応答は同じ「コメントを入力してください」になるが、原因の調査には
+  # ならない。BoardsController#normalized_board_title がキーの欠落をログに残すのに対し、
+  # ここは何もログを出していなかったので揃える。
   def normalized_comment_body
+    unless params.key?(:body)
+      logger.warn("[CommentsController##{action_name}] body key missing from params")
+      return ""
+    end
+
     body = params[:body]
     return "" if body.nil?
     raise InvalidCommentBodyError, "expected String but got #{body.class}" unless body.is_a?(String)
