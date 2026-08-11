@@ -26,7 +26,7 @@ class BoardsController < ApplicationController
   def create
     board = nil
     Board.transaction do
-      board = Board.create_with_owner!(title: create_params.fetch(:title), owner: current_user)
+      board = Board.create_with_owner!(title: normalized_board_title, owner: current_user)
       event_def = EventDef.find_by(code: "board_shared")
       if event_def
         KpiEvent.create!(
@@ -39,8 +39,6 @@ class BoardsController < ApplicationController
       end
     end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -120,6 +118,18 @@ class BoardsController < ApplicationController
 
   def create_params
     params.permit(:title)
+  end
+
+  # title が無い場合は空文字として扱い、Board の presence バリデーションに判定を任せる。
+  # fetch で ActionController::ParameterMissing を投げると、その文言
+  # "param is missing or the value is empty or invalid: title" がそのまま応答に出る。
+  # 利用者から見れば空白を送った場合と同じ「タイトルが無い」事象なのに、キーが欠けたときだけ
+  # 英語（しかも内部のパラメータ名入り）という割れ方をしていた。
+  def normalized_board_title
+    title = create_params[:title]
+    return "" if title.nil?
+
+    title
   end
 
   def invite_role_code

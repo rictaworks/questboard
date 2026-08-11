@@ -12,6 +12,11 @@ require_relative "../support/ruby_token_scanner"
 # 個別の request spec は「その経路で使われるキー」しか踏まないため、まだ使っていない
 # バリデーションのキーが欠けていても緑のまま通る。欠落は本番で初めて表面化する。
 # そのため、カタログ側の網羅性をここで直接検査する。
+# 検証モジュールの置き場所を規約から推測していないことを確かめるためだけのモジュール。
+# app/models/concerns/ の外にあり、ファイル名もモジュール名と一致しない。
+# stub_const で作ると定義位置が rspec-mocks 側になってしまうため、ここに置く。
+module LocaleCatalogSpecValidations; end
+
 RSpec.describe "日本語ロケールカタログ" do
   # 解決できなかったことを確実に見分けるためのセンチネル。I18n.t は既定で
   # "Translation missing: …" という *文字列* を返すため、戻り値を見ただけでは
@@ -50,6 +55,9 @@ RSpec.describe "日本語ロケールカタログ" do
   # ファイル名との一致で絞るのも不可。1つのファイルに STI の子クラスを書くと、
   # 同名ファイルが無いという理由だけで検査から外れてしまう。
   def model_definition_path(model)
+    # 名前の無いクラスは const_source_location に渡せない（TypeError になる）。
+    return nil if model.name.nil?
+
     location = Object.const_source_location(model.name)&.first
     location && Pathname.new(location)
   end
@@ -78,17 +86,31 @@ RSpec.describe "日本語ロケールカタログ" do
   #
   # モデル本体のファイルだけを見ると、検証を concern に切り出した時点で検査から外れる。
   # 実際に読み込まれている祖先モジュールのファイルまで含めて走査する。
+  #
+  # モジュールの場所も名前から推測しない。app/models/concerns/<名前>.rb という置き方を
+  # 前提にすると、それ以外の場所に置いた検証モジュールが「そのパスに実在しない」という
+  # 理由だけで黙って検査から外れる。gem が提供するモジュールは対象外なので、
+  # このリポジトリ配下のファイルに限る。
   def model_source_paths(model)
     root = BackendSourceTree.root
     candidates = [ model_definition_path(model) ].compact
 
     model.ancestors.each do |ancestor|
       next if ancestor.is_a?(Class) || ancestor.name.nil?
+      next unless resolvable_constant_name?(ancestor.name)
 
-      candidates << root.join("app/models/concerns/#{ancestor.name.underscore}.rb")
+      location = Object.const_source_location(ancestor.name)&.first
+      candidates << Pathname.new(location) if location
     end
 
-    candidates.uniq.select(&:file?)
+    candidates.uniq.select { |path| path.file? && path.to_s.start_with?(root.to_s) }
+  end
+
+  # ActiveRecord は関連ごとに #<Class:0x…>::GeneratedAssociationMethods のような
+  # 定数として辿れない名前のモジュールを差し込む。const_source_location はそういう名前を
+  # NameError で弾くため、渡す前にふるい落とす。
+  def resolvable_constant_name?(name)
+    name.match?(/\A[A-Z]\w*(::[A-Z]\w*)*\z/)
   end
 
   def errors_add_pairs(model)
@@ -295,6 +317,40 @@ RSpec.describe "日本語ロケールカタログ" do
 
       #{offenders.join("\n")}
     MESSAGE
+  end
+
+  it "errors.add の引数にコメントがあっても読み取れる" do
+    # コメントをトークン列に残したまま索引で辿ると、引数の途中に説明を書いただけで
+    # メッセージが消えたり、呼び出しごと見えなくなったりする。このコードベースは
+    # 検証の直上や引数の脇に日本語の説明を置く書き方が主流なので、その形で固定する。
+    source = <<~RUBY
+      errors.add(:parent_frame_id, # 同じボード上のフレームではない
+        :invalid_parent_frame)
+      errors.add(
+        # 別の利用者が編集している
+        :locked_by,
+        :already_locked
+      )
+    RUBY
+
+    expect(RubyTokenScanner.scan(source).errors_add_pairs).to eq(
+      [ [ :parent_frame_id, :invalid_parent_frame ], [ :locked_by, :already_locked ] ]
+    )
+  end
+
+  it "規約どおりの場所に無い concern も走査対象に含む" do
+    # モジュールの置き場所を名前から推測すると、app/models/concerns/<名前>.rb 以外に
+    # 置いた検証モジュールが検査から外れる。そこで errors.add した属性は和名が無くても
+    # 報告されず、利用者は「Deleted atを入力してください」のような文言を見ることになる。
+    model = Class.new(Board) { include LocaleCatalogSpecValidations }
+
+    expect(model_source_paths(model).map(&:to_s)).to include(__FILE__)
+  end
+
+  it "gem が提供するモジュールまで走査しない" do
+    # 祖先には ActiveModel などのモジュールも並ぶ。これらまで読むと、走査の目的
+    # （このリポジトリで書いた errors.add を集める）から外れ、無関係な失敗を招く。
+    expect(model_source_paths(BoardObject)).to all(satisfy { |path| path.to_s.start_with?(BackendSourceTree.root.to_s) })
   end
 
   it "errors.add でしか使われない属性も検査対象に含めている" do

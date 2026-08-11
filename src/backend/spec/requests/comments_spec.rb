@@ -312,8 +312,12 @@ RSpec.describe "Comments", type: :request do
     # JSON の値は文字列とは限らない。配列やハッシュを to_s すると "[]" や
     # "{\"a\" => \"b\"}" という空でない文字列になり、本文として保存されてしまう。
     # 空の場合とは原因が違うため、返す文言も分ける。
+    # 説明は型名ではなく値そのもので書く。{} と {"a" => "b"} はどちらも hash になるため、
+    # 型名だと同じ説明の例が2つ並び、失敗したときにどちらの値で壊れたのか分からない。
+    # 値ごとに JSON の解釈が変わる（空のハッシュはパラメータから消える等）ため、
+    # 代表値に絞らず5種類とも通す。
     [ [], {}, { "a" => "b" }, 123, true ].each do |non_string|
-      it "rejects a #{non_string.class.name.downcase} body on create" do
+      it "rejects a #{non_string.inspect} body on create" do
         sign_in(owner)
         object_id = create_sticky_object(share_token)
 
@@ -323,7 +327,7 @@ RSpec.describe "Comments", type: :request do
         expect(Comment.count).to eq(0)
       end
 
-      it "rejects a #{non_string.class.name.downcase} body on update and keeps the stored comment" do
+      it "rejects a #{non_string.inspect} body on update and keeps the stored comment" do
         sign_in(owner)
         object_id = create_sticky_object(share_token)
         comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")

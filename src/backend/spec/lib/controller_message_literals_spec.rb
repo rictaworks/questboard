@@ -17,8 +17,15 @@ require_relative "../support/ruby_token_scanner"
 # 2 を見ないと、raise の文言を英語で書き足しても検査が緑のままになる。かといって
 # raise 側の文字列を数えると、ログ用の内部メッセージ（利用者に出ない）まで巻き込む。
 # 内部用か利用者向けかを分けられるのは受け側なので、経路 2 そのものを違反として扱う。
+#
+# どちらも「応答に渡る式であること」で拾う。error: というキー名で絞ると、別のキーで
+# 返した文言や `render json: { error: }` の省略記法が無検査のまま通るため。
 RSpec.describe "コントローラのユーザー向け文言" do
-  # #125 で ja.yml へ移すまで残る既知の違反。
+  # 応答に直書きされている文字列の既知の状態。
+  #
+  # 大半は #125 で ja.yml へ移すまで残る違反だが、health_controller の "ok" のように
+  # 利用者に見せる文言ではない機械可読な値も含まれる。この台帳の役目は「違反の一覧」
+  # ではなく「直書きが増えたら気付く」ことなので、区別せずすべて載せる。
   #
   # 文字列をそのまま並べると、i18n と関係のない言い回しの修正でこの spec が赤くなり、
   # #125 で1件消すたびにここも編集することになる。かといって件数だけで持つと、
@@ -30,6 +37,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
       "app/controllers/boards_controller.rb" => "4976fe84ce39c87b",
       "app/controllers/comments_controller.rb" => "8073cb4c58833c1b",
       "app/controllers/concerns/request_origin_guard.rb" => "80681692ad70c711",
+      "app/controllers/health_controller.rb" => "6437c52449b723e4",
       "app/controllers/kpi_events_controller.rb" => "5189e31d848d693d",
       "app/controllers/objects_controller.rb" => "d19e2d8770634113",
       "app/controllers/quests_controller.rb" => "a32cafc04d37ebd0"
@@ -40,7 +48,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
   def known_exception_message_renders
     {
       "app/controllers/auth/google_sessions_controller.rb" => 3,
-      "app/controllers/boards_controller.rb" => 3,
+      "app/controllers/boards_controller.rb" => 2,
       "app/controllers/kpi_events_controller.rb" => 2,
       "app/controllers/objects_controller.rb" => 6,
       "app/controllers/user_settings_controller.rb" => 2
@@ -58,9 +66,9 @@ RSpec.describe "コントローラのユーザー向け文言" do
     end
   end
 
-  def error_values(kind)
+  def response_values(kind)
     scanned_controllers.each_with_object({}) do |(file, scanned), collected|
-      values = scanned.label_values("error:").select { |value| value.kind == kind }
+      values = scanned.render_values.select { |value| value.kind == kind }
       next if values.empty?
 
       collected[file] = values
@@ -72,7 +80,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
   end
 
   it "応答に載せる文言をコントローラに直書きしていない" do
-    actual = error_values(:literal).transform_values { |values| values.map(&:value) }
+    actual = response_values(:literal).transform_values { |values| values.map(&:value) }
     known = known_message_literals
 
     differences = (actual.keys | known.keys).sort.filter_map do |file|
@@ -95,7 +103,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
   end
 
   it "例外のメッセージをそのまま応答に載せていない" do
-    actual = error_values(:exception_message).transform_values(&:size)
+    actual = response_values(:exception_message).transform_values(&:size)
     known = known_exception_message_renders
 
     differences = (actual.keys | known.keys).sort.filter_map do |file|
@@ -138,12 +146,19 @@ RSpec.describe "コントローラのユーザー向け文言" do
     # 既知の状態で緑になる以上、検出が壊れても「違反ゼロ」と見分けがつかない。
     # 分類の境目を実物のソースで固定する。
     def classify(source)
-      RubyTokenScanner.scan(source).label_values("error:").map { |value| [ value.kind, value.value ] }
+      RubyTokenScanner.scan(source).render_values.map { |value| [ value.kind, value.value ] }
     end
 
     it "直書きの文言を検出する" do
       expect(classify('render json: { error: "Something went wrong" }, status: :not_found'))
         .to eq([ [ :literal, "Something went wrong" ] ])
+    end
+
+    it "補間を含む文言も直書きとして検出する" do
+      # 補間があるだけで検査から外れると、内部のIDを含む英語の文言が素通りする。
+      # 直書きの検査に載らないまま、利用者にはレコードIDごと見えることになる。
+      expect(classify('render json: { error: "Board #{board.id} not found" }, status: :not_found'))
+        .to eq([ [ :literal, "Board  not found" ] ])
     end
 
     it "例外メッセージの露出を検出する" do
@@ -163,14 +178,67 @@ RSpec.describe "コントローラのユーザー向け文言" do
         .to eq([ :exception_message ])
     end
 
+    it "補間のある文言が次の文を飲み込まない" do
+      # 補間の閉じで深さが戻らないと、値の走査が次の行まで伸びてそこの e.message を拾う。
+      # 直書きが1件増えたのに、報告されるのは無関係な例外露出の件数になり、
+      # 読む側は原因と関係のない行を追うことになる。
+      source = <<~'RUBY'
+        render json: { error: "Missing #{name}" }, status: :x
+        render json: { error: e.message }, status: :x
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Missing " ], [ :exception_message, "" ] ])
+    end
+
+    it "error 以外のキーで返す文言も検出する" do
+      # キー名で絞ると、別のキーに載せ替えるだけで検査を外れてしまう。
+      source = <<~RUBY
+        render json: { message: "Board not found" }, status: :not_found
+        render json: { errors: [ "Unsupported invite role" ] }, status: :x
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Board not found" ], [ :literal, "Unsupported invite role" ] ])
+    end
+
+    it "変数に組んでから返すハッシュも検出する" do
+      # 応答は render に直接書くとは限らない。ここを見ないと、ハッシュを一度変数に
+      # 逃がすだけで例外メッセージの露出が件数から消える。
+      source = <<~RUBY
+        payload = { error: e.message }
+        payload[:resyncRequired] = true
+        render json: payload, status: :conflict
+      RUBY
+
+      expect(classify(source).map(&:first)).to eq([ :exception_message ])
+    end
+
+    it "応答に載らない error は対象外" do
+      # KPI のペイロードやログの引数に error という名前を使っただけで応答と同じ扱いを
+      # すると、利用者に一切出ないコードのためにダイジェストの作り直しを強いられる。
+      source = <<~RUBY
+        KpiEvent.create!(props: { error: "internal detail" })
+        logger.warn(error: e.message)
+      RUBY
+
+      expect(classify(source)).to be_empty
+    end
+
     it "カタログ参照や変数は違反として扱わない" do
+      # I18n.t に渡すキーは文言ではない。第二引数以降に直書きした文字列は拾う。
       source = <<~RUBY
         render json: { error: I18n.t("api.errors.example") }, status: :x
         render json: { error: message }, status: :x
         render json: { error: e.record.errors.full_messages.to_sentence }, status: :x
       RUBY
 
-      expect(classify(source).map(&:first)).to eq([ :other, :other, :other ])
+      expect(classify(source)).to be_empty
+    end
+
+    it "例外以外への to_s を露出として数えない" do
+      # 値式のどこかに to_s があるかだけを見ると、カタログ参照の補間まで露出として
+      # 数える。件数の枠が偽陽性で埋まると、本物の露出をその枠が覆い隠す。
+      expect(classify('render json: { error: I18n.t("api.errors.example", value: params[:intensity].to_s) }, status: :x'))
+        .to be_empty
     end
 
     it "文言の入れ替えをダイジェストが検出する" do

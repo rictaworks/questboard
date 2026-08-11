@@ -72,6 +72,17 @@ RSpec.describe "Boards", type: :request do
     expect(JSON.parse(response.body)).to eq("error" => "タイトルを入力してください")
   end
 
+  it "returns the same Japanese message when the board title key is absent" do
+    # 利用者から見れば空白を送った場合と同じ「タイトルが無い」事象。キーごと欠けたときだけ
+    # ActionController::ParameterMissing の英語（内部のパラメータ名を含む）が出ていた。
+    sign_in(owner)
+
+    post "/boards", params: {}, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "タイトルを入力してください")
+  end
+
   it "shows the persisted board canvas state to members" do
     seed_object_support
     board_payload = create_board(title: "Canvas Board")
