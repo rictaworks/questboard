@@ -22,7 +22,7 @@ class BoardsController < ApplicationController
 
     render json: serialize_canvas_board(board, membership)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   def create
@@ -52,14 +52,14 @@ class BoardsController < ApplicationController
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
-      render json: { error: "Unsupported invite role" }, status: :unprocessable_content
+      render json: { error: I18n.t("api.errors.unsupported_invite_role") }, status: :unprocessable_content
       return
     end
 
     membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -84,7 +84,7 @@ class BoardsController < ApplicationController
       target_member = board.board_members.includes(:role).find_by!(user_id:)
 
       if demotes_last_owner?(board:, target_member:, new_role: role)
-        render json: { error: "Cannot remove the last owner" }, status: :unprocessable_content
+        render json: { error: I18n.t("api.errors.cannot_remove_the_last_owner") }, status: :unprocessable_content
         return
       end
 
@@ -92,7 +92,7 @@ class BoardsController < ApplicationController
       render json: serialize_board(board, target_member)
     end
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -100,7 +100,7 @@ class BoardsController < ApplicationController
   def destroy
     board = find_board!
     membership = board_membership_for(board)
-    return render json: { error: "Board not found" }, status: :not_found unless membership
+    return render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found unless membership
 
     unless PermissionService.new.authorize(membership.role.code, :delete_board, {})
       head :forbidden
@@ -111,7 +111,7 @@ class BoardsController < ApplicationController
     notify_board_deleted(board:, deleted_at:)
     head :no_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   private

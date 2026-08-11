@@ -17,6 +17,22 @@ ja:
       invalid_board_title: "タイトルの形式が正しくありません"
       parameter_missing: "必要な項目が指定されていません"
       invalid_comment_body: "コメントの形式が正しくありません"
+      board_not_found: "ボードが見つかりません"
+      board_or_object_not_found: "ボードまたはオブジェクトが見つかりません"
+      board_or_object_type_not_found: "ボードまたはオブジェクト種別が見つかりません"
+      object_was_locked_by_another_user: "オブジェクトは別のユーザーにロックされています"
+      lamport_ts_must_be_an_integer: "Lamport時刻は整数で入力してください"
+      unsupported_invite_role: "招待された権限に対応していません"
+      cannot_remove_the_last_owner: "最後のオーナーは削除できません"
+      comment_could_not_be_recorded: "コメントを記録できませんでした"
+      cannot_skip_quest: "クエストをスキップできません"
+      cannot_reopen_quest: "クエストを再開できません"
+      cannot_claim_reward: "報酬を受け取れません"
+      forbidden_origin: "許可されていないオリジンです"
+      content_type_must_be_json: "Content-Type は application/json である必要があります"
+      invalid_intensity: "表示強度が正しくありません"
+      recaptcha_verification_failed: "reCAPTCHA の検証に失敗しました"
+      google_oauth_failed: "Googleログインに失敗しました"
       # I18n::MissingTranslationData を ApplicationController#render_missing_translation
       # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。

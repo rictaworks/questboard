@@ -51,7 +51,7 @@ class KpiEventsController < ApplicationController
     logger.warn("[KpiEventsController#create] #{e.message}")
     render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   private

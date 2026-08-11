@@ -15,7 +15,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot skip quest" }, status: :unprocessable_content
+      render json: { error: I18n.t("api.errors.cannot_skip_quest") }, status: :unprocessable_content
     end
   end
 
@@ -25,7 +25,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot reopen quest" }, status: :unprocessable_content
+      render json: { error: I18n.t("api.errors.cannot_reopen_quest") }, status: :unprocessable_content
     end
   end
 
@@ -35,7 +35,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: "Cannot claim reward" }, status: :unprocessable_content
+      render json: { error: I18n.t("api.errors.cannot_claim_reward") }, status: :unprocessable_content
     end
   end
 
@@ -56,7 +56,7 @@ class QuestsController < ApplicationController
     if @board
       @board.member_for!(current_user)
     else
-      render json: { error: "Board not found" }, status: :not_found
+      render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
     end
   end
 end

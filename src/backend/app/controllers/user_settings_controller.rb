@@ -41,7 +41,7 @@ class UserSettingsController < ApplicationController
 
   def intensity_master_for!(intensity_code)
     code = intensity_code.to_s
-    raise InvalidIntensityError, "Invalid intensity" unless VALID_INTENSITY_CODES.include?(code)
+    raise InvalidIntensityError, I18n.t("api.errors.invalid_intensity") unless VALID_INTENSITY_CODES.include?(code)
 
     IntensityMaster.find_by!(code: code)
   end

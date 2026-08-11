@@ -15,9 +15,11 @@ module Auth
         user: serialize_user(user)
       }, status: :created
     rescue RecaptchaVerifier::Error => e
-      render json: { error: e.message }, status: :unprocessable_content
+      logger.warn("[Auth::GoogleSessionsController#create] #{e.message}")
+      render json: { error: I18n.t("api.errors.recaptcha_verification_failed") }, status: :unprocessable_content
     rescue GoogleOauthClient::Error => e
-      render json: { error: e.message }, status: :bad_gateway
+      logger.error("[Auth::GoogleSessionsController#create] #{e.message}")
+      render json: { error: I18n.t("api.errors.google_oauth_failed") }, status: :bad_gateway
     end
 
     private

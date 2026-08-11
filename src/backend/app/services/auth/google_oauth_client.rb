@@ -24,7 +24,7 @@ module Auth
       @client_secret = client_secret.to_s.strip
       @redirect_uri = redirect_uri.to_s.strip
 
-      raise ConfigurationError, "Google OAuth configuration is incomplete" if [ @client_id, @client_secret, @redirect_uri ].any?(&:empty?)
+      raise ConfigurationError, I18n.t("api.errors.google_oauth_failed") if [ @client_id, @client_secret, @redirect_uri ].any?(&:empty?)
     end
 
     def exchange_code!(code:, code_verifier:)
@@ -39,7 +39,7 @@ module Auth
         display_name: user_info.fetch("name", nil) || user_info.fetch("email")
       )
     rescue KeyError => e
-      raise RequestError, "Google OAuth response was missing an expected field: #{e.key}"
+      raise RequestError, I18n.t("api.errors.google_oauth_failed")
     end
 
     private
@@ -87,12 +87,12 @@ module Auth
       end
 
       unless response.is_a?(Net::HTTPSuccess)
-        raise RequestError, "Google OAuth request to #{uri.host} failed with #{response.code}"
+        raise RequestError, I18n.t("api.errors.google_oauth_failed")
       end
 
       JSON.parse(response.body)
     rescue JSON::ParserError => e
-      raise RequestError, "Google OAuth response from #{uri.host} was invalid JSON: #{e.message}"
+      raise RequestError, I18n.t("api.errors.google_oauth_failed")
     end
 
     def validate_token_info!(token_info)
@@ -100,9 +100,9 @@ module Auth
       audience = token_info.fetch("aud")
       expires_at = token_info.fetch("exp").to_i
 
-      raise RequestError, "Google token issuer is invalid" unless EXPECTED_ISSUERS.include?(issuer)
-      raise RequestError, "Google token audience is invalid" unless audience == client_id
-      raise RequestError, "Google token is expired" if expires_at <= Time.now.to_i
+      raise RequestError, I18n.t("api.errors.google_oauth_failed") unless EXPECTED_ISSUERS.include?(issuer)
+      raise RequestError, I18n.t("api.errors.google_oauth_failed") unless audience == client_id
+      raise RequestError, I18n.t("api.errors.google_oauth_failed") if expires_at <= Time.now.to_i
     end
   end
 end

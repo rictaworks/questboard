@@ -576,7 +576,7 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object type not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクト種別が見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank share token on #move" do
@@ -590,7 +590,7 @@ RSpec.describe "Objects", type: :request do
     patch "/boards/%20/objects/#{object_id}/move", params: { geometry: { x: 1, y: 1 } }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank object id on #move" do
@@ -602,7 +602,7 @@ RSpec.describe "Objects", type: :request do
     patch "/boards/#{share_token}/objects/%20/move", params: { geometry: { x: 1, y: 1 } }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank object id on #apply_op" do
@@ -619,7 +619,7 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "executes single-object mutations efficiently without loading all board objects" do

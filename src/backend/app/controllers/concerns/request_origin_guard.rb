@@ -27,7 +27,7 @@ module RequestOriginGuard
     return unless origin.present?
 
     unless allowed_origins.include?(origin)
-      render json: { error: "Forbidden origin" }, status: :forbidden
+      render json: { error: I18n.t("api.errors.forbidden_origin") }, status: :forbidden
     end
   end
 
@@ -35,7 +35,7 @@ module RequestOriginGuard
     return unless request.post? || request.patch? || request.put?
 
     if FORBIDDEN_CSRF_MEDIA_TYPES.include?(request.media_type)
-      render json: { error: "Content-Type must be application/json" }, status: :unsupported_media_type
+      render json: { error: I18n.t("api.errors.content_type_must_be_json") }, status: :unsupported_media_type
     end
   end
 
