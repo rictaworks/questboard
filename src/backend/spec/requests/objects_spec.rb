@@ -479,7 +479,9 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body).fetch("error")).to match(/parent frame/i)
+    # 部分一致だと項目名とメッセージが区切りなく連結される不具合（errors.format）を
+    # 見逃すため、利用者に出る文言をそのまま突き合わせる。
+    expect(JSON.parse(response.body).fetch("error")).to eq("親フレームは同じボード上の有効なフレームを指定してください")
   end
 
   it "safely creates an object when geometry parameter is omitted" do
@@ -559,6 +561,65 @@ RSpec.describe "Objects", type: :request do
 
     delete "/boards/#{share_token}/objects/#{child_id}/lock", as: :json
     expect(response).to have_http_status(:forbidden)
+  end
+
+  # share_token / id はパスセグメントなので空文字にはならないが、空白だけの値
+  # （"%20" 等）は届く。params.require はそれを ActionController::ParameterMissing として
+  # 扱うため、rescue_from 経由で 422「必要な項目が指定されていません」に化けていた。
+  # 存在しないボード/オブジェクトを指したときに届くべき 404 に届かない回帰だった。
+  it "returns not found (not the parameter-missing message) for a blank share token on #create" do
+    sign_in(owner)
+
+    post "/boards/%20/objects", params: {
+      object_type_code: "sticky",
+      geometry: { x: 0, y: 0, w: 10, h: 10, rotation: 0 }
+    }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board or object type not found")
+  end
+
+  it "returns not found (not the parameter-missing message) for a blank share token on #move" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+    object_payload = create_object(share_token:, object_type_code: "sticky", geometry: { x: 0, y: 0, w: 10, h: 10, rotation: 0 })
+    object_id = object_payload.fetch("id")
+
+    sign_in(editor)
+    patch "/boards/%20/objects/#{object_id}/move", params: { geometry: { x: 1, y: 1 } }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+  end
+
+  it "returns not found (not the parameter-missing message) for a blank object id on #move" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    patch "/boards/#{share_token}/objects/%20/move", params: { geometry: { x: 1, y: 1 } }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+  end
+
+  it "returns not found (not the parameter-missing message) for a blank object id on #apply_op" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    post "/boards/#{share_token}/objects/%20/ops", params: {
+      property: "geometry",
+      value: { x: 1, y: 1, w: 1, h: 1, rotation: 0 },
+      lamport_ts: 1,
+      client_id: "client-1"
+    }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
   end
 
   it "executes single-object mutations efficiently without loading all board objects" do

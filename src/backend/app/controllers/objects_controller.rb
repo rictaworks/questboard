@@ -79,8 +79,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_object(object), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object type not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -139,8 +137,6 @@ class ObjectsController < ApplicationController
     end
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -313,8 +309,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_op(confirmed_op, duplicate:)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
     render json: { error: e.message }, status: :unprocessable_content
   rescue ArgumentError, TypeError
@@ -355,12 +349,19 @@ class ObjectsController < ApplicationController
     head :unauthorized unless current_user
   end
 
+  # share_token / id は routes.rb のパスセグメントで、欠けたリクエストはこのコントローラに
+  # 届かない。require で ActionController::ParameterMissing を起こすと、空白だけの
+  # セグメント（"%20" 等）まで ApplicationController の rescue_from に捕まって
+  # 422「必要な項目が指定されていません」に化けてしまい、本来の 404（Board not found /
+  # Board or object not found）に届かなくなる（BoardsController#show や
+  # CommentsController#find_board! と同じ理由）。見つからない場合の RecordNotFound に
+  # 一本化する。
   def find_board!
-    Board.active.find_by!(share_token: params.require(:share_token))
+    Board.active.find_by!(share_token: params[:share_token])
   end
 
   def find_board_object!(board = find_board!)
-    board.board_objects.active.find(params.require(:id))
+    board.board_objects.active.find(params[:id])
   end
 
   def active_parent_frame_for(board)
@@ -544,7 +545,7 @@ class ObjectsController < ApplicationController
   end
 
   def find_op_target_object!(board)
-    board.board_objects.find(params.require(:id))
+    board.board_objects.find(params[:id])
   end
 
   def op_value_params

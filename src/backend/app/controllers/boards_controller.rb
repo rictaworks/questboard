@@ -1,4 +1,6 @@
 class BoardsController < ApplicationController
+  class InvalidBoardTitleError < StandardError; end
+
   before_action :require_current_user!
 
   class BoardDeletionRelayOp
@@ -14,7 +16,7 @@ class BoardsController < ApplicationController
   end
 
   def show
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = find_board!
     membership = board_membership_for(board)
     return unless authorize_board_view!(board:, membership:)
 
@@ -26,7 +28,7 @@ class BoardsController < ApplicationController
   def create
     board = nil
     Board.transaction do
-      board = Board.create_with_owner!(title: create_params.fetch(:title), owner: current_user)
+      board = Board.create_with_owner!(title: normalized_board_title, owner: current_user)
       event_def = EventDef.find_by(code: "board_shared")
       if event_def
         KpiEvent.create!(
@@ -39,14 +41,14 @@ class BoardsController < ApplicationController
       end
     end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
+  rescue InvalidBoardTitleError => e
+    render json: { error: invalid_title_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def join
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = find_board!
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
@@ -56,8 +58,6 @@ class BoardsController < ApplicationController
 
     membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -65,7 +65,7 @@ class BoardsController < ApplicationController
   end
 
   def update_member_role
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = find_board!
     actor_member = board.member_for!(current_user)
 
     unless PermissionService.new.authorize(actor_member.role.code, :change_role, {})
@@ -73,7 +73,11 @@ class BoardsController < ApplicationController
       return
     end
 
-    user_id = params.require(:user_id)
+    # user_id も share_token と同じくパスセグメント（routes.rb の :user_id）。require で
+    # ActionController::ParameterMissing を起こすと、空白セグメントが 422「必要な項目が
+    # 指定されていません」に化けてしまい、本来の 404「Board not found」に届かなくなる
+    # （find_board! の share_token と同じ理由）。
+    user_id = params[:user_id]
     role = Role.find_by!(code: role_code_param)
 
     board.with_lock do
@@ -87,8 +91,6 @@ class BoardsController < ApplicationController
       target_member.update!(role:)
       render json: serialize_board(board, target_member)
     end
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -96,9 +98,7 @@ class BoardsController < ApplicationController
   end
 
   def destroy
-    board = Board.active.find_by(share_token: params.require(:share_token))
-    return render json: { error: "Board not found" }, status: :not_found unless board
-
+    board = find_board!
     membership = board_membership_for(board)
     return render json: { error: "Board not found" }, status: :not_found unless membership
 
@@ -110,6 +110,8 @@ class BoardsController < ApplicationController
     deleted_at = board.tombstone!
     notify_board_deleted(board:, deleted_at:)
     head :no_content
+  rescue ActiveRecord::RecordNotFound
+    render json: { error: "Board not found" }, status: :not_found
   end
 
   private
@@ -118,8 +120,52 @@ class BoardsController < ApplicationController
     head :unauthorized unless current_user
   end
 
-  def create_params
-    params.permit(:title)
+  # share_token は routes.rb のパスセグメントで、欠けたリクエストはこのコントローラに
+  # 届かない。require で ActionController::ParameterMissing を起こすと、空白だけの
+  # セグメント（"%20" 等）まで「必要な項目が指定されていません」（422）に化けてしまい、
+  # 本来の「ボードが見つからない」（404）に届かなくなる（CommentsController#find_board! と
+  # 同じ理由）。見つからない場合の RecordNotFound に一本化する。
+  # show/join/update_member_role/destroy の全アクションがこのメソッドを経由する
+  # （検索ロジックを変更する際はここ1箇所を直せば全アクションに反映される）。
+  def find_board!
+    Board.active.find_by!(share_token: params[:share_token])
+  end
+
+  # title が無い場合は空文字として扱い、Board の presence バリデーションに判定を任せる。
+  # fetch で ActionController::ParameterMissing を投げると、その文言
+  # "param is missing or the value is empty or invalid: title" がそのまま応答に出る。
+  # 利用者から見れば空白を送った場合と同じ「タイトルが無い」事象なのに、キーが欠けたときだけ
+  # 英語（しかも内部のパラメータ名入り）という割れ方をしていた。
+  #
+  # 一方、値の型が違う場合は「空」ではない。真偽値や数値は文字列に寄せられて "t" や "0"
+  # という空でない値として保存されてしまう。配列やハッシュは params.permit が非スカラーと
+  # して黙って落とすため、送っているのに「入力してください」と返ることになり、利用者は
+  # 原因にたどり着けない。空とは区別できる文言を返す（コメント本文と同じ扱い）。
+  #
+  # permit を通さず生の params を見るのは、落とされた値と未指定を見分けるため。
+  # title は個別に渡していて一括代入はしないため、permit による防御は要らない。
+  #
+  # キーそのものが無い場合（{"boardTitle": "..."} のようなキー名の取り違え等）は、
+  # 空欄で送った場合と応答は同じ「タイトルを入力してください」になるが、原因の調査には
+  # ならない。invalid_title_message がキーは字面の異なる場合をログに残すのに対し、
+  # ここは何もログを出していなかったので揃える。
+  def normalized_board_title
+    unless params.key?(:title)
+      logger.warn("[BoardsController##{action_name}] title key missing from params")
+      return ""
+    end
+
+    title = params[:title]
+    return "" if title.nil?
+    raise InvalidBoardTitleError, "expected String but got #{title.class}" unless title.is_a?(String)
+
+    title.strip
+  end
+
+  def invalid_title_message(error)
+    log_invalid_input(error)
+
+    I18n.t("api.errors.invalid_board_title")
   end
 
   def invite_role_code

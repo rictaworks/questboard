@@ -263,21 +263,115 @@ RSpec.describe "Comments", type: :request do
     expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_nil
   end
 
-  it "rejects blank comment bodies with an unprocessable_entity response" do
-    board_payload = create_board
-    share_token = board_payload.fetch("board").fetch("shareToken")
+  # 本文が空という同じ事象に対して、空白のみ・キー欠落・作成・更新のどの経路でも
+  # 同じ応答になることを確かめる。1 つの example にまとめると最初の失敗で残りが実行されず、
+  # 同時に壊れた経路が見えなくなるため、経路ごとに分ける。
+  describe "comment body validation" do
+    let(:share_token) { create_board.fetch("board").fetch("shareToken") }
 
-    sign_in(owner)
-    object_payload = create_object(
-      share_token:,
-      object_type_code: "sticky",
-      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
-    )
-    object_id = object_payload.fetch("id")
+    def create_sticky_object(share_token)
+      create_object(
+        share_token:,
+        object_type_code: "sticky",
+        geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+      ).fetch("id")
+    end
 
-    post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(Comment.count).to eq(0)
+    def expect_blank_body_rejection
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "コメントを入力してください")
+    end
+
+    # 型が違う場合は「空」ではない。空と同じ文言を返すと、内容を送っているのに
+    # 「入力してください」と言われることになり、利用者が原因にたどり着けない。
+    def expect_invalid_body_rejection
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "コメントの形式が正しくありません")
+    end
+
+    it "rejects a whitespace-only body on create" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "   " }, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.count).to eq(0)
+    end
+
+    it "rejects a missing body parameter on create" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.count).to eq(0)
+    end
+
+    it "logs when the body key itself is missing, unlike a deliberately blank body" do
+      # 応答は同じ日本語メッセージになるため、キー名の取り違え（例: commentBody）と
+      # 意図的な空欄をログ側で見分けられるようにしておく（BoardsController#normalized_board_title と同じ理由）。
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      allow(Rails.logger).to receive(:warn)
+
+      post "/boards/#{share_token}/objects/#{object_id}/comments", params: {}, as: :json
+
+      expect(Rails.logger).to have_received(:warn).with(/body key missing from params/)
+    end
+
+    # JSON の値は文字列とは限らない。配列やハッシュを to_s すると "[]" や
+    # "{\"a\" => \"b\"}" という空でない文字列になり、本文として保存されてしまう。
+    # 空の場合とは原因が違うため、返す文言も分ける。
+    # 説明は型名ではなく値そのもので書く。{} と {"a" => "b"} はどちらも hash になるため、
+    # 型名だと同じ説明の例が2つ並び、失敗したときにどちらの値で壊れたのか分からない。
+    # 値ごとに JSON の解釈が変わる（空のハッシュはパラメータから消える等）ため、
+    # 代表値に絞らず5種類とも通す。
+    [ [], {}, { "a" => "b" }, 123, true ].each do |non_string|
+      it "rejects a #{non_string.inspect} body on create" do
+        sign_in(owner)
+        object_id = create_sticky_object(share_token)
+
+        post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: non_string }, as: :json
+
+        expect_invalid_body_rejection
+        expect(Comment.count).to eq(0)
+      end
+
+      it "rejects a #{non_string.inspect} body on update and keeps the stored comment" do
+        sign_in(owner)
+        object_id = create_sticky_object(share_token)
+        comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+        patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: non_string }, as: :json
+
+        expect_invalid_body_rejection
+        expect(Comment.find(comment_id).body).to eq("Valid comment")
+      end
+    end
+
+    it "rejects a whitespace-only body on update and keeps the stored comment" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+      patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: { body: "   " }, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.find(comment_id).body).to eq("Valid comment")
+    end
+
+    it "rejects a missing body parameter on update and keeps the stored comment" do
+      sign_in(owner)
+      object_id = create_sticky_object(share_token)
+      comment_id = create_comment(share_token:, object_id:, body: "Valid comment").fetch("id")
+
+      patch "/boards/#{share_token}/objects/#{object_id}/comments/#{comment_id}", params: {}, as: :json
+
+      expect_blank_body_rejection
+      expect(Comment.find(comment_id).body).to eq("Valid comment")
+    end
   end
 
   it "returns not_found for comment operations against a nonexistent object or comment" do

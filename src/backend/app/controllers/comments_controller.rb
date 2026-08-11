@@ -1,5 +1,6 @@
 class CommentsController < ApplicationController
   class KpiEventConfigurationError < StandardError; end
+  class InvalidCommentBodyError < StandardError; end
 
   before_action :require_current_user!
 
@@ -28,8 +29,8 @@ class CommentsController < ApplicationController
     end
 
     render json: serialize_comment(comment), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
+  rescue InvalidCommentBodyError => e
+    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -45,8 +46,8 @@ class CommentsController < ApplicationController
 
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
+  rescue InvalidCommentBodyError => e
+    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -69,16 +70,20 @@ class CommentsController < ApplicationController
     head :unauthorized unless current_user
   end
 
+  # share_token / object_id / id は routes.rb のパスセグメントで、欠けたリクエストは
+  # このコントローラに届かない。require で ActionController::ParameterMissing を
+  # 起こしても到達不能な rescue が増えるだけなので、見つからない場合の RecordNotFound に
+  # 一本化する。
   def find_board!
-    Board.active.find_by!(share_token: params.require(:share_token))
+    Board.active.find_by!(share_token: params[:share_token])
   end
 
   def find_board_object!(board)
-    board.board_objects.active.find(params.require(:object_id))
+    board.board_objects.active.find(params[:object_id])
   end
 
   def find_board_comment!(object)
-    object.comments.find(params.require(:id))
+    object.comments.find(params[:id])
   end
 
   def find_authorized_comments!(board:, action:)
@@ -119,11 +124,37 @@ class CommentsController < ApplicationController
     board.board_members.includes(:role).find_by(user: current_user)
   end
 
+  # body が無い場合は空文字として扱い、Comment の presence バリデーションに判定を任せる。
+  # ここで別の例外を投げると「本文が空」という同じ事象に対して RecordInvalid とは別の
+  # 応答経路ができ、両方が同じ文言を返し続ける保証が必要になる。
+  #
+  # 一方、値の型が違う場合は「空」ではない。JSON の値は文字列とは限らず、配列やハッシュを
+  # そのまま to_s すると "[]" や "{\"a\" => \"b\"}" という空でない文字列になって本文として
+  # 保存されてしまう（更新では既存の本文を破壊する）。かといって空として扱うと、
+  # 内容を送っているのに「コメントを入力してください」と返ることになり、利用者は原因に
+  # たどり着けない。空とは区別できる文言を返す。
+  #
+  # キーそのものが無い場合（{"commentBody": "..."} のようなキー名の取り違え等）は、
+  # 空欄で送った場合と応答は同じ「コメントを入力してください」になるが、原因の調査には
+  # ならない。BoardsController#normalized_board_title がキーの欠落をログに残すのに対し、
+  # ここは何もログを出していなかったので揃える。
   def normalized_comment_body
-    body = params.require(:body).to_s.strip
-    raise ActionController::ParameterMissing, :body if body.blank?
+    unless params.key?(:body)
+      logger.warn("[CommentsController##{action_name}] body key missing from params")
+      return ""
+    end
 
-    body
+    body = params[:body]
+    return "" if body.nil?
+    raise InvalidCommentBodyError, "expected String but got #{body.class}" unless body.is_a?(String)
+
+    body.strip
+  end
+
+  def invalid_body_message(error)
+    log_invalid_input(error)
+
+    I18n.t("api.errors.invalid_comment_body")
   end
 
   def record_comment_kpi_event!(board:, comment:)

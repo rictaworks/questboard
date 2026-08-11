@@ -1,31 +1,15 @@
-# Files in the config/locales directory are used for internationalization and
-# are automatically loaded by Rails. If you want to use locales other than
-# English, add the necessary files in this directory.
+# このファイルに翻訳を書いても効かない。
 #
-# To use the locales, use `I18n.t`:
+# 表示言語は日本語のみとし、多言語対応は行わない方針（CLAUDE.md）のため、
+# config/application.rb で available_locales を [ :ja ] に絞っている。:en は利用可能な
+# ロケールに含まれず、ここに書いた内容は読み込みの過程で捨てられる。例外にも警告にも
+# ならないため、書いた側は何の反応も得られないまま、その文言が出ないことにだけ気付く。
+# 参照しようとすると（I18n.t("...", locale: :en)）I18n::InvalidLocale で失敗する。
 #
-#     I18n.t "hello"
+# 文言は config/locales/ja.yml に置くこと。Rails 本体や gem が出す英語メッセージは
+# このファイルではなく gem 側の locale が持っており、その日本語版は rails-i18n が供給している。
 #
-# In views, this is aliased to just `t`:
-#
-#     <%= t("hello") %>
-#
-# To use a different locale, set it with `I18n.locale`:
-#
-#     I18n.locale = :es
-#
-# This would use the information in config/locales/es.yml.
-#
-# To learn more about the API, please read the Rails Internationalization guide
-# at https://guides.rubyonrails.org/i18n.html.
-#
-# Be aware that YAML interprets the following case-insensitive strings as
-# booleans: `true`, `false`, `on`, `off`, `yes`, `no`. Therefore, these strings
-# must be quoted to be interpreted as strings. For example:
-#
-#     en:
-#       "yes": yup
-#       enabled: "ON"
-
+# 値の無いキーだけを残しているのは、中身の無い YAML を I18n が InvalidLocaleData として
+# 拒むため。このファイル自体は無くても動作は変わらない。
+# ja.yml 以外に翻訳キーが増えていないことは spec/lib/locale_catalog_spec.rb が検査する。
 en:
-  hello: "Hello world"

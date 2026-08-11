@@ -14,8 +14,6 @@ module Auth
         authenticated: true,
         user: serialize_user(user)
       }, status: :created
-    rescue ActionController::ParameterMissing => e
-      render json: { error: e.message }, status: :unprocessable_content
     rescue RecaptchaVerifier::Error => e
       render json: { error: e.message }, status: :unprocessable_content
     rescue GoogleOauthClient::Error => e

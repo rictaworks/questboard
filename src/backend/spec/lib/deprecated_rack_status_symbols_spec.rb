@@ -1,6 +1,6 @@
 require "spec_helper"
 require "rack"
-require "pathname"
+require_relative "../support/backend_source_tree"
 require_relative "../support/deprecated_status_symbol_scanner"
 
 # Rack 3.1 以降、一部の HTTP ステータスシンボルは IANA の名称変更にあわせて非推奨になった
@@ -21,17 +21,8 @@ RSpec.describe "Rack の非推奨 HTTP ステータスシンボル" do
     %w[app lib config db bin spec]
   end
 
-  # spec ファイルの位置からの相対パスでルートを決めると、spec を 1 階層移動しただけで
-  # 走査対象が空になり、検査が緑のまま空転する。Gemfile のある場所を遡って探す。
-  def backend_root
-    root = Pathname.new(__dir__).ascend.find { |directory| directory.join("Gemfile").file? }
-    raise "Gemfile が見つからず、バックエンドのルートを決められない" if root.nil?
-
-    root
-  end
-
   def ruby_source_paths
-    scanned_directories.flat_map { |directory| backend_root.join(directory).glob("**/*.rb") }
+    BackendSourceTree.ruby_paths(*scanned_directories)
   end
 
   # 禁止シンボルは Rack 本体から取り出す。ここにハードコードすると、Rack 側で非推奨が
@@ -61,7 +52,7 @@ RSpec.describe "Rack の非推奨 HTTP ステータスシンボル" do
       offenders = scanner.scan(ruby_source_paths)
 
       formatted = offenders.map do |path, lines|
-        "#{path.relative_path_from(backend_root)}:#{lines.join(',')}"
+        "#{BackendSourceTree.relative(path)}:#{lines.join(',')}"
       end
 
       expect(offenders).to be_empty, <<~MESSAGE
@@ -77,7 +68,7 @@ RSpec.describe "Rack の非推奨 HTTP ステータスシンボル" do
 
     # 走査が空振りしていれば、違反ゼロという結果は「無かった」ではなく「見ていない」を意味する。
     expect(paths).not_to be_empty
-    expect(paths.map { |path| path.relative_path_from(backend_root).to_s })
+    expect(paths.map { |path| BackendSourceTree.relative(path).to_s })
       .to include(a_string_starting_with("app/controllers/"))
   end
 end

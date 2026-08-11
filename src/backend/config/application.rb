@@ -22,6 +22,11 @@ module Backend
   class Application < Rails::Application
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.1
+    # 表示言語は日本語のみとし、多言語対応は行わない（CLAUDE.md の方針）。
+    # available_locales を明示しないと rails-i18n は同梱する全ロケール（123言語・
+    # 約290ファイル）を load_path に積む。使わないロケールを起動のたびに解析させない。
+    config.i18n.default_locale = :ja
+    config.i18n.available_locales = [ :ja ]
 
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
