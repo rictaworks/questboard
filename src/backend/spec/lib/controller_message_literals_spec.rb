@@ -45,16 +45,22 @@ RSpec.describe "コントローラのユーザー向け文言" do
     }
   end
 
-  # 例外メッセージの露出は文言そのものがコントローラに無いため、件数で持つ。
+  # 例外メッセージの露出は文言そのものがコントローラに無いため、件数の代わりに
+  # 「どのメソッドで露出しているか」の集合をダイジェストで持つ。
+  #
+  # 件数だけで持つと、あるメソッドの e.message 露出をやめて、同じファイルの別のメソッドに
+  # 新しい露出を足す差し引きゼロの入れ替えを見逃す（known_message_literals をダイジェストに
+  # した理由と同じ）。RubyTokenScanner は :exception_message の value に、その露出を
+  # 囲むメソッド名を持たせているため、それをダイジェストの材料にする。
   #
   # ActionController::ParameterMissing は ApplicationController の rescue_from で
   # 受けるようになったため、ここに残っているのは各コントローラ固有の例外だけ。
   def known_exception_message_renders
     {
-      "app/controllers/auth/google_sessions_controller.rb" => 2,
-      "app/controllers/kpi_events_controller.rb" => 1,
-      "app/controllers/objects_controller.rb" => 3,
-      "app/controllers/user_settings_controller.rb" => 1
+      "app/controllers/auth/google_sessions_controller.rb" => "d502044651c8adef",
+      "app/controllers/kpi_events_controller.rb" => "8b28a6bf999c0dc6",
+      "app/controllers/objects_controller.rb" => "3e71c986e023bd70",
+      "app/controllers/user_settings_controller.rb" => "c96299a5d84cdf87"
     }
   end
 
@@ -106,21 +112,24 @@ RSpec.describe "コントローラのユーザー向け文言" do
   end
 
   it "例外のメッセージをそのまま応答に載せていない" do
-    actual = response_values(:exception_message).transform_values(&:size)
+    actual = response_values(:exception_message).transform_values { |values| values.map(&:value) }
     known = known_exception_message_renders
 
     differences = (actual.keys | known.keys).sort.filter_map do |file|
-      counted = actual.fetch(file, 0)
-      allowed = known.fetch(file, 0)
-      next if counted == allowed
+      identities = actual.fetch(file, [])
+      current = identities.empty? ? nil : digest_of(identities)
+      next if current == known[file]
 
-      "  #{file}: #{allowed} 件から #{counted} 件になっている"
+      "  #{file}\n    既知: #{known.fetch(file, '(なし)')}\n    実際: #{current || '(なし)'}\n" \
+        "    現在の露出元メソッド: #{identities.sort.inspect}"
     end
 
     expect(differences).to be_empty, <<~MESSAGE
-      例外メッセージを応答に載せている箇所の件数が既知の状態と食い違っている。
+      例外メッセージを応答に載せている箇所が既知の状態と食い違っている。
       e.message は raise 側に書いた英語（内部のパラメータ名を含むこともある）を
-      そのまま利用者に見せる。ja.yml の文言に変換して返すこと。
+      そのまま利用者に見せる。ja.yml の文言に変換して返すこと。新しく足したのでなければ、
+      spec/lib/controller_message_literals_spec.rb の known_exception_message_renders を
+      「実際」の値へ更新すること。
 
       #{differences.join("\n")}
     MESSAGE
@@ -206,10 +215,16 @@ RSpec.describe "コントローラのユーザー向け文言" do
     it "変数に組んでから返すハッシュも検出する" do
       # 応答は render に直接書くとは限らない。ここを見ないと、ハッシュを一度変数に
       # 逃がすだけで例外メッセージの露出が件数から消える。
+      #
+      # render は必ず何らかのアクションメソッドの中に書く（実際のコントローラと同じ形）。
+      # ローカル変数への代入は render 呼び出しと同じメソッドの範囲に限って探すため、
+      # メソッドの外の裸の代入文では対象にならない。
       source = <<~RUBY
-        payload = { error: e.message }
-        payload[:resyncRequired] = true
-        render json: payload, status: :conflict
+        def create
+          payload = { error: e.message }
+          payload[:resyncRequired] = true
+          render json: payload, status: :conflict
+        end
       RUBY
 
       expect(classify(source).map(&:first)).to eq([ :exception_message ])
@@ -263,6 +278,289 @@ RSpec.describe "コントローラのユーザー向け文言" do
       RUBY
 
       expect(classify(source)).to eq([ [ :literal, "Board or object not found" ] ])
+    end
+
+    it "2段先のヘルパーが返す文言も検出する" do
+      # 1段しか辿らないと、ヘルパーがさらに別のヘルパーを呼ぶ形に文言を逃がすだけで
+      # 台帳から消える。
+      source = <<~RUBY
+        def show
+          render json: { error: outer_message }, status: :not_found
+        end
+
+        def outer_message
+          inner_message
+        end
+
+        def inner_message
+          "Board not found"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Board not found" ] ])
+    end
+
+    it "仮引数の宣言をヘルパー呼び出しの候補として扱わない" do
+      # def outer(x) の "x" は仮引数の宣言であって呼び出しではない。ここを除かないと、
+      # 呼ばれてもいない無関係な def x の中身まで、たまたま名前が重なるだけで
+      # 応答文言として拾ってしまう（Codex レビュー指摘）。
+      source = <<~RUBY
+        def show
+          render json: { error: outer(1) }, status: :not_found
+        end
+
+        def outer(x)
+          "direct"
+        end
+
+        def x
+          "unrelated, never called"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "direct" ] ])
+    end
+
+    it "仮引数と同名でも、明示的な呼び出しは実メソッドとして辿る" do
+      # def outer(message); message(); end の "message()" は、仮引数 message の有無に
+      # 関わらず実際には同名メソッド message を呼び出す（Ruby の実際の挙動）。
+      # 仮引数名を丸ごと候補から差し引く実装だと、この実在する呼び出しを取りこぼす
+      # false negative になる（Codex レビュー指摘）。
+      source = <<~RUBY
+        def show
+          render json: { error: outer }, status: :not_found
+        end
+
+        def outer(message)
+          message()
+        end
+
+        def message
+          "Board not found"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Board not found" ] ])
+    end
+
+    it "カッコ無しで引数を渡すコマンド形式の呼び出しも辿る" do
+      # `inner 1` は Ripper では :fcall ではなく :command になる。この形を見落とすと、
+      # 間接的に応答へ出る直書き文言を検査から隠せる（Codex レビュー指摘）。
+      source = <<~RUBY
+        def show
+          render json: { error: outer }, status: :not_found
+        end
+
+        def outer
+          inner 1
+        end
+
+        def inner(x)
+          "from inner"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "from inner" ] ])
+    end
+
+    it "ローカル変数への束縛は、render 呼び出しと同じメソッドの範囲に限って探す" do
+      # ファイル全体から同名の代入を拾うと、応答と無関係な別メソッドのローカル変数まで
+      # 応答文言として誤検出する（Codex レビュー指摘）。
+      source = <<~RUBY
+        def show
+          render json: { error: message }, status: :not_found
+        end
+
+        def audit
+          message = "internal only, never rendered"
+          Rails.logger.info(message)
+        end
+      RUBY
+
+      expect(classify(source)).to eq([])
+    end
+
+    it "ローカル変数の読み出しや外部レシーバのセレクタをヘルパー呼び出しとして扱わない" do
+      # message = service.detail; message は、後半の裸の "message" がローカル変数の
+      # 読み出し（Ruby の実際の挙動）であって呼び出しではない。また "service.detail" の
+      # "detail" は service というレシーバのメソッドで、このファイルの同名メソッドとは
+      # 無関係。どちらも候補にすると、無関係な def message / def detail の中身まで
+      # 応答文言として拾ってしまう false positive になる（Codex レビュー指摘）。
+      source = <<~RUBY
+        def show
+          render json: { error: helper }, status: :not_found
+        end
+
+        def helper
+          message = service.detail
+          message
+        end
+
+        def message
+          "unrelated, never called"
+        end
+
+        def detail
+          "also unrelated"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([])
+    end
+
+    it "例外露出の identity にファイル内で囲むクラス名を含める" do
+      # メソッド名だけを identity にすると、同じファイルの異なるクラスにある同名メソッドの
+      # 間で e.message の露出を入れ替えても identity の集合が変わらず、新しい露出を
+      # 見逃す（Codex レビュー指摘）。
+      before_swap = <<~RUBY
+        class Foo
+          def show
+            render json: { error: e.message }, status: :x
+          end
+        end
+
+        class Bar
+          def show
+            render json: { error: "static" }, status: :x
+          end
+        end
+      RUBY
+
+      after_swap = <<~RUBY
+        class Foo
+          def show
+            render json: { error: "static" }, status: :x
+          end
+        end
+
+        class Bar
+          def show
+            render json: { error: e.message }, status: :x
+          end
+        end
+      RUBY
+
+      identities_before = RubyTokenScanner.scan(before_swap).render_values.select { |v| v.kind == :exception_message }.map(&:value)
+      identities_after = RubyTokenScanner.scan(after_swap).render_values.select { |v| v.kind == :exception_message }.map(&:value)
+
+      expect(identities_before).to eq([ "Foo#show" ])
+      expect(identities_after).to eq([ "Bar#show" ])
+    end
+
+    it "補間に埋め込んだ例外メッセージの identity も囲むメソッドで区別する" do
+      # "失敗: \#{e.message}" のように補間の中にある e.message は、値が固定部分
+      # （"失敗: "）のままだと、露出元を別のメソッドへ移しても固定部分が同じなら
+      # ダイジェストが変わらず、入れ替えを見逃す（Codex レビュー指摘）。
+      before_swap = <<~'RUBY'
+        class Foo
+          def show
+            render json: { error: "失敗: #{e.message}" }, status: :x
+          end
+        end
+
+        class Bar
+          def show
+            render json: { error: "static" }, status: :x
+          end
+        end
+      RUBY
+
+      after_swap = <<~'RUBY'
+        class Foo
+          def show
+            render json: { error: "static" }, status: :x
+          end
+        end
+
+        class Bar
+          def show
+            render json: { error: "失敗: #{e.message}" }, status: :x
+          end
+        end
+      RUBY
+
+      identities_before = RubyTokenScanner.scan(before_swap).render_values.select { |v| v.kind == :exception_message }.map(&:value)
+      identities_after = RubyTokenScanner.scan(after_swap).render_values.select { |v| v.kind == :exception_message }.map(&:value)
+
+      expect(identities_before).to eq([ "Foo#show" ])
+      expect(identities_after).to eq([ "Bar#show" ])
+    end
+
+    it "クラス identity は名前空間まで含めた完全修飾名にする" do
+      # 最後の定数名だけだと、別の名前空間にある同名クラスを区別できず、
+      # その間での例外メッセージ露出の入れ替えを見逃す（Codex レビュー指摘）。
+      # class A::Controller という1宣言の形と、module ネストの両方を確かめる。
+      source = <<~RUBY
+        class A::Controller
+          def show
+            render json: { error: e.message }, status: :x
+          end
+        end
+
+        module B
+          class Controller
+            def show
+              render json: { error: e.message }, status: :x
+            end
+          end
+        end
+      RUBY
+
+      identities = RubyTokenScanner.scan(source).render_values.select { |v| v.kind == :exception_message }.map(&:value)
+
+      expect(identities).to contain_exactly("A::Controller#show", "B::Controller#show")
+    end
+
+    it "定数やローカル変数に束縛してから返す文言も検出する" do
+      # NOT_FOUND = "..." や message = "..." のように、いったんスカラーの文字列に
+      # 束縛してから render に渡すだけで台帳から消えると、変数名を変えるだけで
+      # 検査から外れることになる。
+      source = <<~RUBY
+        NOT_FOUND = "Board not found"
+
+        def show
+          render json: { error: NOT_FOUND }, status: :not_found
+        end
+
+        def create
+          message = "Comment could not be recorded"
+          render json: { error: message }, status: :internal_server_error
+        end
+      RUBY
+
+      expect(classify(source)).to contain_exactly(
+        [ :literal, "Board not found" ],
+        [ :literal, "Comment could not be recorded" ]
+      )
+    end
+
+    it "%w[] 形式の文言も検出する" do
+      # %w[...] は :on_tstring_beg を経由しないため、STRING_OPEN に含めないと
+      # 素通りする。
+      expect(classify('render json: { errors: %w[BoardNotFound] }, status: :not_found'))
+        .to eq([ [ :literal, "BoardNotFound" ] ])
+    end
+
+    it "ファイル内でクラスをまたいだ同名メソッドも取りこぼさない" do
+      # メソッド名だけをキーにして最後の定義で上書きすると、応答に載る側の定義が
+      # 別クラスの同名メソッドに隠れて検査から消える。
+      source = <<~RUBY
+        class Internal
+          def message
+            "internal detail, never rendered"
+          end
+        end
+
+        def show
+          render json: { error: message }, status: :not_found
+        end
+
+        def message
+          "Board not found"
+        end
+      RUBY
+
+      expect(classify(source)).to include([ :literal, "Board not found" ])
     end
 
     it "ヘルパーの中のログと raise は文言として数えない" do

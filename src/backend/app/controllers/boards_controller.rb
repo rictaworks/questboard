@@ -15,8 +15,13 @@ class BoardsController < ApplicationController
     end
   end
 
+  # share_token は routes.rb のパスセグメントで、欠けたリクエストはこのコントローラに
+  # 届かない。require で ActionController::ParameterMissing を起こすと、空白だけの
+  # セグメント（"%20" 等）まで「必要な項目が指定されていません」（422）に化けてしまい、
+  # 本来の「ボードが見つからない」（404）に届かなくなる（CommentsController#find_board! と
+  # 同じ理由）。見つからない場合の RecordNotFound に一本化する。
   def show
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params[:share_token])
     membership = board_membership_for(board)
     return unless authorize_board_view!(board:, membership:)
 
@@ -48,7 +53,7 @@ class BoardsController < ApplicationController
   end
 
   def join
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params[:share_token])
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
@@ -65,7 +70,7 @@ class BoardsController < ApplicationController
   end
 
   def update_member_role
-    board = Board.active.find_by!(share_token: params.require(:share_token))
+    board = Board.active.find_by!(share_token: params[:share_token])
     actor_member = board.member_for!(current_user)
 
     unless PermissionService.new.authorize(actor_member.role.code, :change_role, {})
@@ -94,7 +99,7 @@ class BoardsController < ApplicationController
   end
 
   def destroy
-    board = Board.active.find_by(share_token: params.require(:share_token))
+    board = Board.active.find_by(share_token: params[:share_token])
     return render json: { error: "Board not found" }, status: :not_found unless board
 
     membership = board_membership_for(board)
@@ -129,12 +134,22 @@ class BoardsController < ApplicationController
   #
   # permit を通さず生の params を見るのは、落とされた値と未指定を見分けるため。
   # title は個別に渡していて一括代入はしないため、permit による防御は要らない。
+  #
+  # キーそのものが無い場合（{"boardTitle": "..."} のようなキー名の取り違え等）は、
+  # 空欄で送った場合と応答は同じ「タイトルを入力してください」になるが、原因の調査には
+  # ならない。invalid_title_message がキーは字面の異なる場合をログに残すのに対し、
+  # ここは何もログを出していなかったので揃える。
   def normalized_board_title
+    unless params.key?(:title)
+      logger.warn("[BoardsController##{action_name}] title key missing from params")
+      return ""
+    end
+
     title = params[:title]
     return "" if title.nil?
     raise InvalidBoardTitleError, "expected String but got #{title.class}" unless title.is_a?(String)
 
-    title
+    title.strip
   end
 
   def invalid_title_message(error)

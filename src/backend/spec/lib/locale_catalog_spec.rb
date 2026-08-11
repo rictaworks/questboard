@@ -327,16 +327,24 @@ RSpec.describe "日本語ロケールカタログ" do
 
   it "errors.add で使うメッセージのシンボルがカタログにある" do
     # 属性名だけを検査していると、メッセージ側のシンボルが未定義でも緑になる。
-    # 未定義のシンボルは例外にならず、"Translation missing. Options considered were:" という
-    # 内部のキーパスを並べた数行の文字列が full_messages に入り、そのまま画面に出る。
+    # config.i18n.raise_on_missing_translations を development/test で有効にしたため、
+    # 未定義のシンボルは "Translation missing" という文字列ではなく
+    # I18n::MissingTranslationData 例外として現れる（有効化前は前者だった）。
+    # rescue せずに投げっぱなしにすると最初の1件で filter_map ごと中断し、
+    # 残りの欠落が一覧に出ないまま検査が緑を報告する。
     offenders = validated_models.flat_map do |model|
       errors_add_pairs(model).filter_map do |attribute, message|
         next if message.nil?
 
         record = model.new
         record.errors.add(attribute, message)
-        rendered = record.errors.full_messages.first
-        next unless rendered.include?("Translation missing")
+
+        begin
+          rendered = record.errors.full_messages.first
+          next unless rendered.include?("Translation missing")
+        rescue I18n::MissingTranslationData
+          # 上と同じ欠落を、例外として検出した場合。
+        end
 
         "  #{model.name}##{attribute} => :#{message}"
       end
@@ -348,6 +356,24 @@ RSpec.describe "日本語ロケールカタログ" do
 
       #{offenders.join("\n")}
     MESSAGE
+  end
+
+  it "未定義のシンボルを例外としても取りこぼさない" do
+    # raise_on_missing_translations 有効下では、未定義のシンボルは
+    # "Translation missing" という文字列ではなく I18n::MissingTranslationData として
+    # 現れる。上のテストが rescue を外すとこのケースを静かに見逃す（＝全体が例外で落ちて
+    # 他の欠落が一覧に出なくなる）ため、検出ロジックそのものをここで固定する。
+    record = Comment.new
+    record.errors.add(:body, :totally_missing_key_for_locale_catalog_spec)
+
+    detected = begin
+      rendered = record.errors.full_messages.first
+      rendered.include?("Translation missing")
+    rescue I18n::MissingTranslationData
+      true
+    end
+
+    expect(detected).to be(true)
   end
 
   it "errors.add の引数にコメントがあっても読み取れる" do

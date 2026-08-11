@@ -83,6 +83,28 @@ RSpec.describe "Boards", type: :request do
     expect(JSON.parse(response.body)).to eq("error" => "タイトルを入力してください")
   end
 
+  it "logs when the title key itself is missing, unlike a deliberately blank title" do
+    # 応答は同じ日本語メッセージになるため、キー名の取り違え（例: boardTitle）と
+    # 意図的な空欄をログ側で見分けられるようにしておく。
+    sign_in(owner)
+    allow(Rails.logger).to receive(:warn)
+
+    post "/boards", params: {}, as: :json
+
+    expect(Rails.logger).to have_received(:warn).with(/title key missing from params/)
+  end
+
+  it "trims leading and trailing whitespace from the board title" do
+    sign_in(owner)
+
+    post "/boards", params: { title: "  設計会議  " }, as: :json
+
+    expect(response).to have_http_status(:created)
+    payload = JSON.parse(response.body)
+    board = Board.find_by!(share_token: payload.fetch("board").fetch("shareToken"))
+    expect(board.title).to eq("設計会議")
+  end
+
   # JSON の値は文字列とは限らない。真偽値や数値をそのまま渡すと "t" や "0" という
   # 空でない文字列に寄せられ、presence バリデーションを通ってしまう。
   # 配列やハッシュは strong parameters が非スカラーとして落とすため、送っているのに
@@ -380,6 +402,38 @@ RSpec.describe "Boards", type: :request do
     delete_board(share_token)
 
     expect(response).to have_http_status(:not_found)
+  end
+
+  # share_token はパスセグメントなので空文字にはならないが、空白だけの値
+  # （"%20" 等）は届く。params.require はそれを ActionController::ParameterMissing として
+  # 扱うため、rescue_from 経由で 422「必要な項目が指定されていません」に化けていた。
+  # 存在しない共有リンクを開いた利用者が届くべき 404 に届かない回帰だった。
+  def request_with_blank_share_token(action_name)
+    case action_name
+    when "show" then get "/boards/%20", as: :json
+    when "join" then post "/boards/%20/join", params: { role_code: "editor" }, as: :json
+    when "destroy" then delete "/boards/%20", as: :json
+    end
+  end
+
+  %w[show join destroy].each do |action_name|
+    it "returns not found (not the parameter-missing message) for a blank share token on ##{action_name}" do
+      sign_in(owner)
+
+      request_with_blank_share_token(action_name)
+
+      expect(response).to have_http_status(:not_found)
+      expect(JSON.parse(response.body)).to eq("error" => "Board not found")
+    end
+  end
+
+  it "returns not found (not the parameter-missing message) for a blank share token on #update_member_role" do
+    sign_in(owner)
+
+    patch "/boards/%20/members/#{member.id}", params: { role_code: "editor" }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "Board not found")
   end
 
   it "allows an owner to demote themselves once another owner exists" do
