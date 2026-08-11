@@ -15,8 +15,6 @@ class UserSettingsController < ApplicationController
     user_setting.update!(intensity_master:)
 
     render json: serialize_user_setting(user_setting)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue InvalidIntensityError => e

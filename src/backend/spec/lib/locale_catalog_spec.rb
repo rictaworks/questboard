@@ -17,6 +17,14 @@ require_relative "../support/ruby_token_scanner"
 # stub_const で作ると定義位置が rspec-mocks 側になってしまうため、ここに置く。
 module LocaleCatalogSpecValidations; end
 
+# バリデータクラスからの errors.add も走査していることを確かめるためだけのバリデータ。
+# app/validators に置いた実物と同じく、モデルの ancestors には現れない。
+class LocaleCatalogSpecValidator < ActiveModel::EachValidator
+  def validate_each(record, attribute, _value)
+    record.errors.add(attribute, :locale_catalog_spec_example)
+  end
+end
+
 RSpec.describe "日本語ロケールカタログ" do
   # 解決できなかったことを確実に見分けるためのセンチネル。I18n.t は既定で
   # "Translation missing: …" という *文字列* を返すため、戻り値を見ただけでは
@@ -100,6 +108,17 @@ RSpec.describe "日本語ロケールカタログ" do
       next unless resolvable_constant_name?(ancestor.name)
 
       location = Object.const_source_location(ancestor.name)&.first
+      candidates << Pathname.new(location) if location
+    end
+
+    # バリデータはモジュールではなくクラスで、モデルの ancestors にも現れない。
+    # ここを見ないと、検証を app/validators に切り出した時点で errors.add が
+    # 検査から外れ、メッセージのシンボルが未定義でも緑のまま通る。
+    model.validators.each do |validator|
+      name = validator.class.name
+      next if name.nil? || !resolvable_constant_name?(name)
+
+      location = Object.const_source_location(name)&.first
       candidates << Pathname.new(location) if location
     end
 
@@ -241,18 +260,30 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(message).to eq("ユーザー設定が存在しているので削除できません")
   end
 
-  it "app/models にあるモデルをすべて検査している" do
+  it "app/models にある ActiveRecord のモデルをすべて検査している" do
     # 検査対象が減っていることに気付けないと、違反ゼロという結果が「無かった」ではなく
-    # 「見ていない」を意味してしまう。app/models の各ファイルが少なくとも1つのモデルを
-    # 提供していることを確かめる（1ファイルに複数のモデルを書く STI も許容する）。
+    # 「見ていない」を意味してしまう。
+    #
+    # ファイル一覧との完全一致は求めない。翻訳と関係のない素のクラス（値オブジェクトや
+    # フォームオブジェクトなど）を app/models に置いただけで、このロケールの spec が
+    # パスの差分を示して赤くなり、i18n の spec を編集して除外する羽目になる。
     covered = validated_models.filter_map { |model| model_definition_path(model)&.to_s }.uniq
 
-    expected = BackendSourceTree.ruby_paths("app/models")
+    uncovered = BackendSourceTree.ruby_paths("app/models")
       .reject { |path| path.to_s.include?("/concerns/") }
-      .map(&:to_s)
-      .reject { |path| path.end_with?("application_record.rb") }
+      .reject { |path| path.basename.to_s == "application_record.rb" }
+      .reject { |path| covered.include?(path.to_s) }
+      .select { |path| path.read.include?("ApplicationRecord") }
 
-    expect(covered).to match_array(expected)
+    # 走査が空振りしていれば、漏れゼロは「無かった」ではなく「見ていない」を意味する。
+    expect(covered).not_to be_empty
+
+    expect(uncovered).to be_empty, <<~MESSAGE
+      ActiveRecord のモデルを定義しているのに検査対象に入っていないファイルがある。
+      eager_load で読み込まれていないか、ApplicationRecord を継承していない可能性がある。
+
+      #{uncovered.map { |path| "  #{BackendSourceTree.relative(path)}" }.join("\n")}
+    MESSAGE
   end
 
   it "名前の無いモデルクラスがあっても検査できる" do
@@ -347,6 +378,16 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(model_source_paths(model).map(&:to_s)).to include(__FILE__)
   end
 
+  it "バリデータクラスの errors.add も走査対象に含む" do
+    # ancestors はモジュールしか辿らない。app/validators に切り出した検証は Class であり、
+    # モデルの定義ファイルにも無いため、そこで errors.add したメッセージのシンボルが
+    # カタログに無くても検査を通ってしまう。本番では 422 の本文に
+    # "Translation missing. Options considered were: …" と内部のキーパスが並ぶ。
+    model = Class.new(Board) { validates :title, locale_catalog_spec: true }
+
+    expect(model_source_paths(model).map(&:to_s)).to include(__FILE__)
+  end
+
   it "gem が提供するモジュールまで走査しない" do
     # 祖先には ActiveModel などのモジュールも並ぶ。これらまで読むと、走査の目的
     # （このリポジトリで書いた errors.add を集める）から外れ、無関係な失敗を招く。
@@ -425,6 +466,33 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(translation_keys(YAML.load_file(BackendSourceTree.root.join("config/locales/en.yml")))).to be_empty
     expect(translation_keys({ "en" => nil })).to be_empty
     expect(translation_keys({ "en" => { "hello" => "Hello world" } })).to eq([ "en.hello" ])
+  end
+
+  it "コードが参照している I18n のキーがカタログにある" do
+    # ja.yml 側から「書いたキーが引けるか」を見るだけでは、コードが引くキーの
+    # 打ち間違いや書き忘れは分からない。その向きの欠落は例外にならず
+    # "Translation missing: ja.…" という文字列として応答本文に載る。
+    #
+    # config.i18n.raise_on_missing_translations は開発とテストで有効にしたが、
+    # それが効くのは実際にその行を通る例がある場合だけ。まだ経路の無いキーは
+    # ここで直接検査する。
+    referenced = BackendSourceTree.ruby_paths("app").flat_map do |path|
+      RubyTokenScanner.scan(path.read).i18n_keys.map { |key| [ BackendSourceTree.relative(path).to_s, key ] }
+    end
+
+    # 走査が空振りしていれば、違反ゼロは「無かった」ではなく「見ていない」を意味する。
+    expect(referenced.map(&:last)).to include("api.errors.invalid_comment_body")
+
+    missing = referenced.select do |_file, key|
+      translation(key, count: 1, attribute: "属性", message: "メッセージ", record: "レコード", model: "モデル", errors: "エラー") == missing_sentinel
+    end
+
+    expect(missing).to be_empty, <<~MESSAGE
+      コードが I18n.t で参照しているキーがカタログに無い。
+      config/locales/ja.yml に追加すること。
+
+      #{missing.map { |file, key| "  #{file}: #{key}" }.join("\n")}
+    MESSAGE
   end
 
   it "アプリ固有の文言が日本語で解決できる" do

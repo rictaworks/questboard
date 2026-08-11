@@ -83,6 +83,37 @@ RSpec.describe "Boards", type: :request do
     expect(JSON.parse(response.body)).to eq("error" => "タイトルを入力してください")
   end
 
+  # JSON の値は文字列とは限らない。真偽値や数値をそのまま渡すと "t" や "0" という
+  # 空でない文字列に寄せられ、presence バリデーションを通ってしまう。
+  # 配列やハッシュは strong parameters が非スカラーとして落とすため、送っているのに
+  # 「入力してください」と返ることになる。どちらも「空」とは原因が違うので文言を分ける。
+  [ false, true, 0, [ "会議ボード" ], { "ja" => "会議ボード" } ].each do |non_string|
+    it "rejects a #{non_string.inspect} board title" do
+      sign_in(owner)
+
+      expect {
+        post "/boards", params: { title: non_string }, as: :json
+      }.not_to change(Board, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(JSON.parse(response.body)).to eq("error" => "タイトルの形式が正しくありません")
+    end
+  end
+
+  it "returns a Japanese message when a required parameter is missing" do
+    # ParameterMissing の文言は "param is missing or the value is empty or invalid: role_code"
+    # という英語で、内部のパラメータ名を含む。params.require はアプリ全体に散らばっているため、
+    # アクションごとに rescue を書くと直し漏れがそのまま英語の応答として残る。
+    sign_in(owner)
+    board_payload = create_board(title: "Role Board")
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    patch "/boards/#{share_token}/members/#{member.id}", params: {}, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "必要な項目が指定されていません")
+  end
+
   it "shows the persisted board canvas state to members" do
     seed_object_support
     board_payload = create_board(title: "Canvas Board")

@@ -23,9 +23,10 @@ require_relative "../support/ruby_token_scanner"
 RSpec.describe "コントローラのユーザー向け文言" do
   # 応答に直書きされている文字列の既知の状態。
   #
-  # 大半は #125 で ja.yml へ移すまで残る違反だが、health_controller の "ok" のように
-  # 利用者に見せる文言ではない機械可読な値も含まれる。この台帳の役目は「違反の一覧」
-  # ではなく「直書きが増えたら気付く」ことなので、区別せずすべて載せる。
+  # 大半は #125 で ja.yml へ移すまで残る違反だが、health_controller の "ok" や
+  # objects_controller の "ref_revision"（応答のキー）のように、利用者に見せる文言では
+  # ない機械可読な値も含まれる。この台帳の役目は「違反の一覧」ではなく
+  # 「応答に直書きが増えたら気付く」ことなので、区別せずすべて載せる。
   #
   # 文字列をそのまま並べると、i18n と関係のない言い回しの修正でこの spec が赤くなり、
   # #125 で1件消すたびにここも編集することになる。かといって件数だけで持つと、
@@ -39,19 +40,21 @@ RSpec.describe "コントローラのユーザー向け文言" do
       "app/controllers/concerns/request_origin_guard.rb" => "80681692ad70c711",
       "app/controllers/health_controller.rb" => "6437c52449b723e4",
       "app/controllers/kpi_events_controller.rb" => "5189e31d848d693d",
-      "app/controllers/objects_controller.rb" => "d19e2d8770634113",
+      "app/controllers/objects_controller.rb" => "c47fdc0bd495613e",
       "app/controllers/quests_controller.rb" => "a32cafc04d37ebd0"
     }
   end
 
   # 例外メッセージの露出は文言そのものがコントローラに無いため、件数で持つ。
+  #
+  # ActionController::ParameterMissing は ApplicationController の rescue_from で
+  # 受けるようになったため、ここに残っているのは各コントローラ固有の例外だけ。
   def known_exception_message_renders
     {
-      "app/controllers/auth/google_sessions_controller.rb" => 3,
-      "app/controllers/boards_controller.rb" => 2,
-      "app/controllers/kpi_events_controller.rb" => 2,
-      "app/controllers/objects_controller.rb" => 6,
-      "app/controllers/user_settings_controller.rb" => 2
+      "app/controllers/auth/google_sessions_controller.rb" => 2,
+      "app/controllers/kpi_events_controller.rb" => 1,
+      "app/controllers/objects_controller.rb" => 3,
+      "app/controllers/user_settings_controller.rb" => 1
     }
   end
 
@@ -229,6 +232,53 @@ RSpec.describe "コントローラのユーザー向け文言" do
         render json: { error: I18n.t("api.errors.example") }, status: :x
         render json: { error: message }, status: :x
         render json: { error: e.record.errors.full_messages.to_sentence }, status: :x
+      RUBY
+
+      expect(classify(source)).to be_empty
+    end
+
+    it "キーワード引数の順を入れ替えても検出する" do
+      # 深さ 0 で行が変わったところで走査を打ち切ると、status を先に書いて本体を
+      # 次の行に置くだけで検査から外れる。書き方を変えるだけで抜けられる検査は、
+      # 「違反ゼロ」が「無かった」ではなく「見ていない」を意味することになる。
+      source = <<~RUBY
+        render status: :unprocessable_content,
+               json: { error: "Board or object not found" }
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Board or object not found" ] ])
+    end
+
+    it "同じファイルのヘルパーが返す文言も検出する" do
+      # 文言をヘルパーメソッドに移すだけで台帳から消えると、「直書きは無い」という
+      # 報告が、直書きのあるコントローラに対して出てしまう。
+      source = <<~RUBY
+        def show
+          render json: { error: not_found_message }, status: :not_found
+        end
+
+        def not_found_message
+          "Board or object not found"
+        end
+      RUBY
+
+      expect(classify(source)).to eq([ [ :literal, "Board or object not found" ] ])
+    end
+
+    it "ヘルパーの中のログと raise は文言として数えない" do
+      # ヘルパーの本体まで走査するようになった分、利用者に出ない文字列を巻き込みやすい。
+      # ログと raise は応答に載らず、載せるかどうかは受け側の判断なのでそちらで数える。
+      source = <<~'RUBY'
+        def create
+          render json: { error: invalid_body_message(e) }, status: :unprocessable_content
+        end
+
+        def invalid_body_message(error)
+          logger.warn("[CommentsController] #{error.message}")
+          raise ArgumentError, "internal detail" if error.nil?
+
+          I18n.t("api.errors.invalid_comment_body")
+        end
       RUBY
 
       expect(classify(source)).to be_empty

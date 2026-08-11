@@ -1,4 +1,6 @@
 class BoardsController < ApplicationController
+  class InvalidBoardTitleError < StandardError; end
+
   before_action :require_current_user!
 
   class BoardDeletionRelayOp
@@ -39,6 +41,8 @@ class BoardsController < ApplicationController
       end
     end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
+  rescue InvalidBoardTitleError => e
+    render json: { error: invalid_title_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -54,8 +58,6 @@ class BoardsController < ApplicationController
 
     membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -85,8 +87,6 @@ class BoardsController < ApplicationController
       target_member.update!(role:)
       render json: serialize_board(board, target_member)
     end
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -116,20 +116,31 @@ class BoardsController < ApplicationController
     head :unauthorized unless current_user
   end
 
-  def create_params
-    params.permit(:title)
-  end
-
   # title が無い場合は空文字として扱い、Board の presence バリデーションに判定を任せる。
   # fetch で ActionController::ParameterMissing を投げると、その文言
   # "param is missing or the value is empty or invalid: title" がそのまま応答に出る。
   # 利用者から見れば空白を送った場合と同じ「タイトルが無い」事象なのに、キーが欠けたときだけ
   # 英語（しかも内部のパラメータ名入り）という割れ方をしていた。
+  #
+  # 一方、値の型が違う場合は「空」ではない。真偽値や数値は文字列に寄せられて "t" や "0"
+  # という空でない値として保存されてしまう。配列やハッシュは params.permit が非スカラーと
+  # して黙って落とすため、送っているのに「入力してください」と返ることになり、利用者は
+  # 原因にたどり着けない。空とは区別できる文言を返す（コメント本文と同じ扱い）。
+  #
+  # permit を通さず生の params を見るのは、落とされた値と未指定を見分けるため。
+  # title は個別に渡していて一括代入はしないため、permit による防御は要らない。
   def normalized_board_title
-    title = create_params[:title]
+    title = params[:title]
     return "" if title.nil?
+    raise InvalidBoardTitleError, "expected String but got #{title.class}" unless title.is_a?(String)
 
     title
+  end
+
+  def invalid_title_message(error)
+    logger.warn("[BoardsController##{action_name}] #{error.message}")
+
+    I18n.t("api.errors.invalid_board_title")
   end
 
   def invite_role_code

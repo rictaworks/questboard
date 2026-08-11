@@ -79,8 +79,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_object(object), status: :created
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object type not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -139,8 +137,6 @@ class ObjectsController < ApplicationController
     end
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
     render json: { error: "Board or object not found" }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
@@ -313,8 +309,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_op(confirmed_op, duplicate:)
-  rescue ActionController::ParameterMissing => e
-    render json: { error: e.message }, status: :unprocessable_content
   rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
     render json: { error: e.message }, status: :unprocessable_content
   rescue ArgumentError, TypeError

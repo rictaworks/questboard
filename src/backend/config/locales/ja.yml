@@ -14,6 +14,8 @@ ja:
   # コントローラ側への直書きは spec/lib/controller_message_literals_spec.rb で検査している。
   api:
     errors:
+      invalid_board_title: "タイトルの形式が正しくありません"
+      parameter_missing: "必要な項目が指定されていません"
       invalid_comment_body: "コメントの形式が正しくありません"
 
   # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
