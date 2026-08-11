@@ -30,25 +30,29 @@
 
 # 開発プロセス
 
-## AI役割分担
+## AI分担
 
 1次実装はGithub Copilot、セキュリティレビューはCodexが担当する。
 
+### AI 役割分担
+
 | フェーズ | 担当モデル |
 |---|---|
-| 設計 | Claude Opus |
-| Issue 発行 | Claude Sonnet |
+| 設計 | Claude Fable |
+| 初回Issue 発行 | Claude Opus |
 | 1次実装 | GitHub Copilot GPT5.4mini |
 | セキュリティレビュー | Codex GPT5.6sol |
 | 修正 | Antigravity 3.5 Flash |
-| コードレビュー | Claude Sonnet |
+| コードレビュー(reviewer) | Claude Sonnet |
 | テスト作成・実行 | Claude Sonnet |
+
+PRに投稿するときはフッターにモデル名を記載すること。
 
 ### リリースフロー
 
 1. 各 Issue を上記役割分担で実装・レビュー・マージする
-2. **全 Issue 完了後**に人力コードレビューを実施する
-3. **全 Issue 完了後**にユーザーテスト（実機確認）を実施する
+2. **全 Issue 完了後**にユーザーテスト（実機確認）を実施する
+3. **リリース後**に code-review スキル（Claude Sonnet）を実施する
 
 ## サブエージェント構成
 
