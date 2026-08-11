@@ -31,6 +31,17 @@ RSpec.describe "日本語ロケールカタログ" do
     node.flat_map { |key, value| leaf_keys(value, prefix + [ key ]) }
   end
 
+  # leaf_keys と違い、値の無いキー（YAML 上の nil）を葉として数えない。
+  # ja.yml では値の無いキーは「翻訳が書かれていない」ことを意味するので
+  # leaf_keys が拾って解決検査に載せる必要があるが、こちらは「文言が置かれているか」を
+  # 見るためのもので、値の無いキーは置かれていないものとして扱う。
+  def translation_keys(node, prefix = [])
+    return [] if node.nil?
+    return [ prefix.join(".") ] unless node.is_a?(Hash)
+
+    node.flat_map { |key, value| translation_keys(value, prefix + [ key ]) }
+  end
+
   # 対象は app/models で定義されたモデル。マイグレーションの中で定義される一時的な
   # モデルクラス（BackfillXxx::MigrationYyy など）は利用者に見せるものではない。
   #
@@ -310,6 +321,54 @@ RSpec.describe "日本語ロケールカタログ" do
       #{unresolved.join("
 ")}
     MESSAGE
+  end
+
+  it "利用可能なロケールが :ja だけになっている" do
+    # rails-i18n は 123 言語分のカタログを同梱しており、絞らなければ全部が
+    # 読み込まれる。それ自体の実害より、:ja 以外が「引ける」状態だと、
+    # 日本語のみ（CLAUDE.md）という前提の上に立っている以下の検査が
+    # すべて意味を失う点が問題になる。
+    expect(I18n.available_locales).to eq([ :ja ])
+    expect(I18n.default_locale).to eq(:ja)
+  end
+
+  it "翻訳キーを持つロケールファイルが ja.yml だけになっている" do
+    # available_locales が [:ja] のため、:ja 以外のファイルは読み込み対象には
+    # 残るが、中身はすべて捨てられる。例外にも警告にもならないので、そこに
+    # 文言を足した人は何の反応も得られないまま、その文言が出ないことに気付けない。
+    #
+    # 「書いても効かない置き場」を木に残さないために、キーを持つファイルを
+    # ja.yml に限る。翻訳を増やす場合は available_locales の変更（＝多言語対応を
+    # 行わないという方針の変更）とセットになるはずで、そのときここが赤くなる。
+    locale_paths = BackendSourceTree.root.join("config/locales").glob("*.{yml,yaml}").sort
+
+    offenders = locale_paths.filter_map do |path|
+      next if path.basename.to_s == "ja.yml"
+
+      keys = translation_keys(YAML.load_file(path))
+      next if keys.empty?
+
+      "  #{BackendSourceTree.relative(path)} => #{keys.sort.join(', ')}"
+    end
+
+    # 走査が空振りしていれば違反ゼロは「無かった」ではなく「見ていない」を意味する。
+    expect(locale_paths.map { |path| path.basename.to_s }).to include("ja.yml")
+
+    expect(offenders).to be_empty, <<~MESSAGE
+      available_locales に含まれないロケールのファイルに翻訳キーが書いてある。
+      これらは読み込まれても捨てられるため、書いても利用者には出ない。
+      文言は config/locales/ja.yml に置くこと。
+
+      #{offenders.join("\n")}
+    MESSAGE
+  end
+
+  it "値の無いキーは文言が置かれているとみなさない" do
+    # en.yml が "en:" だけを残せているのはこの緩さのおかげだが、緩めた分だけ
+    # 検査の穴になる。値が入った途端に葉として数えることを実物で固定する。
+    expect(translation_keys(YAML.load_file(BackendSourceTree.root.join("config/locales/en.yml")))).to be_empty
+    expect(translation_keys({ "en" => nil })).to be_empty
+    expect(translation_keys({ "en" => { "hello" => "Hello world" } })).to eq([ "en.hello" ])
   end
 
   it "アプリ固有の文言が日本語で解決できる" do
