@@ -120,4 +120,4 @@ ja:
       intensity_labels:
         full: "フル"
         subtle: "控えめ"
-        off: "オフ"
+        "off": "オフ"
