@@ -10,7 +10,7 @@ Rails API scaffold for questboard.
 4. Set `DATABASE_URL` for production Postgres
 5. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
 6. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
-7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, `X_FOLLOWER_CACHE_SYNC_INTERVAL_MINUTES`, `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`, and optional `X_FOLLOWER_CACHE_FULL_SYNC_INTERVAL_HOURS`
+7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, and `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`
 
 ## Admin access
 
@@ -55,7 +55,7 @@ API surface grows. Current endpoints:
 - The sync-server exports Prometheus metrics at `/metrics` for WebSocket connection count and sync-operation latency.
 - Follower cache maintenance runs as `bundle exec rails auth:sync_follower_cache` from a Railway scheduled job.
 - To guarantee absolute correctness under X API pagination order and prevent false-positives during user re-follow events, the sync scans all pages until `next_token` is exhausted, adding new followers and removing unfollowed users.
-- The API client automatically handles HTTP 429 Rate Limit responses by parsing `x-rate-limit-reset` or `Retry-After` headers and sleeping before retrying (up to 3 retries). Set `X_FOLLOWER_CACHE_SYNC_INTERVAL_MINUTES` and `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE` appropriately to align with your overall sync schedule and target execution time. Keep `X_FOLLOWER_CACHE_SYNC_INTERVAL_MINUTES` aligned with the Railway schedule.
+- The API client automatically handles HTTP 429 Rate Limit responses by parsing `x-rate-limit-reset` or `Retry-After` headers and sleeping before retrying (up to 3 retries). Configure the external scheduler execution interval and set `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE` appropriately to align with your overall sync schedule and target execution time.
 
 ## Lint & security
 
