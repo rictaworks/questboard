@@ -6,6 +6,8 @@
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
+  ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"] = ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"].to_s.strip.presence || "123456789"
+
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false
 

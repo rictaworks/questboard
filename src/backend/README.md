@@ -10,7 +10,7 @@ Rails API scaffold for questboard.
 4. Set `DATABASE_URL` for production Postgres
 5. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
 6. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
-7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, and `RECAPTCHA_SECRET_KEY`
+7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, and `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`
 
 ## Admin access
 
