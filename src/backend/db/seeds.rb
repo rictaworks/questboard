@@ -23,6 +23,15 @@ seed_table(
 )
 
 seed_table(
+  "plans",
+  [
+    { code: "member" },
+    { code: "none" }
+  ],
+  unique_by: :index_plans_on_code
+)
+
+seed_table(
   "object_types",
   [
     { code: "sticky" },

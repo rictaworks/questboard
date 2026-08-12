@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_12_033000) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.bigint "user_id", null: false
@@ -48,6 +48,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
     t.index ["code"], name: "index_effect_masters_on_code", unique: true
   end
 
+  create_table "follower_cache", primary_key: "x_user_id", force: :cascade do |t|
+    t.datetime "fetched_at", null: false
+  end
+
   create_table "event_defs", force: :cascade do |t|
     t.string "code", null: false
     t.integer "effect_id", null: false
@@ -66,6 +70,11 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
   create_table "intensity_masters", force: :cascade do |t|
     t.string "code", null: false
     t.index ["code"], name: "index_intensity_masters_on_code", unique: true
+  end
+
+  create_table "plans", force: :cascade do |t|
+    t.string "code", null: false
+    t.index ["code"], name: "index_plans_on_code", unique: true
   end
 
   create_table "kpi_events", force: :cascade do |t|
@@ -158,10 +167,12 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
   end
 
   create_table "users", force: :cascade do |t|
-    t.string "google_sub", null: false
     t.string "display_name", null: false
+    t.string "x_user_id", null: false
+    t.bigint "plan_id"
     t.datetime "created_at", null: false
-    t.index ["google_sub"], name: "index_users_on_google_sub", unique: true
+    t.index ["plan_id"], name: "index_users_on_plan_id"
+    t.index ["x_user_id"], name: "index_users_on_x_user_id", unique: true
   end
 
   add_foreign_key "board_members", "boards"
@@ -182,6 +193,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_08_03_150000) do
   add_foreign_key "objects", "color_palettes", column: "color_id"
   add_foreign_key "objects", "object_types"
   add_foreign_key "objects", "objects", column: "parent_frame_id"
+  add_foreign_key "users", "plans"
   add_foreign_key "user_quests", "quests"
   add_foreign_key "user_quests", "users"
   add_foreign_key "user_settings", "intensity_masters", column: "intensity_id"
