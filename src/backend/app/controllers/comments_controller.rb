@@ -10,8 +10,6 @@ class CommentsController < ApplicationController
     return if performed?
 
     render json: { comments: comments.map { |comment| serialize_comment(comment) } }
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   end
 
   def create
@@ -29,15 +27,6 @@ class CommentsController < ApplicationController
     end
 
     render json: serialize_comment(comment), status: :created
-  rescue InvalidCommentBodyError => e
-    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
-  rescue KpiEventConfigurationError => e
-    logger.error("[CommentsController#create] #{e.message}")
-    render json: { error: I18n.t("api.errors.comment_could_not_be_recorded") }, status: :internal_server_error
   end
 
   def update
@@ -46,12 +35,6 @@ class CommentsController < ApplicationController
 
     comment.update!(body: normalized_comment_body)
     render json: serialize_comment(comment)
-  rescue InvalidCommentBodyError => e
-    render json: { error: invalid_body_message(e) }, status: :unprocessable_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy
@@ -60,8 +43,6 @@ class CommentsController < ApplicationController
 
     comment.destroy!
     head :no_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   end
 
   private
@@ -75,15 +56,15 @@ class CommentsController < ApplicationController
   # 起こしても到達不能な rescue が増えるだけなので、見つからない場合の RecordNotFound に
   # 一本化する。
   def find_board!
-    Board.active.find_by!(share_token: params[:share_token])
+    Board.active.find_by(share_token: params[:share_token]) || raise(ApplicationController::BoardOrObjectNotFoundError)
   end
 
   def find_board_object!(board)
-    board.board_objects.active.find(params[:object_id])
+    board.board_objects.active.find_by(id: params[:object_id]) || raise(ApplicationController::BoardOrObjectNotFoundError)
   end
 
   def find_board_comment!(object)
-    object.comments.find(params[:id])
+    object.comments.find_by(id: params[:id]) || raise(ApplicationController::BoardOrObjectNotFoundError)
   end
 
   def find_authorized_comments!(board:, action:)
@@ -149,12 +130,6 @@ class CommentsController < ApplicationController
     raise InvalidCommentBodyError, "expected String but got #{body.class}" unless body.is_a?(String)
 
     body.strip
-  end
-
-  def invalid_body_message(error)
-    log_invalid_input(error)
-
-    I18n.t("api.errors.invalid_comment_body")
   end
 
   def record_comment_kpi_event!(board:, comment:)

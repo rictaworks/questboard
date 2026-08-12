@@ -52,9 +52,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
   # 受けるようになったため、ここに残っているのは各コントローラ固有の例外だけ。
   def known_exception_message_renders
     {
-      "app/controllers/kpi_events_controller.rb" => "8b28a6bf999c0dc6",
-      "app/controllers/objects_controller.rb" => "3e71c986e023bd70",
-      "app/controllers/user_settings_controller.rb" => "c96299a5d84cdf87"
+      "app/controllers/application_controller.rb" => "505cdf552d16d4d5"
     }
   end
 

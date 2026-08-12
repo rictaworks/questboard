@@ -47,11 +47,6 @@ class KpiEventsController < ApplicationController
     end
 
     render json: { accepted: persisted.length }, status: :created
-  rescue KpiEventValidationError => e
-    logger.warn("[KpiEventsController#create] #{e.message}")
-    render json: { error: e.message }, status: :unprocessable_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   private
@@ -89,8 +84,8 @@ class KpiEventsController < ApplicationController
   end
 
   def persist_event!(event)
-    board = Board.find(event.fetch(:board_id))
-    board.member_for!(current_user)
+    board = Board.find_by(id: event.fetch(:board_id)) || raise(ApplicationController::BoardNotFoundError)
+    board.board_members.includes(:role).find_by(user: current_user) || raise(ApplicationController::BoardNotFoundError)
 
     event_def = EventDef.find_by(code: event.fetch(:event_id))
     raise KpiEventValidationError, "Unsupported KPI event: #{event.fetch(:event_id)}" unless event_def
