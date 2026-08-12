@@ -66,4 +66,3 @@ class AddXUserIdPlansAndFollowerCache < ActiveRecord::Migration[8.0]
     remove_column :users, :x_user_id, :string
   end
 end
-
