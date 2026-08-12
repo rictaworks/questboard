@@ -10,7 +10,7 @@ Rails API scaffold for questboard.
 4. Set `DATABASE_URL` for production Postgres
 5. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
 6. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
-7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, and `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`
+7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, `X_FOLLOWER_CACHE_SYNC_INTERVAL_MINUTES`, and `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`
 
 ## Admin access
 
@@ -53,6 +53,8 @@ API surface grows. Current endpoints:
 - Poll `/healthz` from an external uptime monitor.
 - Alert on 3 consecutive failures or any 5-minute outage.
 - The sync-server exports Prometheus metrics at `/metrics` for WebSocket connection count and sync-operation latency.
+- Follower cache maintenance runs as `bundle exec rails auth:sync_follower_cache` from a Railway scheduled job.
+- Keep `X_FOLLOWER_CACHE_SYNC_INTERVAL_MINUTES` aligned with the Railway schedule and tune `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE` to stay under X API limits.
 
 ## Lint & security
 
