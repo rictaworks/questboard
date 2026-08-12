@@ -88,7 +88,7 @@
 （ユーザーロール、アクション、対象状態）→ 可否。マトリクス：ownerは全アクション、editorは編集系全て（ボード削除・ロール変更を除く）、commenterはコメント作成/自コメント編集削除と閲覧、viewerは閲覧のみ。ロック中フレーム配下のオブジェクト編集は**ロック実行者またはowner**のみ可。ロック設定はeditor以上、解除はロック実行者またはowner。
 
 #### F8 計測イベント記録関数
-イベント（eventId, boardId, userId=Google sub, timestamp, 属性）を検証し、PII（氏名・メール・住所・電話・生年月日）を含む属性を拒否した上でバッファへ積む。10秒経過または20件到達でバッチ送信。オフライン時はローカルバッファ（上限500件、超過は古い順に破棄）。KPI：D1/D7継続率、ボードあたり同時編集人数、ラジアルメニュー到達率、クエスト完了率、演出強度の設定分布。
+イベント（eventId, boardId, userId=X user ID, timestamp, 属性）を検証し、PII（氏名・メール・住所・電話・生年月日）を含む属性を拒否した上でバッファへ積む。10秒経過または20件到達でバッチ送信。オフライン時はローカルバッファ（上限500件、超過は古い順に破棄）。KPI：D1/D7継続率、ボードあたり同時編集人数、ラジアルメニュー到達率、クエスト完了率、演出強度の設定分布。
 
 ### 1.6 テスト結果サマリ
 
@@ -151,8 +151,8 @@ erDiagram
 
     USERS {
         bigint id PK
-        string x_user_id UK "Google sub値"
-        string display_name "Googleアカウント表示名"
+        string x_user_id UK "X user ID値"
+        string display_name "Xアカウント表示名"
         datetime created_at
     }
     ROLES {
@@ -278,7 +278,7 @@ flowchart LR
         P8(("P8 計測集約 F8"))
         ADM(("管理ダッシュボード<br/>BASIC認証"))
     end
-    G[Googleログイン] -->|"sub/表示名"| P7
+    G[Xログイン] -->|"sub/表示名"| P7
     RC[reCAPTCHA] -->|検証| P7
     P6 <-->|"opブロードキャスト"| OTHERS[他の参加者]
     P6 -->|確定op| D1[(D1 objects/object_ops)]
@@ -341,13 +341,13 @@ sequenceDiagram
     WS-->>B: 確定(赤)へ収束通知
 ```
 
-### 4.3 Googleログイン
+### 4.3 Xログイン
 
 ```mermaid
 sequenceDiagram
     actor U as 利用者
     participant FE as Next
-    participant G as Google OAuth
+    participant G as X OAuth
     participant API as Rails
     participant DB as PostgreSQL
 
@@ -512,7 +512,7 @@ flowchart LR
         VW["👤 閲覧者"]
     end
     subgraph SYSTEM["questboard（製品版フルエディション）"]
-        UC1(["Googleログインする"])
+        UC1(["Xログインする"])
         UC2(["ボードを作成・共有する"])
         UC3(["メンバーのロールを変更する"])
         UC4(["オブジェクトを直接操作で編集する"])
@@ -528,7 +528,7 @@ flowchart LR
     end
     subgraph actors_right [" "]
         DEV["👤 開発者"]
-        GOOG["🌐 Google OAuth"]
+        GOOG["🌐 X OAuth"]
         RCApt["🌐 reCAPTCHA"]
         MONI["🌐 監視サービス"]
     end

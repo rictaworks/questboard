@@ -2,7 +2,7 @@
 
 - 対象環境: 本番 `https://questboard.rictaworks.jp`（Vercel + Railway）
 - 対象ボード: `cutover-check-20260803`（共有トークン `G7Z3a2zcydHiydL2VesKFDRu`）
-- 実施方法: 同一 Google アカウントでブラウザタブ2枚（タブA／タブB）を開き、`e2e/prNNN.md` の手順どおりに操作
+- 実施方法: 同一 X アカウントでブラウザタブ2枚（タブA／タブB）を開き、`e2e/prNNN.md` の手順どおりに操作
 - 権限・ロール系の手順は、2ユーザー目として `chart.design.lab@gmail.com`（Chart Design / userId 4）へログインし直して追試（後述）
 - ロジック層のみのPRは、`main` の CI 実行結果（run `30812525170`・全7ジョブ success）を証跡とする
 
@@ -10,7 +10,7 @@
 
 | PR | 概要 | 結果 |
 |---|---|---|
-| [#36](./pr036.md) | Googleログイン + reCAPTCHA | ✅ 本番で確認（ローカル起動手順は該当なし） |
+| [#36](./pr036.md) | Xログイン + reCAPTCHA | ✅ 本番で確認（ローカル起動手順は該当なし） |
 | [#37](./pr037.md) | CIワークフロー | ✅ 全チェック green |
 | [#39](./pr039.md) | PermissionService | ✅ CI（RSpec）で確認 |
 | [#41](./pr041.md) | ボード作成・共有URL招待 | ⚠️ 手順1 ✅／手順2は機能面 ✅ だが成功メッセージ・ロール名が非表示 → Issue #89／手順3はCIで確認 |
@@ -137,16 +137,16 @@ PR #42 のオブジェクト CRUD は、上記 PR #51 の本番UI操作（作成
 `main` の最新実行（run `30812525170`）で全7ジョブが success:
 RuboCop / Brakeman / Frontend build & test (node --test) / go test / RSpec / ESLint / golangci-lint。
 
-### PR #36 — Googleログイン + reCAPTCHA
+### PR #36 — Xログイン + reCAPTCHA
 
 本番トップページで「ログイン済みです / Hideki Takizawa としてログインしています」を確認。
-本番のログインは `src/lib/google-auth.ts` の reCAPTCHA v3 トークン取得を経由し、Rails 側 `Auth::RecaptchaVerifier` で検証される経路のみのため、ログイン成功をもって手順の合格とみなす。
+本番のログインは `src/lib/x-auth.ts` の reCAPTCHA v3 トークン取得を経由し、Rails 側 `Auth::RecaptchaVerifier` で検証される経路のみのため、ログイン成功をもって手順の合格とみなす。
 手順書のローカル `.env` 設定・`rails server` / `npm run dev` 起動は本番確認では該当なし。
 
 ## 2ユーザー目（Chart Design）による権限・ロール検証
 
 同一 Chrome プロファイルは Cookie ジャーが1つで、2タブに別ユーザーのセッションを同時保持できない
-（questboard の認証は `src/lib/google-auth.ts` の OAuth リダイレクト（PKCE）で、セッションはオリジン単位で
+（questboard の認証は `src/lib/x-auth.ts` の OAuth リダイレクト（PKCE）で、セッションはオリジン単位で
 全タブ共有される）。そのため `takizawa@rictaworks.jp` でオーナー側を仕込んだうえで
 `chart.design.lab@gmail.com`（Chart Design / userId 4）へログインし直し、逐次実行した。
 

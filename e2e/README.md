@@ -13,7 +13,7 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#27](https://github.com/rictaworks/questboard/pull/27) | Rails APIの雛形を追加（環境別DB切り替え・ヘルスチェック・管理画面BASIC認証・CORS） | [pr027.md](./pr027.md) |
 | [#28](https://github.com/rictaworks/questboard/pull/28) | Gin製sync-serverの雛形を追加（ヘルスチェック・WebSocketボードルーティング） | [pr028.md](./pr028.md) |
 | [#29](https://github.com/rictaworks/questboard/pull/29) | Questboardのデータベーススキーマと冪等マスタシードを追加 | [pr029.md](./pr029.md) |
-| [#36](https://github.com/rictaworks/questboard/pull/36) | Googleログイン認証とreCAPTCHA付きセッション確立を追加 | [pr036.md](./pr036.md) |
+| [#36](https://github.com/rictaworks/questboard/pull/36) | Xログイン認証とreCAPTCHA付きセッション確立を追加 | [pr036.md](./pr036.md) |
 | [#37](https://github.com/rictaworks/questboard/pull/37) | CI必須要件対応: GitHub Actionsワークフロー追加 | [pr037.md](./pr037.md) |
 | [#39](https://github.com/rictaworks/questboard/pull/39) | F7 権限判定関数（PermissionService）を追加 | [pr039.md](./pr039.md) |
 | [#41](https://github.com/rictaworks/questboard/pull/41) | ボード作成・共有URL招待・オーナー限定ロール変更を追加 | [pr041.md](./pr041.md) |
