@@ -37,3 +37,4 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#69](https://github.com/rictaworks/questboard/pull/69) | SentryによるエラートラッキングをRails/Next.jsに導入 | [pr069.md](./pr069.md) |
 | [#73](https://github.com/rictaworks/questboard/pull/73) | AnalyticsTrackerがグローバル関数を不正なレシーバで呼ぶ問題を修正 (#72) | [pr073.md](./pr073.md) |
 | [#74](https://github.com/rictaworks/questboard/pull/74) | board-create-panel の未使用コード（AnalyticsTracker 参照ほか）を削除 | [pr074.md](./pr074.md) |
+| [#139](https://github.com/rictaworks/questboard/pull/139) | usersテーブルをXユーザーID化し、plans/follower_cacheマスタを新設 | [pr139.md](./pr139.md) |
