@@ -116,18 +116,15 @@ class ApplicationController < ActionController::API
     logger.warn("[#{self.class.name}##{action_name}] #{error.message}")
 
     case error.model
-    when "Board"
+    when "Board", "BoardMember"
       message_key = if self.class.name == "ObjectsController"
                       action_name == "create" ? "api.errors.board_or_object_type_not_found" : "api.errors.board_or_object_not_found"
-                    elsif self.class.name == "CommentsController"
+      elsif self.class.name == "CommentsController"
                       "api.errors.board_or_object_not_found"
-                    else
+      else
                       "api.errors.board_not_found"
-                    end
+      end
       render json: { error: I18n.t(message_key) }, status: :not_found
-
-    when "BoardMember"
-      render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
 
     when "BoardObject", "Comment", "ColorPalette"
       message_key = (self.class.name == "ObjectsController" && action_name == "create") ? "api.errors.board_or_object_type_not_found" : "api.errors.board_or_object_not_found"

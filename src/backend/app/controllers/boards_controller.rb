@@ -67,7 +67,7 @@ class BoardsController < ApplicationController
     # 指定されていません」に化けてしまい、本来の 404「Board not found」に届かなくなる
     # （find_board! の share_token と同じ理由）。
     user_id = params[:user_id]
-    role = Role.find_by!(code: role_code_param)
+    role = Role.find_by(code: role_code_param) || raise(ApplicationController::BoardNotFoundError)
 
     board.with_lock do
       target_member = board.board_members.includes(:role).find_by!(user_id:)
