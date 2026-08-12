@@ -20,7 +20,7 @@ module Auth
       @client_id = client_id.to_s.strip
       @redirect_uri = redirect_uri.to_s.strip
 
-      raise ConfigurationError, "X OAuth configuration is incomplete" if [@client_id, @redirect_uri].any?(&:empty?)
+      raise ConfigurationError, "X OAuth configuration is incomplete" if [ @client_id, @redirect_uri ].any?(&:empty?)
     end
 
     def exchange_code!(code:, code_verifier:)

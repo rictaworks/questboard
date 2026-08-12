@@ -1,4 +1,4 @@
-const AUTH_ENDPOINT = "https://api.x.com/2/oauth2/authorize";
+const AUTH_ENDPOINT = "https://x.com/i/oauth2/authorize";
 
 export const xAuthStorageKeys = {
   codeVerifier: "questboard.x.codeVerifier",
@@ -63,7 +63,7 @@ export function buildXAuthorizationUrl({
     code_challenge_method: "S256",
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "users.read",
+    scope: "tweet.read users.read",
     state
   });
 
