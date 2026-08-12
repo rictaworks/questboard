@@ -54,15 +54,12 @@ PRに投稿するときはフッターにモデル名を記載すること。
 2. **全 Issue 完了後**にユーザーテスト（実機確認）を実施する
 3. **リリース後**に code-review スキル（Claude Sonnet）を実施する
 
-## サブエージェント構成
+## サブエージェント
 
-規模に応じて、以下のエージェントを作成すること：
-`director`, `project-manager`, `designer`, `debugger`, `tester`, `data-scientist`, `deployer`, `writer`, `service-manager`
+実在するのは `.claude/agents/` の2つのみ。必要に応じて追加する。
 
-### サブエージェント個別指示
-
-- **pr-checker**：レビューは行わない。全PRを日本語で記載し、非エンジニア向けのユーザーテスト手順をPR本文に丁寧に書くこと。
-- **tester**：全PR対象に、PRに書かれたユーザーテスト手順の実行スクリプトを作成する（RSPEC, Jest等）。`TM.md` に記載されたテストも作成する。テストは `test/pr***/` 配下に作成し、テスト対象は開発サーバーとする。
+- **pr-checker**：レビューは行わない。PRのタイトル・本文の日本語化と、非エンジニア向けユーザーテスト手順の追記のみを行う
+- **reviewer**：issueの受け入れ要件と各規約ドキュメントへの適合を検証する。バグ・重複の指摘は `/code-review` の担当で、混同しない
 
 ## ブランチ運用
 
@@ -78,15 +75,16 @@ PRに投稿するときはフッターにモデル名を記載すること。
 - `DEBUG/`：バグ報告
 - `CLIENT/`：クライアント要望等
 - `WORK/`：作業報告
-- `ENV/DEVELOPMENT.md`：開発環境
-- `ENV/PRODUCTION.md`：本番環境
+- `ENV/`：環境情報（`DEVELOPMENT.md` / `PRODUCTION.md` は未作成）
 - `SPEC/`：仕様書、リバースエンジニアリング図（ER図・DFD・シーケンス図・クラス図・状態遷移図・ユースケース図）。図解はMermaidを使用する
 - `DELETE/`：ゴミ箱として運用する（Claudeはこのディレクトリへの削除系操作も含め、削除コマンドを直接実行しない。本ファイル冒頭の「削除系コマンドの禁止」参照）
 - 事前にデザイン指定がある場合は `app-ui/` に配置されたモックに従うこと
+- `TASKS/` `DEBUG/` `CLIENT/` `WORK/` `ENV/` `DELETE/` `app-ui/` `.claude/` `AGENTS.md` `TM.md` `QA.md` は `.gitignore` 除外で、cloneしたツリーには無い（追跡されるドキュメントは `SPEC/` `README.md` `CLAUDE.md` 等）
 
 ## PR規約
 
 - PRには非エンジニア向けのユーザーテスト手順を丁寧に書くこと
+- PRごとの非エンジニア向けユーザーテスト手順は `e2e/pr***.md` に置く（`e2e/README.md` が索引）
 
 ## 開発コマンド
 
@@ -94,11 +92,13 @@ PRに投稿するときはフッターにモデル名を記載すること。
 
 - フロントエンド lint: `npm run lint`
 - フロントエンド build/test: `npm run build && node --test test/*.test.mjs`
-- Backend RSpec: `cd src/backend && bundle exec rspec`（Ruby 3.4.10必須。無い場合はローカル実行できずCI待ちになる）
+- `npm test` は `test:go` → `build` → `node --test` の順に走る（lintは含まない）
+- Backend RSpec: `cd src/backend && bundle exec rspec`（Ruby 3.4.10必須。**先に `docker compose up -d postgres` が要る**。DBが起動していないとローカル実行できずCI待ちになる）
+- DBは開発・テスト・本番すべてPostgreSQL。Gemfileと `src/backend/Dockerfile` に残る `sqlite3` はSQLite時代の残骸
 - Backend RuboCop: `cd src/backend && bundle exec rubocop`
 - Backend Brakeman: `cd src/backend && bundle exec brakeman --no-pager`
 - Go test: `go test ./tools/... ./src/sync-server/...`（`go.work` がrootモジュールと`src/sync-server`を束ねる別モジュール構成）
-- Go lint: `golangci-lint run ./...`（設定は `.golangci.yml`）
+- Go lint: `golangci-lint run ./...`（設定は `.golangci.yml`。CIは golangci-lint v2.11.3 固定）
 
 ## コーディング規約
 
@@ -106,7 +106,7 @@ PRに投稿するときはフッターにモデル名を記載すること。
 - フロントエンドの確認は curl, `wget --mirror`, Playwright で行うこと
 - デフォルトアイコンは FontAwesome を使用する。絵文字は禁止
 - 環境変数は `.env` を参照すること
-- コミット前に `QC10`, `TM`, `QA`（OWASP Top 10）の各ファイルを参照してセキュリティレビューを行うこと
+- コミット前にセキュリティレビューを行う。参照先は `.claude/QC10.md`・`.claude/OWASP10.md`・`.claude/CC.md`・`TM.md`・`QA.md`・`CRAP.md`・`development-principles.md`
 - 時刻はJST、エンコードはUTF-8を使用する
 - フォールバック処理は禁止。例外処理をしっかり書くこと
 - デバッグトレースできるようにコードを書くこと
@@ -119,7 +119,7 @@ PRに投稿するときはフッターにモデル名を記載すること。
 
 - CI/CDは必須
 - CDはClaude Desktopで設定する
-- Webの場合、デプロイから先の作業はClaude Desktopで行う。デスクトップ/スマホの場合はビルドから先、ESP32の場合は焼き込みから先をClaude Desktopで行う
+- デプロイから先の作業はClaude Desktopで行う
 - Webのデプロイはヘッドレスで実行する。バックエンドのドメインは隠蔽する
 
 ---
@@ -127,11 +127,13 @@ PRに投稿するときはフッターにモデル名を記載すること。
 # 自社開発プロジェクトの方針（questboard含む）
 
 - 画像はAI生成すること。プロのライティングはライターエージェントに行わせること
-- 規模に応じて、マイクロサービスアーキテクチャ、MVCアーキテクチャ、API Gateway、メッセージングを意識すること
 - メンテナンスコストとセキュリティの観点から、安全なライブラリ・フレームワーク・OSS・SaaSを適用し、車輪の再発明を避けてオリジナルコードを少なく保つこと
 - 技術スタックはNext + Rails + PostgreSQLを基本とする。必要に応じて、AI・解析・画像加工はFastAPI、高速並列処理・リアルタイム通信はGinでAPIを作ってよい
-- デプロイ先は原則、フロントは無料Vercel、バックエンドと管理画面は無料Railway（またはRender）とする
-- 認証はGoogleログインとする。一般消費者が実際に使える手段でログインできること（開発者向けの近道を本番UIに露出しない）
+- デプロイ先は原則、フロントは無料Vercel、バックエンドと管理画面は無料Railwayとする
+  - デプロイ設定は未作成（`vercel.json` / `railway.toml` / `render.yaml` いずれも無し。`.github/workflows/` は `ci.yml` のみでCDは無い）
+- 認証は、MVPはGoogleログイン、製品版はXログイン（`@rictaworks` フォロワーのみログイン可）とする
+  - 現在の実装はGoogleログインのみ。Xログイン・フォロワー判定は未実装（要望は `CLIENT/` の製品版仕様書）
+  - 一般消費者が実際に使える手段でログインできること（開発者向けの近道を本番UIに露出しない）
 - ドメインは原則 `rictaworks.jp` のサブドメインとする
 - 表示言語は日本語のみとする。多言語対応は行わない
   - 海外クライアントが存在せず、多言語対応が生む利益が無いため（2026-08-08 決定）
