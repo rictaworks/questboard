@@ -335,7 +335,7 @@ RSpec.describe "Boards", type: :request do
     patch "/boards/#{share_token}/members/#{owner.id}", params: { role_code: "viewer" }, as: :json
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "Cannot remove the last owner")
+    expect(JSON.parse(response.body)).to eq("error" => "最後のオーナーは削除できません")
     expect(BoardMember.find_by!(board: Board.find_by!(share_token:), user: owner).role.code).to eq("owner")
   end
 
@@ -423,7 +423,7 @@ RSpec.describe "Boards", type: :request do
       request_with_blank_share_token(action_name)
 
       expect(response).to have_http_status(:not_found)
-      expect(JSON.parse(response.body)).to eq("error" => "Board not found")
+      expect(JSON.parse(response.body)).to eq("error" => "ボードが見つかりません")
     end
   end
 
@@ -433,7 +433,7 @@ RSpec.describe "Boards", type: :request do
     patch "/boards/%20/members/#{member.id}", params: { role_code: "editor" }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードが見つかりません")
   end
 
   # user_id も share_token と同じくパスセグメント（routes.rb の :user_id）。
@@ -445,7 +445,7 @@ RSpec.describe "Boards", type: :request do
     patch "/boards/#{share_token}/members/%20", params: { role_code: "editor" }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードが見つかりません")
   end
 
   it "allows an owner to demote themselves once another owner exists" do
@@ -473,10 +473,12 @@ RSpec.describe "Boards", type: :request do
     # Form-encoded request should be rejected with 415
     post "/boards", params: { title: "CSRF Board" }, headers: { "CONTENT_TYPE" => "application/x-www-form-urlencoded" }
     expect(response).to have_http_status(:unsupported_media_type)
+    expect(JSON.parse(response.body)).to eq("error" => "Content-Type は application/json である必要があります")
 
     # Forbidden origin request should be rejected with 403
     post "/boards", params: { title: "Evil Board" }, headers: { "HTTP_ORIGIN" => "http://evil-attacker.com" }, as: :json
     expect(response).to have_http_status(:forbidden)
+    expect(JSON.parse(response.body)).to eq("error" => "許可されていないオリジンです")
 
     # Combined forbidden origin and forbidden content-type should be safely rejected with 403 without DoubleRenderError
     post "/boards", params: { title: "Evil Form Board" }, headers: {
@@ -562,5 +564,16 @@ RSpec.describe "Boards", type: :request do
     # Query count must stay flat regardless of tree depth/size; a per-object
     # lock lookup would scale with the 40 objects created above.
     expect(query_count).to be < 20
+  end
+
+  it "returns unprocessable_content when joining with an unsupported invite role" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "owner" }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "招待された権限に対応していません")
   end
 end

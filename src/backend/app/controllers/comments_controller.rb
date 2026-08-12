@@ -11,7 +11,7 @@ class CommentsController < ApplicationController
 
     render json: { comments: comments.map { |comment| serialize_comment(comment) } }
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   end
 
   def create
@@ -32,12 +32,12 @@ class CommentsController < ApplicationController
   rescue InvalidCommentBodyError => e
     render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue KpiEventConfigurationError => e
     logger.error("[CommentsController#create] #{e.message}")
-    render json: { error: "Comment could not be recorded" }, status: :internal_server_error
+    render json: { error: I18n.t("api.errors.comment_could_not_be_recorded") }, status: :internal_server_error
   end
 
   def update
@@ -49,7 +49,7 @@ class CommentsController < ApplicationController
   rescue InvalidCommentBodyError => e
     render json: { error: invalid_body_message(e) }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -61,7 +61,7 @@ class CommentsController < ApplicationController
     comment.destroy!
     head :no_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   end
 
   private

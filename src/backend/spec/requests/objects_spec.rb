@@ -576,7 +576,7 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object type not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクト種別が見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank share token on #move" do
@@ -590,7 +590,7 @@ RSpec.describe "Objects", type: :request do
     patch "/boards/%20/objects/#{object_id}/move", params: { geometry: { x: 1, y: 1 } }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank object id on #move" do
@@ -602,7 +602,7 @@ RSpec.describe "Objects", type: :request do
     patch "/boards/#{share_token}/objects/%20/move", params: { geometry: { x: 1, y: 1 } }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "returns not found (not the parameter-missing message) for a blank object id on #apply_op" do
@@ -619,7 +619,7 @@ RSpec.describe "Objects", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:not_found)
-    expect(JSON.parse(response.body)).to eq("error" => "Board or object not found")
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "executes single-object mutations efficiently without loading all board objects" do
@@ -653,5 +653,50 @@ RSpec.describe "Objects", type: :request do
     # does (one lookup per baseline plus the insert), all scoped by object_id/
     # client_id so none of it scales with board size either.
     expect(query_count).to be < 20
+  end
+
+  it "returns conflict when ActiveRecord::RecordNotUnique is raised on locking" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "frame",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    # Simulate database unique constraint violation
+    allow_any_instance_of(FrameLock).to receive(:save!).and_raise(ActiveRecord::RecordNotUnique.new("Duplicate key"))
+
+    post "/boards/#{share_token}/objects/#{object_id}/lock", as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(JSON.parse(response.body)).to eq("error" => "オブジェクトは別のユーザーにロックされています")
+  end
+
+  it "returns unprocessable_content when lamport_ts is not an integer" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    post "/boards/#{share_token}/objects/#{object_id}/ops", params: {
+      property: "geometry",
+      value: { x: 1, y: 1, w: 1, h: 1, rotation: 0 },
+      lamport_ts: "invalid",
+      client_id: "client-1"
+    }, as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(JSON.parse(response.body)).to eq("error" => "Lamport時刻は整数で入力してください")
   end
 end

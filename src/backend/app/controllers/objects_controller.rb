@@ -80,7 +80,7 @@ class ObjectsController < ApplicationController
 
     render json: serialize_object(object), status: :created
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object type not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_type_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -115,7 +115,7 @@ class ObjectsController < ApplicationController
 
     render json: serialize_object(duplicated_object), status: :created
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -138,7 +138,7 @@ class ObjectsController < ApplicationController
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -155,7 +155,7 @@ class ObjectsController < ApplicationController
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -172,11 +172,11 @@ class ObjectsController < ApplicationController
 
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
-    render json: { error: "Object was locked by another user" }, status: :conflict
+    render json: { error: I18n.t("api.errors.object_was_locked_by_another_user") }, status: :conflict
   end
 
   def unlock
@@ -194,7 +194,7 @@ class ObjectsController < ApplicationController
     end
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
@@ -312,9 +312,9 @@ class ObjectsController < ApplicationController
   rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
     render json: { error: e.message }, status: :unprocessable_content
   rescue ArgumentError, TypeError
-    render json: { error: "lamport_ts must be an integer" }, status: :unprocessable_content
+    render json: { error: I18n.t("api.errors.lamport_ts_must_be_an_integer") }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
@@ -415,7 +415,7 @@ class ObjectsController < ApplicationController
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
   rescue ActiveRecord::RecordNotFound
-    render json: { error: "Board or object not found" }, status: :not_found
+    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
   rescue ActiveRecord::RecordInvalid => e
     render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue InvalidOpValueError => e

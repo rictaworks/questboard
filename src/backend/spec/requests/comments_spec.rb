@@ -390,15 +390,19 @@ RSpec.describe "Comments", type: :request do
 
     get "/boards/#{share_token}/objects/#{missing_object_id}/comments", as: :json
     expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
 
     post "/boards/#{share_token}/objects/#{missing_object_id}/comments", params: { body: "Nope" }, as: :json
     expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
 
     patch "/boards/#{share_token}/objects/#{object_id}/comments/#{missing_comment_id}", params: { body: "Nope" }, as: :json
     expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
 
     delete "/boards/#{share_token}/objects/#{object_id}/comments/#{missing_comment_id}", as: :json
     expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "ボードまたはオブジェクトが見つかりません")
   end
 
   it "returns a server error instead of a misleading not_found when the KPI event definition is missing" do
@@ -417,6 +421,7 @@ RSpec.describe "Comments", type: :request do
 
     post "/boards/#{share_token}/objects/#{object_id}/comments", params: { body: "Nope" }, as: :json
     expect(response).to have_http_status(:internal_server_error)
+    expect(JSON.parse(response.body)).to eq("error" => "コメントを記録できませんでした")
     expect(Comment.count).to eq(0)
   end
 
