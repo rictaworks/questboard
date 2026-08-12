@@ -74,6 +74,10 @@ class ApplicationController < ActionController::API
     def initialize = super("api.errors.object_was_locked_by_another_user", status: :conflict)
   end
 
+  class LamportTsMustBeAnIntegerError < ApiError
+    def initialize = super("api.errors.lamport_ts_must_be_an_integer", status: :unprocessable_content)
+  end
+
   # params.require はアプリ全体に散らばっており、アクションごとに rescue を書くと
   # 直し漏れがそのまま英語の応答として残る。ParameterMissing の文言は
   # "param is missing or the value is empty or invalid: <名前>" という形で、
@@ -102,9 +106,40 @@ class ApplicationController < ActionController::API
   rescue_from "UserSettingsController::InvalidIntensityError", with: :render_invalid_intensity
   rescue_from "Auth::RecaptchaVerifier::Error", with: :render_recaptcha_verification_failed
   rescue_from "Auth::GoogleOauthClient::Error", with: :render_google_oauth_failed
+  rescue_from ActiveRecord::RecordNotFound, with: :render_record_not_found
+  rescue_from LamportTsMustBeAnIntegerError, with: :render_api_error
   rescue_from ObjectLockedByAnotherUserError, with: :render_api_error
 
   private
+
+  def render_record_not_found(error)
+    logger.warn("[#{self.class.name}##{action_name}] #{error.message}")
+
+    case error.model
+    when "Board"
+      message_key = if self.class.name == "ObjectsController"
+                      action_name == "create" ? "api.errors.board_or_object_type_not_found" : "api.errors.board_or_object_not_found"
+                    elsif self.class.name == "CommentsController"
+                      "api.errors.board_or_object_not_found"
+                    else
+                      "api.errors.board_not_found"
+                    end
+      render json: { error: I18n.t(message_key) }, status: :not_found
+
+    when "BoardMember"
+      render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
+
+    when "BoardObject", "Comment", "ColorPalette"
+      message_key = (self.class.name == "ObjectsController" && action_name == "create") ? "api.errors.board_or_object_type_not_found" : "api.errors.board_or_object_not_found"
+      render json: { error: I18n.t(message_key) }, status: :not_found
+
+    when "ObjectType"
+      render json: { error: I18n.t("api.errors.board_or_object_type_not_found") }, status: :not_found
+
+    else
+      raise error
+    end
+  end
 
   def render_parameter_missing(error)
     # どのパラメータが欠けていたかは調査に要るため、応答ではなくログに残す。

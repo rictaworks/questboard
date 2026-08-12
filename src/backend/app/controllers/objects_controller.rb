@@ -67,7 +67,7 @@ class ObjectsController < ApplicationController
 
     object = nil
     Board.transaction do
-      object_type = ObjectType.find_by(code: object_type_code_param) || raise(ApplicationController::BoardOrObjectTypeNotFoundError)
+      object_type = ObjectType.find_by!(code: object_type_code_param)
       object = board.board_objects.create!(
         object_type: object_type,
         color_palette: default_color_palette_for(object_type),
@@ -187,7 +187,11 @@ class ObjectsController < ApplicationController
     object = find_authorized_op_object!(action:, property:)
     return if performed?
 
-    lamport_ts = Integer(params.require(:lamport_ts))
+    begin
+      lamport_ts = Integer(params.require(:lamport_ts))
+    rescue ArgumentError, TypeError
+      raise ApplicationController::LamportTsMustBeAnIntegerError
+    end
     client_id = params.require(:client_id).to_s
     # LEGACY_OP_CLIENT_ID is reserved for record_and_apply_legacy_op! (see its declaration
     # above): a real client sending it here would share the (object_id, client_id,
@@ -320,11 +324,11 @@ class ObjectsController < ApplicationController
   # CommentsController#find_board! と同じ理由）。見つからない場合の RecordNotFound に
   # 一本化する。
   def find_board!
-    Board.active.find_by(share_token: params[:share_token]) || raise(ApplicationController::BoardOrObjectNotFoundError)
+    Board.active.find_by!(share_token: params[:share_token])
   end
 
   def find_board_object!(board = find_board!)
-    board.board_objects.active.find_by(id: params[:id]) || raise(ApplicationController::BoardOrObjectNotFoundError)
+    board.board_objects.active.find(params[:id])
   end
 
   def active_parent_frame_for(board)
@@ -502,7 +506,7 @@ class ObjectsController < ApplicationController
   end
 
   def find_op_target_object!(board)
-    board.board_objects.find_by(id: params[:id]) || raise(ApplicationController::BoardOrObjectNotFoundError)
+    board.board_objects.find(params[:id])
   end
 
   def op_value_params
