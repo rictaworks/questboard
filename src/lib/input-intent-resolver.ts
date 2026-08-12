@@ -110,7 +110,6 @@ export type CanvasIntent =
   | {kind: 'marquee'; pointer: 'mouse' | 'touch'}
   | {kind: 'create-note'}
   | {kind: 'edit-text'}
-  | {kind: 'draw'}
   | {kind: 'ignore'};
 
 export interface InputIntentResolverOptions {
@@ -222,10 +221,6 @@ export function resolveCanvasIntent(
     }
 
     return {kind: 'ignore'};
-  }
-
-  if (input.device === 'pen') {
-    return input.phase === 'change' || input.phase === 'end' ? {kind: 'draw'} : {kind: 'ignore'};
   }
 
   if (input.touchCount >= MULTI_TOUCH_THRESHOLD) {

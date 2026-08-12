@@ -158,8 +158,8 @@ test('resolveCanvasIntent returns the expected intent for key F1 scenarios', () 
     [{kind: 'pointer', phase: 'longpress', device: 'mouse', buttons: 1, touchCount: 1, movementX: 1, movementY: 1, elapsedTimeMs: 500, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'radial-menu', source: 'longpress'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: text, modifiers: modifiers(), selection: selected}, {kind: 'edit-text'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'create-note'}],
-    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 0}, {kind: 'draw'}],
-    [{kind: 'pointer', phase: 'change', device: 'mouse', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 2400}, {kind: 'ignore'}],
+    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 30, movementY: 10, elapsedTimeMs: 12, hitTarget: object, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 0}, {kind: 'move', duplicate: false}],
+    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 2400}, {kind: 'ignore'}],
   ];
 
   for (const [input, expected] of cases) {
