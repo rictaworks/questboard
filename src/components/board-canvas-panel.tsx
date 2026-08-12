@@ -508,7 +508,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
             const pinch = resolvePinchZoomInput(intent);
             nextState = controllerRef.current.zoomByScale({
               scale: pinch.scale,
-              cursor: {x: pinch.centerX - stageRect.left, y: pinch.centerY - stageRect.top},
+              origin: {x: pinch.centerX - stageRect.left, y: pinch.centerY - stageRect.top},
               viewport: viewportRef.current,
             });
           }

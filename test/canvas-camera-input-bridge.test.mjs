@@ -18,6 +18,17 @@ async function loadModule() {
   return moduleShim.exports;
 }
 
+async function loadInputResolverModule() {
+  const source = await readFile(path.join(root, 'src/lib/input-intent-resolver.ts'), 'utf8');
+  const {outputText} = ts.transpileModule(source, {
+    compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
+  });
+  const moduleShim = {exports: {}};
+  const require = createRequire(import.meta.url);
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, require);
+  return moduleShim.exports;
+}
+
 const {
   consumeGestureZoom,
   createGesturePanTracker,
@@ -118,6 +129,55 @@ test('pinch release inertia is resolved from the zoom intent', () => {
     }),
     {velocityX: 8, velocityY: 2}
   );
+});
+
+test('pinch intent uses use-gesture origin and velocity values directly', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 80],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [56],
+    origin: [120, 80],
+    movement: [0, 0],
+    velocity: [3, 2],
+    direction: [1, -1],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 2);
+  assert.deepEqual(
+    {pinchCenterX: captured[1].pinchCenterX, pinchCenterY: captured[1].pinchCenterY},
+    {pinchCenterX: 120, pinchCenterY: 80}
+  );
+  assert.equal(captured[1].velocityX, 3 * 16.6667);
+  assert.equal(captured[1].velocityY, -2 * 16.6667);
 });
 
 test('a pan is recorded on the first moving change instead of waiting for a terminal intent', () => {

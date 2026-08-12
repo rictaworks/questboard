@@ -501,8 +501,6 @@ export class CanvasInputController {
       this.pinchPrevOrigin = null;
       this.pinchPrevTime = null;
       this.pinchStartTouchCount = null;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
       this.onGestureCancel();
       return;
@@ -517,8 +515,6 @@ export class CanvasInputController {
       this.pinchPrevOrigin = state.origin;
       this.pinchPrevTime = state.elapsedTime;
       this.pinchStartTouchCount = state.touches;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
       this.onGestureStart();
     }
@@ -561,40 +557,12 @@ export class CanvasInputController {
 
     const origin = state.origin;
     const time = state.elapsedTime;
-    let pinchDeltaX = 0;
-    let pinchDeltaY = 0;
-    let velocityX = 0;
-    let velocityY = 0;
-
-    if (this.pinchPrevOrigin != null && this.pinchPrevTime != null) {
-      pinchDeltaX = origin[0] - this.pinchPrevOrigin[0];
-      pinchDeltaY = origin[1] - this.pinchPrevOrigin[1];
-      const deltaTime = time - this.pinchPrevTime;
-      if (deltaTime > 0) {
-        velocityX = (pinchDeltaX / deltaTime) * MS_PER_FRAME;
-        velocityY = (pinchDeltaY / deltaTime) * MS_PER_FRAME;
-
-        if (!state.last) {
-          if (pinchDeltaX !== 0 || pinchDeltaY !== 0) {
-            this.pinchLastMoveTime = time;
-          }
-          if (velocityX !== 0 || velocityY !== 0) {
-            this.pinchLastVelocity = [velocityX, velocityY];
-          }
-        }
-      }
-    }
-
-    if (state.last) {
-      const timeSinceLastMove = this.pinchLastMoveTime != null ? time - this.pinchLastMoveTime : Infinity;
-      if (timeSinceLastMove > 100) {
-        velocityX = 0;
-        velocityY = 0;
-      } else {
-        velocityX = this.pinchLastVelocity[0];
-        velocityY = this.pinchLastVelocity[1];
-      }
-    }
+    const directionX = state.direction?.[0] ?? 0;
+    const directionY = state.direction?.[1] ?? 0;
+    const velocityX = (state.velocity?.[0] ?? 0) * directionX * MS_PER_FRAME;
+    const velocityY = (state.velocity?.[1] ?? 0) * directionY * MS_PER_FRAME;
+    const pinchDeltaX = this.pinchPrevOrigin == null ? 0 : origin[0] - this.pinchPrevOrigin[0];
+    const pinchDeltaY = this.pinchPrevOrigin == null ? 0 : origin[1] - this.pinchPrevOrigin[1];
 
     const touchCount = this.pinchStartTouchCount ?? state.touches;
 
@@ -640,8 +608,6 @@ export class CanvasInputController {
       this.pinchPrevOrigin = null;
       this.pinchPrevTime = null;
       this.pinchStartTouchCount = null;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
     }
   };
@@ -655,8 +621,6 @@ export class CanvasInputController {
   private pinchPrevOrigin: [number, number] | null = null;
   private pinchPrevTime: number | null = null;
   private pinchStartTouchCount: number | null = null;
-  private pinchLastVelocity: [number, number] = [0, 0];
-  private pinchLastMoveTime: number | null = null;
   private pinchZoomApplied = false;
   private dragPanApplied = false;
   private spacePressed = false;
@@ -726,8 +690,6 @@ export class CanvasInputController {
     this.pinchPrevOrigin = null;
     this.pinchPrevTime = null;
     this.pinchStartTouchCount = null;
-    this.pinchLastVelocity = [0, 0];
-    this.pinchLastMoveTime = null;
     this.pinchZoomApplied = false;
     this.dragPanApplied = false;
     this.dragButtons = 0;

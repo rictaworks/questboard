@@ -530,11 +530,12 @@ test('慣性は有限フレームで完全に停止し、velocity が 0 にな�
 
 test('zoomByScale は指間距離の倍率で直接ズームし、ホイールの感触定数に依存しない', () => {
   const stageViewport = {width: 200, height: 200};
-  const cursor = {x: 100, y: 100};
+  const origin = {x: 90, y: 110};
+  const cursor = {x: 150, y: 150};
   const initialState = {x: 0, y: 0, zoom: 1, velocityX: 0, velocityY: 0, focus: null};
 
   const controller = new CameraController({...initialState});
-  const zoomed = controller.zoomByScale({scale: 2, cursor, viewport: stageViewport});
+  const zoomed = controller.zoomByScale({scale: 2, origin, cursor, viewport: stageViewport});
   assert.equal(zoomed.zoom, 2, '倍率 2 のピンチはズームを 2 倍にする');
 
   // wheelZoomExponent を変えてもピンチの結果は変わらない
@@ -542,11 +543,11 @@ test('zoomByScale は指間距離の倍率で直接ズームし、ホイール�
     ...DEFAULT_CAMERA_CONTROLLER_OPTIONS,
     wheelZoomExponent: DEFAULT_CAMERA_CONTROLLER_OPTIONS.wheelZoomExponent * 10,
   });
-  assert.equal(retuned.zoomByScale({scale: 2, cursor, viewport: stageViewport}).zoom, 2);
+  assert.equal(retuned.zoomByScale({scale: 2, origin, cursor, viewport: stageViewport}).zoom, 2);
 
-  // カーソル位置のワールド座標は保たれる
-  const worldX = initialState.x + (cursor.x - stageViewport.width / 2) / initialState.zoom;
-  const zoomedWorldX = zoomed.x + (cursor.x - stageViewport.width / 2) / zoomed.zoom;
+  // pinch origin のワールド座標は保たれる（cursor ではなく origin を使う）
+  const worldX = initialState.x + (origin.x - stageViewport.width / 2) / initialState.zoom;
+  const zoomedWorldX = zoomed.x + (origin.x - stageViewport.width / 2) / zoomed.zoom;
   assert.ok(Math.abs(zoomedWorldX - worldX) < 1e-9);
 
   // 不正な倍率は握りつぶさず例外にする

@@ -78,7 +78,8 @@ export interface CanvasWheelCameraInput {
 // wheelZoomExponent（ホイールの感触用の定数）にピンチ感度が従属してしまう。
 export interface CanvasPinchCameraInput {
   scale: number;
-  cursor: CameraPoint;
+  origin?: CameraPoint;
+  cursor?: CameraPoint;
   viewport: CameraViewport;
 }
 
@@ -165,7 +166,12 @@ export function onCanvasPinch(
   }
 
   const nextZoom = clamp(state.zoom * input.scale, options.minZoom, options.maxZoom);
-  const next = zoomAtPoint(state, nextZoom, input.cursor, input.viewport, options);
+  const origin = input.origin ?? input.cursor;
+  if (origin == null) {
+    throw new Error('onCanvasPinch requires an origin or cursor');
+  }
+
+  const next = zoomAtPoint(state, nextZoom, origin, input.viewport, options);
   return normalizeCameraState(next, options);
 }
 
