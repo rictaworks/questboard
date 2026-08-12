@@ -107,10 +107,9 @@ export type CanvasIntent =
   | {kind: 'connect'}
   | {kind: 'select'; mode: 'replace' | 'add' | 'remove' | 'clear'}
   | {kind: 'move'; duplicate: boolean}
-  | {kind: 'marquee'; pointer: 'mouse' | 'touch'}
+  | {kind: 'marquee'; pointer: 'mouse' | 'touch' | 'pen'}
   | {kind: 'create-note'}
   | {kind: 'edit-text'}
-  | {kind: 'draw'}
   | {kind: 'ignore'};
 
 export interface InputIntentResolverOptions {
@@ -224,10 +223,6 @@ export function resolveCanvasIntent(
     return {kind: 'ignore'};
   }
 
-  if (input.device === 'pen') {
-    return input.phase === 'change' || input.phase === 'end' ? {kind: 'draw'} : {kind: 'ignore'};
-  }
-
   if (input.touchCount >= MULTI_TOUCH_THRESHOLD) {
     return resolveMultiTouchIntent(input, options);
   }
@@ -275,8 +270,8 @@ export function resolveCanvasIntent(
   }
 
   if (input.hitTarget.kind === 'blank') {
-    if (input.phase === 'change' && input.device === 'mouse') {
-      return {kind: 'marquee', pointer: 'mouse'};
+    if (input.phase === 'change' && (input.device === 'mouse' || input.device === 'pen')) {
+      return {kind: 'marquee', pointer: input.device};
     }
 
     if (input.phase === 'change' && input.device === 'touch' && input.activeTool === 'lasso') {
