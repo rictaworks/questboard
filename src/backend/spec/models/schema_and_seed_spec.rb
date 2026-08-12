@@ -109,7 +109,7 @@ RSpec.describe "Questboard database schema and seeds" do
     }).to be(true)
   end
 
-  it "seeds the 72 master rows idempotently" do
+  it "seeds the 75 master rows idempotently" do
     conn = ActiveRecord::Base.connection
     %w[
       frame_locks object_ops comments objects user_quests kpi_events user_settings board_members boards users
@@ -118,12 +118,12 @@ RSpec.describe "Questboard database schema and seeds" do
       conn.execute("DELETE FROM #{conn.quote_table_name(table_name)}")
     end
 
-    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(74)
+    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(75)
     expect { Rails.application.load_seed }.not_to change { seed_table_total }
 
     expect(table_count("roles")).to eq(4)
     expect(table_count("object_types")).to eq(6)
-    expect(table_count("radial_menu_items")).to eq(14)
+    expect(table_count("radial_menu_items")).to eq(15)
     expect(table_count("effect_masters")).to eq(12)
     expect(table_count("intensity_masters")).to eq(3)
     expect(table_count("quests")).to eq(8)

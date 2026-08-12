@@ -40,7 +40,7 @@ class RadialMenuBuilder
     normalized_selection_count = selection_count.to_i
     normalized_target_state = normalize_target_state(target_state)
 
-    center = { code: :cancel, label: "キャンセル" }
+    center = center_item
 
     return { visible: false, center:, rings: [], items: [] } if normalized_role == :viewer
 
@@ -72,6 +72,11 @@ class RadialMenuBuilder
   private
 
   attr_reader :permission_service, :menu_items
+
+  def center_item
+    menu_item = menu_items.index_by { |item| item.code.to_sym }.fetch(:cancel)
+    { code: :cancel, label: menu_item.label }
+  end
 
   def normalize_role(role)
     role.to_s.strip.downcase.to_sym

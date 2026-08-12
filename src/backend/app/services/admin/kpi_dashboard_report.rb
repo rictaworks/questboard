@@ -19,12 +19,6 @@ module Admin
       comment_created
     ].freeze
 
-    INTENSITY_LABELS = {
-      "full" => "フル",
-      "subtle" => "控えめ",
-      "off" => "オフ"
-    }.freeze
-
     def initialize(now: Time.current)
       @now = now
     end
@@ -135,7 +129,7 @@ module Admin
 
         {
           code: intensity.code,
-          label: INTENSITY_LABELS.fetch(intensity.code, intensity.code),
+          label: intensity_label(intensity.code),
           count: count,
           percentage: percentage(count, total)
         }
@@ -164,6 +158,10 @@ module Admin
 
     def radial_event_def_ids
       @radial_event_def_ids ||= EventDef.where(code: "radial_opened").pluck(:id)
+    end
+
+    def intensity_label(code)
+      I18n.t("admin.kpi_dashboard_report.intensity_labels.#{code}")
     end
 
     def distinct_user_count(scope)

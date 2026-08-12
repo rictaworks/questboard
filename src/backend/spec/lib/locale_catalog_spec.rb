@@ -510,7 +510,7 @@ RSpec.describe "日本語ロケールカタログ" do
     expect(referenced.map(&:last)).to include("api.errors.invalid_comment_body")
 
     missing = referenced.select do |_file, key|
-      translation(key, count: 1, attribute: "属性", message: "メッセージ", record: "レコード", model: "モデル", errors: "エラー") == missing_sentinel
+      !I18n.exists?(key)
     end
 
     expect(missing).to be_empty, <<~MESSAGE

@@ -62,9 +62,19 @@ RSpec.describe "コントローラのユーザー向け文言" do
     BackendSourceTree.ruby_paths("app/controllers")
   end
 
+  def service_paths
+    BackendSourceTree.ruby_paths("app/services")
+  end
+
   # 1ファイルにつき字句解析は一度だけ行い、複数の観点で使い回す。
   def scanned_controllers
     @scanned_controllers ||= controller_paths.to_h do |path|
+      [ BackendSourceTree.relative(path).to_s, RubyTokenScanner.scan(path.read) ]
+    end
+  end
+
+  def scanned_services
+    @scanned_services ||= service_paths.to_h do |path|
       [ BackendSourceTree.relative(path).to_s, RubyTokenScanner.scan(path.read) ]
     end
   end
@@ -129,10 +139,10 @@ RSpec.describe "コントローラのユーザー向け文言" do
     MESSAGE
   end
 
-  it "コントローラに日本語の文字列リテラルを直書きしていない" do
+  it "コントローラとサービスに日本語の文字列リテラルを直書きしていない" do
     # 応答本文以外（logger など）も含めて日本語を禁止する。日本語が出てくる時点で
     # 利用者に見せる文言である可能性が高く、カタログに置くべきものだから。
-    offenders = scanned_controllers.flat_map do |file, scanned|
+    offenders = (scanned_controllers.merge(scanned_services)).flat_map do |file, scanned|
       scanned.string_literals.filter_map do |line, value|
         next unless JapaneseText.japanese?(value)
 
@@ -141,7 +151,7 @@ RSpec.describe "コントローラのユーザー向け文言" do
     end
 
     expect(offenders).to be_empty, <<~MESSAGE
-      コントローラに日本語の文字列リテラルが残っている。
+      コントローラとサービスに日本語の文字列リテラルが残っている。
       config/locales/ja.yml に文言を置き、I18n.t で参照すること。
 
       #{offenders.join("\n")}

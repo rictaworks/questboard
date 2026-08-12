@@ -4,6 +4,7 @@ RSpec.describe RadialMenuBuilder do
   subject(:builder) { described_class.new }
 
   before do
+    RadialMenuItem.create!(code: "cancel", label: "キャンセル", sort_order: 15)
     RadialMenuItem.create!(code: "create_sticky", label: "付箋を作成", sort_order: 1)
     RadialMenuItem.create!(code: "create_shape", label: "図形を作成", sort_order: 2)
     RadialMenuItem.create!(code: "create_text", label: "テキストを作成", sort_order: 3)
