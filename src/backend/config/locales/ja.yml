@@ -56,10 +56,12 @@ ja:
       color_palette: "カラーパレット"
       comment: "コメント"
       effect_master: "エフェクト"
+      follower_cache: "フォロワーキャッシュ"
       event_def: "イベント定義"
       frame_lock: "フレームロック"
       intensity_master: "表示強度"
       kpi_event: "KPIイベント"
+      plan: "プラン"
       object_op: "オブジェクト操作"
       object_type: "オブジェクト種別"
       quest: "クエスト"
@@ -84,12 +86,16 @@ ja:
         effect_master: "エフェクト"
       frame_lock:
         locked_by_user: "ロックしたユーザー"
+      follower_cache:
+        fetched_at: "取得時刻"
       kpi_event:
         event_def: "イベント定義"
       object_op:
         property: "プロパティ"
         client_id: "クライアントID"
         lamport_ts: "Lamport時刻"
+      plan:
+        code: "プランコード"
       quest:
         title: "クエスト名"
         condition_event: "条件イベント"
@@ -97,8 +103,8 @@ ja:
       role:
         code: "権限コード"
       user:
-        google_sub: "Googleサブ"
-        display_name: "表示名"
+        x_user_id: "XユーザーID"
+        display_name: "X表示名"
       user_quest:
         quest: "クエスト"
         state: "状態"

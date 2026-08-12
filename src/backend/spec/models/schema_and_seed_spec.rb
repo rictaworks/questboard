@@ -17,6 +17,7 @@ RSpec.describe "Questboard database schema and seeds" do
   def seed_table_total
     %w[
       roles
+      plans
       object_types
       radial_menu_items
       effect_masters
@@ -31,6 +32,7 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(connection.tables).to include(
       "users",
       "roles",
+      "plans",
       "boards",
       "board_members",
       "object_types",
@@ -40,6 +42,7 @@ RSpec.describe "Questboard database schema and seeds" do
       "object_ops",
       "frame_locks",
       "comments",
+      "follower_cache",
       "quests",
       "user_quests",
       "event_defs",
@@ -50,9 +53,20 @@ RSpec.describe "Questboard database schema and seeds" do
     )
 
     user_columns = connection.columns("users").map(&:name)
-    expect(user_columns).to include("google_sub", "display_name", "created_at")
+    expect(user_columns).to include("x_user_id", "display_name", "plan_id", "created_at")
     user_indexes = connection.indexes("users")
-    expect(user_indexes.any? { |index| index.unique && index.columns == %w[google_sub] }).to be(true)
+    expect(user_indexes.any? { |index| index.unique && index.columns == %w[x_user_id] }).to be(true)
+    expect(connection.foreign_keys("users").any? { |fk| fk.to_table == "plans" }).to be(true)
+
+    plan_columns = connection.columns("plans").map(&:name)
+    expect(plan_columns).to include("code")
+    plan_indexes = connection.indexes("plans")
+    expect(plan_indexes.any? { |index| index.unique && index.columns == %w[code] }).to be(true)
+
+    follower_cache_columns = connection.columns("follower_cache").map(&:name)
+    expect(follower_cache_columns).to include("x_user_id", "fetched_at")
+    expect(connection.primary_key("follower_cache")).to eq("x_user_id")
+    expect(connection.foreign_keys("follower_cache")).to be_empty
 
     object_columns = connection.columns("objects").map(&:name)
     expect(object_columns).to include("geometry", "text_crdt", "parent_frame_id", "deleted_at")
@@ -109,7 +123,7 @@ RSpec.describe "Questboard database schema and seeds" do
     }).to be(true)
   end
 
-  it "seeds the 75 master rows idempotently" do
+  it "seeds the 77 master rows idempotently" do
     conn = ActiveRecord::Base.connection
     %w[
       frame_locks object_ops comments objects user_quests kpi_events user_settings board_members boards users
@@ -118,10 +132,11 @@ RSpec.describe "Questboard database schema and seeds" do
       conn.execute("DELETE FROM #{conn.quote_table_name(table_name)}")
     end
 
-    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(75)
+    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(77)
     expect { Rails.application.load_seed }.not_to change { seed_table_total }
 
     expect(table_count("roles")).to eq(4)
+    expect(table_count("plans")).to eq(2)
     expect(table_count("object_types")).to eq(6)
     expect(table_count("radial_menu_items")).to eq(15)
     expect(table_count("effect_masters")).to eq(12)
