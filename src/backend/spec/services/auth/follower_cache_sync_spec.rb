@@ -1,8 +1,8 @@
 require "rails_helper"
 
 RSpec.describe Auth::FollowerCacheSync do
-  let!(:member_plan) { Plan.create!(code: "member") }
-  let!(:none_plan) { Plan.create!(code: "none") }
+  let!(:member_plan) { Plan.find_by(code: "member") || Plan.create!(code: "member") }
+  let!(:none_plan) { Plan.find_by(code: "none") || Plan.create!(code: "none") }
   let(:client) { instance_double(Auth::XFollowersClient) }
 
   subject(:sync) do
@@ -47,6 +47,22 @@ RSpec.describe Auth::FollowerCacheSync do
 
       expect(FollowerCache.find("x-1")).to eq(cache_entry)
       expect(User.find(user.id).plan).to eq(member_plan)
+    end
+
+    it "raises RequestError on pagination token cycle" do
+      FollowerCache.create!(x_user_id: "x-3", fetched_at: 1.day.ago)
+      user = User.create!(x_user_id: "x-3", display_name: "Follower", plan: member_plan)
+
+      allow(client).to receive(:fetch_followers_page).and_return(
+        Auth::XFollowersClient::Page.new(ids: %w[x-1], next_token: "A"),
+        Auth::XFollowersClient::Page.new(ids: %w[x-2], next_token: "A")
+      )
+
+      expect { sync.call }.to raise_error(Auth::XFollowersClient::RequestError, /Pagination token cycle detected/)
+
+      # 既存のキャッシュとプランが維持されていることを確認（降格されない）
+      expect(FollowerCache.exists?(x_user_id: "x-3")).to be(true)
+      expect(user.reload.plan).to eq(member_plan)
     end
   end
 end
