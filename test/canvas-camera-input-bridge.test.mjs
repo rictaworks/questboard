@@ -131,7 +131,7 @@ test('pinch release inertia is resolved from the zoom intent', () => {
   );
 });
 
-test('pinch intent uses use-gesture origin and velocity values directly', async () => {
+test('pinch intent uses use-gesture origin values and does not generate velocity for fixed center', async () => {
   const {CanvasInputController} = await loadInputResolverModule();
   const captured = [];
   const controller = new CanvasInputController({
@@ -176,8 +176,8 @@ test('pinch intent uses use-gesture origin and velocity values directly', async 
     {pinchCenterX: captured[1].pinchCenterX, pinchCenterY: captured[1].pinchCenterY},
     {pinchCenterX: 120, pinchCenterY: 80}
   );
-  assert.equal(captured[1].velocityX, 3 * 16.6667);
-  assert.equal(captured[1].velocityY, -2 * 16.6667);
+  assert.equal(captured[1].velocityX, 0);
+  assert.equal(captured[1].velocityY, 0);
 });
 
 test('a pan is recorded on the first moving change instead of waiting for a terminal intent', () => {
@@ -599,4 +599,659 @@ test('board canvas panel does not inline the extracted camera input literals', a
       '慣性の速度は resolveReleaseInertiaVelocity の戻り値から渡すこと'
     );
   }
+});
+
+test('pinch velocity is discarded if release happens after static pause timeout', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. 移動する (速度がキャッシュされる)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 100], // 変位 20px
+    movement: [0, 0],
+    velocity: [2, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 3. 静止して時間を進める (150ms 経過)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 100], // 変位なし (静止)
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 166, // 16 + 150ms
+    touches: 2,
+  });
+
+  // 4. リリースする
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [40],
+    origin: [120, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 182,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 4);
+  const endInput = captured[3];
+  
+  // 静止時間タイムアウト（100ms）を超えたため、終端速度が 0 になっていることを検証
+  assert.equal(endInput.velocityX, 0);
+  assert.equal(endInput.velocityY, 0);
+});
+
+test('pinch velocity cache is cleared on cancel and detach, preventing carry-over', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始して動かす
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 100],
+    movement: [0, 0],
+    velocity: [2, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 2. キャンセルをシミュレート
+  controller.handlePinchState({
+    event: {type: 'pointercancel', target: null},
+    first: false,
+    last: false,
+    canceled: true,
+    da: [40],
+    origin: [120, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 20,
+    touches: 2,
+  });
+
+  // 3. 新しいジェスチャを開始、移動せず即終了する
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [200, 200],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 100,
+    touches: 2,
+  });
+
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [40],
+    origin: [200, 200],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 116,
+    touches: 2,
+  });
+
+  // 新しいジェスチャの終了時インテント
+  const endInput = captured.at(-1);
+  assert.equal(endInput.velocityX, 0);
+  assert.equal(endInput.velocityY, 0);
+});
+
+test('pinch zoom with pan gesture generates pan inertia', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. ズームしつつ中心位置も移動する
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [60], // ズーム適用 (daが変化)
+    origin: [120, 100], // 中心移動 (変位20px)
+    movement: [0, 0],
+    velocity: [5, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 3. リリースする (100ms 以内なので慣性を引き継ぐ)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [60],
+    origin: [120, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 32, // +16ms (タイムアウト以内)
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 3);
+  const endInput = captured[2];
+  
+  // ズーム中であるが、中心移動があったため速度が非ゼロ (正) になっていることを検証
+  assert.ok(endInput.velocityX > 0);
+  
+  // resolveReleaseInertiaVelocity が zoom インテントから正しく非ゼロの速度を返すことを検証
+  const intent = {
+    kind: 'zoom',
+    source: 'pinch',
+    amount: 20,
+    scale: 1.5,
+    precision: false,
+    centerX: endInput.pinchCenterX,
+    centerY: endInput.pinchCenterY,
+    phase: 'end',
+    panDeltaX: endInput.deltaX,
+    panDeltaY: endInput.deltaY,
+    velocityX: endInput.velocityX,
+    velocityY: endInput.velocityY,
+  };
+  
+  const inertia = resolveReleaseInertiaVelocity(intent);
+  assert.ok(inertia !== null);
+  assert.equal(inertia.velocityX, endInput.velocityX);
+});
+
+test('symmetric pinch zoom does not generate pan inertia despite transient center shifts (48ms+ series)', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始: 中心 [100, 100], 時間 0
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. 指1が先に動く: 中心が一時的に [95, 100] へブレる
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [50],
+    origin: [95, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [-1, 0],
+    elapsedTime: 8,
+    touches: 2,
+  });
+
+  // 3. 指2が動く: 中心が元の [100, 100] に戻る (方向反転検出でリセット)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [60],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 4. 指1が動く: 中心が再び [95, 100] へブレる
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [70],
+    origin: [95, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [-1, 0],
+    elapsedTime: 24,
+    touches: 2,
+  });
+
+  // 5. 指2が動く: 中心が元の [100, 100] に戻る (方向反転検出でリセット)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [80],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 32,
+    touches: 2,
+  });
+
+  // 6. 指1が動く: 中心が再び [95, 100] へブレる (40ms超: time = 40)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [90],
+    origin: [95, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [-1, 0],
+    elapsedTime: 40,
+    touches: 2,
+  });
+
+  // 7. 指2が動く: 中心が元の [100, 100] に戻る (40ms超: time = 48)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [100],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 48,
+    touches: 2,
+  });
+
+  // 8. 指を離す (last = true, time = 56)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [100],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 56,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 8);
+  const endInput = captured[7];
+
+  // 方向反転の動的検知により、48msを超える長いズーム系列でも一時的なブレ速度が相殺され、最終速度が0になることを検証
+  assert.equal(endInput.velocityX, 0);
+  assert.equal(endInput.velocityY, 0);
+});
+
+test('persistent pan gesture maintains inertia', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. 右へ一定速度で動き続ける (time = 8)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [105, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 8,
+    touches: 2,
+  });
+
+  // 3. 右へ一定速度で動き続ける (time = 16)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [110, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 4. 右へ一定速度で動き続ける (time = 24)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [115, 100],
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 24,
+    touches: 2,
+  });
+
+  // 5. 指を離す (time = 32, last = true)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [40],
+    origin: [115, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 32,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 5);
+  const endInput = captured[4];
+
+  // 方向が一貫しているため、速度がクリアされずに正しく正の速度として保持されることを検証
+  assert.ok(endInput.velocityX > 0);
+});
+
+test('pinch velocity is NOT discarded on brief static pauses within timeout, but is discarded if pause exceeds timeout', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. 移動する (速度がキャッシュされる)
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 100], // 変位 20px
+    movement: [0, 0],
+    velocity: [2, 0],
+    direction: [1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 3. 短い静止フレーム (16ms 経過: time = 32ms) -> タイムアウト以内なのでキャッシュはクリアされない
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [120, 100], // 変位なし (静止)
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 32,
+    touches: 2,
+  });
+
+  // 4. リリースする (time = 48ms) -> 移動終了(time = 16ms)から 32ms しか経っていないため、慣性が引き継がれる
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [40],
+    origin: [120, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 48,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 4);
+  const endInput = captured[3];
+  
+  // 短い静止フレームの段階ではキャッシュが保持されていたため、最後のリリースで速度が非ゼロ (正) になっていることを検証
+  assert.ok(endInput.velocityX > 0);
+});
+
+test('pan direction reversal maintains the final reversed inertia velocity', async () => {
+  const {CanvasInputController} = await loadInputResolverModule();
+  const captured = [];
+  const controller = new CanvasInputController({
+    resolver: {
+      resolve(input) {
+        captured.push(input);
+        return {kind: 'ignore'};
+      },
+    },
+    onIntent() {},
+  });
+
+  // 1. ジェスチャ開始: time = 0
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: true,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 0,
+    touches: 2,
+  });
+
+  // 2. 右へ移動: time = 8
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [110, 100], // 変位 +10
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [1, 0],
+    elapsedTime: 8,
+    touches: 2,
+  });
+
+  // 3. 左へ切り返し (反転フレーム): time = 16
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: false,
+    canceled: false,
+    da: [40],
+    origin: [100, 100], // 変位 -10 (方向反転)
+    movement: [0, 0],
+    velocity: [1, 0],
+    direction: [-1, 0],
+    elapsedTime: 16,
+    touches: 2,
+  });
+
+  // 4. すぐに指を離す (リリースフレーム): time = 24
+  controller.handlePinchState({
+    event: {type: 'pointermove', target: null},
+    first: false,
+    last: true,
+    canceled: false,
+    da: [40],
+    origin: [100, 100],
+    movement: [0, 0],
+    velocity: [0, 0],
+    direction: [0, 0],
+    elapsedTime: 24,
+    touches: 2,
+  });
+
+  assert.equal(captured.length, 4);
+  const endInput = captured[3];
+
+  // 反転したフレームの速度は 0 に抑制されるが、キャッシュは反転後の値 (左向き＝負) に更新されているため、
+  // リリース時には最新の反転後の速度が正しく引き継がれ、velocityX が負値になっていることを検証
+  assert.ok(endInput.velocityX < 0);
 });
