@@ -51,7 +51,8 @@ seed_table(
     { code: "group", label: "グループ化", sort_order: 11 },
     { code: "ungroup", label: "グループ解除", sort_order: 12 },
     { code: "recolor", label: "色を変更", sort_order: 13 },
-    { code: "share", label: "共有", sort_order: 14 }
+    { code: "share", label: "共有", sort_order: 14 },
+    { code: "cancel", label: "キャンセル", sort_order: 15 }
   ],
   unique_by: :index_radial_menu_items_on_code
 )

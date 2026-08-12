@@ -114,3 +114,10 @@ ja:
             parent_frame_id:
               # BoardObject#parent_frame_must_belong_to_same_board から参照する。
               invalid_parent_frame: "は同じボード上の有効なフレームを指定してください"
+
+  admin:
+    kpi_dashboard_report:
+      intensity_labels:
+        full: "フル"
+        subtle: "控えめ"
+        off: "オフ"
