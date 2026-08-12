@@ -1,6 +1,7 @@
 import type {FullGestureState} from '@use-gesture/vanilla';
 
 const MS_PER_FRAME = 16.6667;
+const INERTIA_TIMEOUT_MS = 100;
 
 type UseGestureModule = typeof import('@use-gesture/vanilla');
 type DragGestureState = FullGestureState<'drag'>;
@@ -321,6 +322,9 @@ export class CanvasInputController {
   private target: EventTarget | null = null;
   private dragRecognizer: {destroy(): void} | null = null;
   private pinchRecognizer: {destroy(): void} | null = null;
+  private pinchPrevVelocityX = 0;
+  private pinchPrevVelocityY = 0;
+  private pinchPrevMoveTime: number | null = null;
   private readonly wheelListener = (event: Event) => {
     const wheelEvent = event as WheelEvent;
     const intent = this.resolver.resolve({
@@ -496,9 +500,10 @@ export class CanvasInputController {
       this.pinchPrevOrigin = null;
       this.pinchPrevTime = null;
       this.pinchStartTouchCount = null;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
+      this.pinchPrevVelocityX = 0;
+      this.pinchPrevVelocityY = 0;
+      this.pinchPrevMoveTime = null;
       this.onGestureCancel();
       return;
     }
@@ -512,9 +517,10 @@ export class CanvasInputController {
       this.pinchPrevOrigin = state.origin;
       this.pinchPrevTime = state.elapsedTime;
       this.pinchStartTouchCount = state.touches;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
+      this.pinchPrevVelocityX = 0;
+      this.pinchPrevVelocityY = 0;
+      this.pinchPrevMoveTime = null;
       this.onGestureStart();
     }
 
@@ -526,6 +532,7 @@ export class CanvasInputController {
 
     const pinchDistance = state.da[0];
     const pinchDistanceDeltaPx = this.pinchBaseDistance == null ? 0 : pinchDistance - this.pinchBaseDistance;
+    const currentDistanceDeltaPx = this.prevPinchDistance == null ? 0 : Math.abs(pinchDistance - this.prevPinchDistance);
     
     let pinchDeltaPx = 0;
     let pinchScale = 1;
@@ -556,38 +563,81 @@ export class CanvasInputController {
 
     const origin = state.origin;
     const time = state.elapsedTime;
-    let pinchDeltaX = 0;
-    let pinchDeltaY = 0;
+    const pinchDeltaX = this.pinchPrevOrigin == null ? 0 : origin[0] - this.pinchPrevOrigin[0];
+    const pinchDeltaY = this.pinchPrevOrigin == null ? 0 : origin[1] - this.pinchPrevOrigin[1];
+
+    // 二本指パン・ズーム時の慣性のために、指の中心（origin）の移動速度を計算する。
     let velocityX = 0;
     let velocityY = 0;
 
-    if (this.pinchPrevOrigin != null && this.pinchPrevTime != null) {
-      pinchDeltaX = origin[0] - this.pinchPrevOrigin[0];
-      pinchDeltaY = origin[1] - this.pinchPrevOrigin[1];
-      const deltaTime = time - this.pinchPrevTime;
-      if (deltaTime > 0) {
-        velocityX = (pinchDeltaX / deltaTime) * MS_PER_FRAME;
-        velocityY = (pinchDeltaY / deltaTime) * MS_PER_FRAME;
+    const deltaTime = this.pinchPrevTime != null ? time - this.pinchPrevTime : 0;
+    if (deltaTime > 0 && (pinchDeltaX !== 0 || pinchDeltaY !== 0)) {
+      velocityX = (pinchDeltaX / deltaTime) * MS_PER_FRAME;
+      velocityY = (pinchDeltaY / deltaTime) * MS_PER_FRAME;
 
-        if (!state.last) {
-          if (pinchDeltaX !== 0 || pinchDeltaY !== 0) {
-            this.pinchLastMoveTime = time;
-          }
-          if (velocityX !== 0 || velocityY !== 0) {
-            this.pinchLastVelocity = [velocityX, velocityY];
-          }
-        }
-      }
-    }
+      const centerDelta = Math.hypot(pinchDeltaX, pinchDeltaY);
+      const isZooming = isZoomActive && currentDistanceDeltaPx > 0.5 && centerDelta < currentDistanceDeltaPx * 0.75;
 
-    if (state.last) {
-      const timeSinceLastMove = this.pinchLastMoveTime != null ? time - this.pinchLastMoveTime : Infinity;
-      if (timeSinceLastMove > 100) {
+      // 方向が反転した（正負が逆になった）場合は、対称ピンチによる一時的な中心の揺れを防ぐため、
+      // このフレームの出力速度は 0 に抑える。さらに、ズーム中の場合は対称ピンチのブレとみなして
+      // 速度キャッシュも 0 にリセットするが、ズーム中でないパンの反転は実際の切り返しとみなして
+      // キャッシュは反転後の速度で更新し、リリース時の慣性に備える。
+      if (velocityX * this.pinchPrevVelocityX < 0) {
+        this.pinchPrevVelocityX = isZooming ? 0 : velocityX;
         velocityX = 0;
+      } else {
+        this.pinchPrevVelocityX = velocityX;
+      }
+
+      if (velocityY * this.pinchPrevVelocityY < 0) {
+        this.pinchPrevVelocityY = isZooming ? 0 : velocityY;
         velocityY = 0;
       } else {
-        velocityX = this.pinchLastVelocity[0];
-        velocityY = this.pinchLastVelocity[1];
+        this.pinchPrevVelocityY = velocityY;
+      }
+
+      this.pinchPrevMoveTime = time;
+    } else if (deltaTime === 0 && (pinchDeltaX !== 0 || pinchDeltaY !== 0)) {
+      // タイムスタンプが進まない環境（テスト時など）用
+      velocityX = pinchDeltaX;
+      velocityY = pinchDeltaY;
+
+      const centerDelta = Math.hypot(pinchDeltaX, pinchDeltaY);
+      const isZooming = isZoomActive && currentDistanceDeltaPx > 0.5 && centerDelta < currentDistanceDeltaPx * 0.75;
+
+      if (velocityX * this.pinchPrevVelocityX < 0) {
+        this.pinchPrevVelocityX = isZooming ? 0 : velocityX;
+        velocityX = 0;
+      } else {
+        this.pinchPrevVelocityX = velocityX;
+      }
+
+      if (velocityY * this.pinchPrevVelocityY < 0) {
+        this.pinchPrevVelocityY = isZooming ? 0 : velocityY;
+        velocityY = 0;
+      } else {
+        this.pinchPrevVelocityY = velocityY;
+      }
+
+      this.pinchPrevMoveTime = time;
+    } else if (state.last && pinchDeltaX === 0 && pinchDeltaY === 0) {
+      const timeSinceLastMove = this.pinchPrevMoveTime != null ? time - this.pinchPrevMoveTime : Infinity;
+      if (timeSinceLastMove <= INERTIA_TIMEOUT_MS) {
+        velocityX = this.pinchPrevVelocityX;
+        velocityY = this.pinchPrevVelocityY;
+      } else {
+        velocityX = 0;
+        velocityY = 0;
+      }
+    } else {
+      // ジェスチャ途中の静止フレーム（変位が 0）
+      velocityX = 0;
+      velocityY = 0;
+      // 経過時間がタイムアウトを超えた場合のみキャッシュを消去し、短い静止フレームではクリアしない
+      const timeSinceLastMove = this.pinchPrevMoveTime != null ? time - this.pinchPrevMoveTime : Infinity;
+      if (timeSinceLastMove > INERTIA_TIMEOUT_MS) {
+        this.pinchPrevVelocityX = 0;
+        this.pinchPrevVelocityY = 0;
       }
     }
 
@@ -635,9 +685,10 @@ export class CanvasInputController {
       this.pinchPrevOrigin = null;
       this.pinchPrevTime = null;
       this.pinchStartTouchCount = null;
-      this.pinchLastVelocity = [0, 0];
-      this.pinchLastMoveTime = null;
       this.pinchZoomApplied = false;
+      this.pinchPrevVelocityX = 0;
+      this.pinchPrevVelocityY = 0;
+      this.pinchPrevMoveTime = null;
     }
   };
   private readonly resolverOptions = DEFAULT_INPUT_INTENT_RESOLVER_OPTIONS;
@@ -650,8 +701,6 @@ export class CanvasInputController {
   private pinchPrevOrigin: [number, number] | null = null;
   private pinchPrevTime: number | null = null;
   private pinchStartTouchCount: number | null = null;
-  private pinchLastVelocity: [number, number] = [0, 0];
-  private pinchLastMoveTime: number | null = null;
   private pinchZoomApplied = false;
   private dragPanApplied = false;
   private spacePressed = false;
@@ -721,9 +770,10 @@ export class CanvasInputController {
     this.pinchPrevOrigin = null;
     this.pinchPrevTime = null;
     this.pinchStartTouchCount = null;
-    this.pinchLastVelocity = [0, 0];
-    this.pinchLastMoveTime = null;
     this.pinchZoomApplied = false;
+    this.pinchPrevVelocityX = 0;
+    this.pinchPrevVelocityY = 0;
+    this.pinchPrevMoveTime = null;
     this.dragPanApplied = false;
     this.dragButtons = 0;
     this.spacePressed = false;
