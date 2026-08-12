@@ -10,23 +10,20 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
-  # These are extensions that must be enabled in order to support this database
-  enable_extension "pg_catalog.plpgsql"
-
+ActiveRecord::Schema[8.0].define(version: 2026_08_12_033000) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
-    t.integer "role_id", null: false
     t.bigint "user_id", null: false
+    t.integer "role_id", null: false
     t.index ["board_id", "user_id"], name: "index_board_members_on_board_id_and_user_id", unique: true
     t.index ["role_id"], name: "index_board_members_on_role_id"
   end
 
   create_table "boards", force: :cascade do |t|
+    t.string "title", null: false
+    t.string "share_token", null: false
     t.datetime "created_at", null: false
     t.datetime "deleted_at"
-    t.string "share_token", null: false
-    t.string "title", null: false
     t.index ["deleted_at"], name: "index_boards_on_deleted_at"
     t.index ["share_token"], name: "index_boards_on_share_token", unique: true
   end
@@ -37,10 +34,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
   end
 
   create_table "comments", force: :cascade do |t|
-    t.text "body", null: false
-    t.datetime "created_at", null: false
     t.bigint "object_id", null: false
     t.bigint "user_id", null: false
+    t.text "body", null: false
+    t.datetime "created_at", null: false
     t.index ["object_id"], name: "index_comments_on_object_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
@@ -63,9 +60,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
   end
 
   create_table "frame_locks", force: :cascade do |t|
-    t.datetime "locked_at", null: false
-    t.bigint "locked_by", null: false
     t.bigint "object_id", null: false
+    t.bigint "locked_by", null: false
+    t.datetime "locked_at", null: false
     t.index ["locked_by"], name: "index_frame_locks_on_locked_by"
     t.index ["object_id"], name: "index_frame_locks_on_object_id", unique: true
   end
@@ -76,11 +73,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
   end
 
   create_table "kpi_events", force: :cascade do |t|
-    t.bigint "board_id", null: false
     t.integer "event_def_id", null: false
-    t.datetime "occurred_at", null: false
-    t.jsonb "props", default: {}, null: false, comment: "PII禁止"
     t.bigint "user_id", null: false
+    t.bigint "board_id", null: false
+    t.jsonb "props", default: {}, null: false, comment: "PII禁止"
+    t.datetime "occurred_at", null: false
     t.index ["board_id"], name: "index_kpi_events_on_board_id"
     t.index ["event_def_id"], name: "index_kpi_events_on_event_def_id"
     t.index ["occurred_at"], name: "index_kpi_events_on_occurred_at"
@@ -89,12 +86,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
 
   create_table "object_ops", force: :cascade do |t|
     t.bigint "board_id", null: false
-    t.string "client_id", null: false
-    t.bigint "lamport_ts", null: false
     t.bigint "object_id", null: false
-    t.string "property", null: false
     t.bigint "user_id", null: false
+    t.string "property", null: false
     t.jsonb "value", default: {}, null: false
+    t.bigint "lamport_ts", null: false
+    t.string "client_id", null: false
     t.index ["board_id", "lamport_ts"], name: "index_object_ops_on_board_id_and_lamport_ts"
     t.index ["board_id"], name: "index_object_ops_on_board_id"
     t.index ["object_id", "client_id", "lamport_ts"], name: "index_object_ops_on_object_id_and_client_id_and_lamport_ts", unique: true
@@ -108,14 +105,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
     t.index ["code"], name: "index_object_types_on_code", unique: true
   end
 
+  create_table "plans", force: :cascade do |t|
+    t.string "code", null: false
+    t.index ["code"], name: "index_plans_on_code", unique: true
+  end
+
   create_table "objects", force: :cascade do |t|
     t.bigint "board_id", null: false
-    t.integer "color_id", null: false
-    t.datetime "deleted_at"
-    t.jsonb "geometry", default: {}, null: false
     t.integer "object_type_id", null: false
-    t.bigint "parent_frame_id"
+    t.integer "color_id", null: false
+    t.jsonb "geometry", default: {}, null: false
     t.jsonb "text_crdt", default: {}, null: false
+    t.bigint "parent_frame_id"
+    t.datetime "deleted_at"
     t.bigint "text_crdt_revision", default: 0, null: false
     t.index ["board_id"], name: "index_objects_on_board_id"
     t.index ["color_id"], name: "index_objects_on_color_id"
@@ -124,15 +126,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
     t.index ["parent_frame_id"], name: "index_objects_on_parent_frame_id"
   end
 
-  create_table "plans", force: :cascade do |t|
-    t.string "code", null: false
-    t.index ["code"], name: "index_plans_on_code", unique: true
-  end
-
   create_table "quests", force: :cascade do |t|
-    t.integer "condition_count", null: false
-    t.string "condition_event", null: false
     t.string "title", null: false
+    t.string "condition_event", null: false
+    t.integer "condition_count", null: false
     t.index ["title"], name: "index_quests_on_title", unique: true
   end
 
@@ -150,16 +147,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
   end
 
   create_table "user_quests", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.integer "quest_id", null: false
+    t.string "state", default: "not_started", null: false
+    t.integer "progress", default: 0, null: false
     t.datetime "achieved_at"
     t.datetime "completed_at"
-    t.datetime "created_at", null: false
-    t.integer "progress", default: 0, null: false
-    t.integer "quest_id", null: false
     t.datetime "reward_granted_at"
     t.datetime "skipped_at"
-    t.string "state", default: "not_started", null: false
+    t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
     t.index ["user_id", "quest_id"], name: "index_user_quests_on_user_id_and_quest_id", unique: true
   end
 
@@ -170,10 +167,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_12_033000) do
   end
 
   create_table "users", force: :cascade do |t|
-    t.datetime "created_at", null: false
     t.string "display_name", null: false, comment: "X表示名"
-    t.bigint "plan_id"
     t.string "x_user_id", null: false, comment: "XユーザーID"
+    t.bigint "plan_id"
+    t.datetime "created_at", null: false
     t.index ["plan_id"], name: "index_users_on_plan_id"
     t.index ["x_user_id"], name: "index_users_on_x_user_id", unique: true
   end

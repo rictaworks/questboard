@@ -30,6 +30,7 @@ class AddXUserIdPlansAndFollowerCache < ActiveRecord::Migration[8.0]
     add_foreign_key :users, :plans
 
     # 8. follower_cache テーブルの作成
+    # フォロワーには未登録ユーザーが含まれるため、users への外部キーは張らない。
     create_table :follower_cache, primary_key: :x_user_id, id: :string, comment: "Xフォロワー判定キャッシュ" do |t|
       t.datetime :fetched_at, null: false
     end

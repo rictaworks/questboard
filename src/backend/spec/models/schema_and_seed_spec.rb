@@ -21,6 +21,7 @@ RSpec.describe "Questboard database schema and seeds" do
       object_types
       radial_menu_items
       effect_masters
+      intensity_masters
       quests
       event_defs
       color_palettes
@@ -122,7 +123,7 @@ RSpec.describe "Questboard database schema and seeds" do
     }).to be(true)
   end
 
-  it "seeds the 74 master rows idempotently" do
+  it "seeds the 77 master rows idempotently" do
     conn = ActiveRecord::Base.connection
     %w[
       frame_locks object_ops comments objects user_quests kpi_events user_settings board_members boards users
@@ -131,7 +132,7 @@ RSpec.describe "Questboard database schema and seeds" do
       conn.execute("DELETE FROM #{conn.quote_table_name(table_name)}")
     end
 
-    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(74)
+    expect { Rails.application.load_seed }.to change { seed_table_total }.from(0).to(77)
     expect { Rails.application.load_seed }.not_to change { seed_table_total }
 
     expect(table_count("roles")).to eq(4)
