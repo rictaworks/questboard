@@ -1,7 +1,7 @@
 module Auth
-  class GoogleSessionsController < ApplicationController
+  class XSessionsController < ApplicationController
     def create
-      user = GoogleSessionCreator.new.call(
+      user = XSessionCreator.new.call(
         code: params.require(:code),
         code_verifier: params.require(:code_verifier),
         recaptcha_token: params.require(:recaptcha_token),
@@ -21,7 +21,7 @@ module Auth
     def serialize_user(user)
       {
         id: user.id,
-        googleSub: user.google_sub,
+        xUserId: user.x_user_id,
         displayName: user.display_name
       }
     end

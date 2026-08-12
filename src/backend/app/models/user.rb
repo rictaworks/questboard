@@ -1,6 +1,4 @@
 class User < ApplicationRecord
-  alias_attribute :google_sub, :x_user_id
-
   belongs_to :plan, optional: true
 
   validates :x_user_id, presence: true, uniqueness: true
@@ -9,13 +7,13 @@ class User < ApplicationRecord
   has_many :user_quests, dependent: :destroy
   has_one :user_setting, foreign_key: :user_id, dependent: :destroy, inverse_of: :user
 
-  def self.upsert_from_google_identity!(google_sub:, display_name:)
+  def self.upsert_from_x_identity!(x_user_id:, display_name:)
     upsert(
-      { x_user_id: google_sub, display_name:, created_at: Time.current },
+      { x_user_id:, display_name:, created_at: Time.current },
       unique_by: :index_users_on_x_user_id,
       update_only: %i[display_name]
     )
 
-    find_by!(x_user_id: google_sub)
+    find_by!(x_user_id:)
   end
 end

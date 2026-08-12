@@ -7,7 +7,7 @@ Rails.application.routes.draw do
   end
 
   namespace :auth do
-    post "/google_sessions", to: "google_sessions#create"
+    post "/x_sessions", to: "x_sessions#create"
   end
 
   resource :user_settings, only: %i[show update]

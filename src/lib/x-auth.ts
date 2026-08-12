@@ -1,25 +1,25 @@
-const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+const AUTH_ENDPOINT = "https://x.com/i/oauth2/authorize";
 
-export const googleAuthStorageKeys = {
-  codeVerifier: "questboard.google.codeVerifier",
-  returnTo: "questboard.google.returnTo",
-  state: "questboard.google.state"
+export const xAuthStorageKeys = {
+  codeVerifier: "questboard.x.codeVerifier",
+  returnTo: "questboard.x.returnTo",
+  state: "questboard.x.state"
 } as const;
 
-export function readGoogleAuthSettings() {
+export function readXAuthSettings() {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-  const redirectUri = process.env.NEXT_PUBLIC_GOOGLE_REDIRECT_URI;
+  const clientId = process.env.NEXT_PUBLIC_X_CLIENT_ID;
+  const redirectUri = process.env.NEXT_PUBLIC_X_REDIRECT_URI;
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
 
   if (!backendUrl) {
     throw new Error("NEXT_PUBLIC_BACKEND_URL is required");
   }
   if (!clientId) {
-    throw new Error("NEXT_PUBLIC_GOOGLE_CLIENT_ID is required");
+    throw new Error("NEXT_PUBLIC_X_CLIENT_ID is required");
   }
   if (!redirectUri) {
-    throw new Error("NEXT_PUBLIC_GOOGLE_REDIRECT_URI is required");
+    throw new Error("NEXT_PUBLIC_X_REDIRECT_URI is required");
   }
   if (!recaptchaSiteKey) {
     throw new Error("NEXT_PUBLIC_RECAPTCHA_SITE_KEY is required");
@@ -46,7 +46,7 @@ export async function createCodeChallenge(codeVerifier: string): Promise<string>
   return base64UrlEncode(new Uint8Array(digest));
 }
 
-export function buildGoogleAuthorizationUrl({
+export function buildXAuthorizationUrl({
   clientId,
   codeChallenge,
   redirectUri,
@@ -63,7 +63,7 @@ export function buildGoogleAuthorizationUrl({
     code_challenge_method: "S256",
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid profile email",
+    scope: "tweet.read users.read",
     state
   });
 

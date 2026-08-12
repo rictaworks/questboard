@@ -3,7 +3,7 @@ require "rails_helper"
 RSpec.describe QuestProgressService, type: :service do
   self.use_transactional_tests = false
 
-  let(:user_google_sub) { "test-sub-12345-#{SecureRandom.hex(4)}" }
+  let(:user_x_user_id) { "test-sub-12345-#{SecureRandom.hex(4)}" }
   let(:board_title) { "Test Board-#{SecureRandom.hex(4)}" }
   let(:other_board_title) { "Other Board-#{SecureRandom.hex(4)}" }
   let(:quest_title) { "付箋を3枚作る-#{SecureRandom.hex(4)}" }
@@ -17,7 +17,7 @@ RSpec.describe QuestProgressService, type: :service do
   before do
     @user, @board, @other_board, @quest = Thread.new do
       ActiveRecord::Base.connection_pool.with_connection do
-        user = User.create!(google_sub: user_google_sub, display_name: "Test User")
+        user = User.create!(x_user_id: user_x_user_id, display_name: "Test User")
         board = Board.create!(title: board_title)
         other_board = Board.create!(title: other_board_title)
         quest = Quest.find_or_create_by!(title: quest_title) do |q|
@@ -34,7 +34,7 @@ RSpec.describe QuestProgressService, type: :service do
     BoardMember.where(user_id: user.id).delete_all
     UserQuest.where(user_id: user.id).delete_all
     Board.where(title: [ board_title, other_board_title ]).delete_all
-    User.where(google_sub: user_google_sub).delete_all
+    User.where(x_user_id: user_x_user_id).delete_all
     Quest.where(title: quest_title).delete_all
   end
 

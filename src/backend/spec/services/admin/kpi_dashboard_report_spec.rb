@@ -20,7 +20,7 @@ RSpec.describe Admin::KpiDashboardReport, type: :service do
   end
 
   def create_user(sub)
-    User.create!(google_sub: sub, display_name: sub)
+    User.create!(x_user_id: sub, display_name: sub)
   end
 
   def create_board(title)

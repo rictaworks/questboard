@@ -3,7 +3,7 @@
 // 3つの相反する要求の交点にある。
 //
 //   1. 画面に出せない失敗の原因を切り分けられること。利用者に見せられるのは
-//      「キャンセルされた」か「Google 側で中断された」かまでで、client_id の
+//      「キャンセルされた」か「X 側で中断された」かまでで、client_id の
 //      設定ミス・redirect_uri_mismatch・管理ポリシー遮断の区別は運用側にしか
 //      要らず、しかしそれが無いと問い合わせに答えられない。
 //
@@ -100,7 +100,7 @@ export function buildCallbackReport({
   const stateVerified = state !== null && storedState === state;
 
   if (!stateVerified) {
-    // 確かめられない場合も黙らない。クラッシュから復元した、Google が state を
+    // 確かめられない場合も黙らない。クラッシュから復元した、X が state を
     // 落とした・変えたという、まさに切り分けが要る場面がここに落ちる。
     // ただしクエリ由来の値は一切載せない（要求2）。
     //
@@ -110,14 +110,14 @@ export function buildCallbackReport({
     // 改めて通報される）。
     return {
       marker: `${reason}|state-unverified|${storedState}`,
-      message: `google oauth callback reason=${reason} state-unverified`
+      message: `x oauth callback reason=${reason} state-unverified`
     };
   }
 
   return {
     marker: `${reason}|${storedState}|${error ?? ''}`,
     message:
-      `google oauth callback reason=${reason} error=${truncate(error)}`
+      `x oauth callback reason=${reason} error=${truncate(error)}`
       + ` description=${truncateDescription(errorDescription)}`
   };
 }

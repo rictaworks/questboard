@@ -108,7 +108,7 @@ test('バックエンドへの送信が失敗しても未処理の reject を残
   });
 
   const rejections = await collectUnhandledRejections(async () => {
-    reportClientError({message: 'oauth error', source: 'google-callback'});
+    reportClientError({message: 'oauth error', source: 'x-callback'});
   });
 
   assert.deepEqual(
@@ -137,7 +137,7 @@ test('sendBeacon が使える環境でも beacon では送らない', async () =
     }
   });
 
-  reportClientError({message: 'oauth error', source: 'google-callback'});
+  reportClientError({message: 'oauth error', source: 'x-callback'});
   await settle();
 
   assert.deepEqual(beaconCalls, [], 'sendBeacon が呼ばれている');
@@ -156,7 +156,7 @@ test('通報はページ遷移をまたぐ keepalive つきで送る', async () 
     sendBeacon: undefined
   });
 
-  reportClientError({message: 'oauth error', source: 'google-callback'});
+  reportClientError({message: 'oauth error', source: 'x-callback'});
   await settle();
 
   assert.equal(requests.length, 1);
@@ -178,7 +178,7 @@ test('Sentry の読み込みに失敗しても未処理の reject を残さな�
   });
 
   const rejections = await collectUnhandledRejections(async () => {
-    reportClientError({message: 'oauth error', source: 'google-callback'});
+    reportClientError({message: 'oauth error', source: 'x-callback'});
   });
 
   assert.deepEqual(rejections, []);
@@ -198,18 +198,18 @@ test('Sentry 有効時はバックエンドへ送らず Sentry へ送る', async
     }
   });
 
-  reportClientError({message: 'oauth error', source: 'google-callback'});
+  reportClientError({message: 'oauth error', source: 'x-callback'});
   await settle();
 
   assert.equal(captured.length, 1);
   assert.equal(captured[0].message, 'oauth error');
-  assert.equal(captured[0].options.tags.source, 'google-callback');
+  assert.equal(captured[0].options.tags.source, 'x-callback');
 });
 
 // ---------------------------------------------------------------------------
 // 届いたかどうかを呼び出し側へ返すこと
 //
-// google-callback は「同じコールバックからは1回だけ送る」ために印を残す。
+// x-callback は「同じコールバックからは1回だけ送る」ために印を残す。
 // 送れなかった通報まで送信済みとして扱うと、オフライン・CORS 拒否・Sentry の
 // 読み込み失敗で消えた診断が、その認証試行について二度と得られなくなる。
 // 呼び出し側が印を取り消せるよう、届いたかどうかを返す。
@@ -221,7 +221,7 @@ test('バックエンドが受理したら true を返す', async () => {
     sendBeacon: undefined
   });
 
-  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), true);
+  assert.equal(await reportClientError({message: 'oauth error', source: 'x-callback'}), true);
 });
 
 // オフライン・CORS 拒否・プリフライト遮断はいずれもここに落ちる。
@@ -232,7 +232,7 @@ test('バックエンドへ届かなければ false を返す', async () => {
     sendBeacon: undefined
   });
 
-  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+  assert.equal(await reportClientError({message: 'oauth error', source: 'x-callback'}), false);
 });
 
 test('バックエンドが受理しなければ false を返す', async () => {
@@ -241,7 +241,7 @@ test('バックエンドが受理しなければ false を返す', async () => {
     sendBeacon: undefined
   });
 
-  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+  assert.equal(await reportClientError({message: 'oauth error', source: 'x-callback'}), false);
 });
 
 // 送り先が無い状態は「送れなかった」であって「送った」ではない。
@@ -254,7 +254,7 @@ test('バックエンドの URL が未設定なら false を返す', async () =>
   });
   delete process.env.NEXT_PUBLIC_BACKEND_URL;
 
-  assert.equal(await reportClientError({message: 'oauth error', source: 'google-callback'}), false);
+  assert.equal(await reportClientError({message: 'oauth error', source: 'x-callback'}), false);
   process.env.NEXT_PUBLIC_BACKEND_URL = BACKEND_URL;
 });
 
@@ -267,7 +267,7 @@ test('Sentry へ送れたら true、読み込みに失敗したら false を返�
     sentry: {captureMessage: () => {}}
   });
 
-  assert.equal(await captured({message: 'oauth error', source: 'google-callback'}), true);
+  assert.equal(await captured({message: 'oauth error', source: 'x-callback'}), true);
 
   const {reportClientError: failed} = await loadReporter({
     fetchImpl: () => {
@@ -281,5 +281,5 @@ test('Sentry へ送れたら true、読み込みに失敗したら false を返�
     }
   });
 
-  assert.equal(await failed({message: 'oauth error', source: 'google-callback'}), false);
+  assert.equal(await failed({message: 'oauth error', source: 'x-callback'}), false);
 });

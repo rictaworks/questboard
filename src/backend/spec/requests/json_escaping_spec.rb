@@ -13,11 +13,11 @@ require "rails_helper"
 # 直接埋め込む実装（ERB への差し込み、innerHTML への代入など）を足すときは、
 # 埋め込む側でエスケープすること。フレームワーク側の保険はもう無い。
 RSpec.describe "JSON レスポンスの HTML エスケープ方針", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
   end
 
@@ -36,7 +36,7 @@ RSpec.describe "JSON レスポンスの HTML エスケープ方針", type: :requ
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"

@@ -2,13 +2,13 @@
 
 ## Scope
 
-Questboard is a Google OAuth web app with Rails APIs, Gin WebSocket sync, a BASIC-auth developer/admin area, and shared board URLs.
+Questboard is an X OAuth web app with Rails APIs, Gin WebSocket sync, a BASIC-auth developer/admin area, and shared board URLs.
 This document captures the main application-specific threats that matter for the current design.
 
 ## Trust boundaries
 
 - Public browser client
-- Google OAuth identity provider
+- X OAuth identity provider
 - Rails API / session layer
 - Gin WebSocket sync layer
 - PostgreSQL data store
@@ -19,7 +19,7 @@ This document captures the main application-specific threats that matter for the
 
 | ID | Threat | Why it matters | Main defenses |
 |---|---|---|---|
-| T1 | Google OAuth account takeover / login CSRF | User identity is the primary auth boundary | Validate disposable `state` bound to session, verify `sub` (and OIDC `iss`/`aud`/`exp`/`signature`/`nonce` / PKCE), use secure session cookies |
+| T1 | X OAuth account takeover / login CSRF | User identity is the primary auth boundary | Validate disposable `state` bound to session, verify `sub` (and OIDC `iss`/`aud`/`exp`/`signature`/`nonce` / PKCE), use secure session cookies |
 | T2 | BASIC-auth admin compromise | Admin dashboard exposes operational and KPI data | Strong credentials, HTTPS only, lock down routes and headers |
 | T3 | F7 authorization bypass | Board role checks gate edit/comment/view actions | Enforce F7 server-side for every Rails and WS action |
 | T4 | F6 concurrent-edit race conditions | Conflicting ops can corrupt board state | Lamport/LWW rules, CRDT for text, deterministic tie-breaking |
@@ -61,7 +61,6 @@ This document captures the main application-specific threats that matter for the
 
 ### KPI collection
 
-- KPI events may include `userId=Google sub`, board context, and event properties.
+- KPI events may include `userId=X user ID`, board context, and event properties.
 - Reject names, emails, addresses, phone numbers, dates of birth, and other PII.
 - Keep event payloads minimal and structured.
-

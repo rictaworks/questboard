@@ -1,6 +1,6 @@
 # Rails バックエンド API
 
-`src/backend` (Ruby on Rails)。認証は `_questboard_session` の暗号化セッションCookie（Googleログイン、`session_controller.rb` 参照）。以下は現時点で実装済みのエンドポイントのみを記載する。実装ソースは `src/backend/config/routes.rb`。
+`src/backend` (Ruby on Rails)。認証は `_questboard_session` の暗号化セッションCookie（Xログイン、`session_controller.rb` 参照）。以下は現時点で実装済みのエンドポイントのみを記載する。実装ソースは `src/backend/config/routes.rb`。
 
 ## ヘルスチェック
 
@@ -13,7 +13,7 @@
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| POST | `/auth/google_sessions` | Google IDトークン（+ reCAPTCHA）を検証し、セッションCookieを発行 |
+| POST | `/auth/x_sessions` | XユーザーID（+ reCAPTCHA）を検証し、セッションCookieを発行 |
 | GET | `/session` | 現在のログイン状態とユーザー情報を返す（未認証時 401） |
 | DELETE | `/session` | ログアウト（セッション破棄） |
 

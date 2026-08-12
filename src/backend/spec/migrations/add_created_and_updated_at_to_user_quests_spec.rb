@@ -26,7 +26,7 @@ RSpec.describe AddCreatedAndUpdatedAtToUserQuests do
   end
 
   def seed_user_quest!(state: "in_progress", progress: 2)
-    user = User.create!(google_sub: "google-sub-#{SecureRandom.hex(4)}", display_name: "Migration User")
+    user = User.create!(x_user_id: "x-sub-#{SecureRandom.hex(4)}", display_name: "Migration User")
     quest = Quest.find_or_create_by!(title: "マイグレーション検証クエスト") do |q|
       q.condition_event = "object_created_sticky"
       q.condition_count = 3

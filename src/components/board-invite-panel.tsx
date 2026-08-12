@@ -7,12 +7,12 @@ import {useTranslations} from 'next-intl';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
-import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
-  googleSub?: string;
+  xUserId?: string;
 };
 
 type BoardInviteRoleCode = 'viewer' | 'commenter' | 'editor';
@@ -162,7 +162,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
-      ? {authenticated: true, displayName: authT('developmentDisplayName'), googleSub: 'development-google-sub'}
+      ? {authenticated: true, displayName: authT('developmentDisplayName'), xUserId: 'development-x-user-id'}
       : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
@@ -184,7 +184,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
     void (async () => {
       try {
-        const {backendUrl} = readGoogleAuthSettings();
+        const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/session`, {
           credentials: 'include',
           signal: abortController.signal
@@ -201,13 +201,13 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string; googleSub?: string};
+          user?: {displayName?: string; xUserId?: string};
         };
 
         setSessionState({
           authenticated: payload.authenticated,
           displayName: payload.user?.displayName,
-          googleSub: payload.user?.googleSub
+          xUserId: payload.user?.xUserId
         });
         setErrorMessage(null);
       } catch (error) {
@@ -224,7 +224,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   }, [authT]);
 
   const reloadBoard = useCallback(async () => {
-    const {backendUrl} = readGoogleAuthSettings();
+    const {backendUrl} = readXAuthSettings();
     const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
       credentials: 'include'
     });
@@ -246,7 +246,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
     void (async () => {
       try {
-        const {backendUrl} = readGoogleAuthSettings();
+        const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
           credentials: 'include',
           signal: abortController.signal
@@ -297,7 +297,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     setJoining(true);
 
     try {
-      const {backendUrl} = readGoogleAuthSettings();
+      const {backendUrl} = readXAuthSettings();
       const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}/join`, {
         body: JSON.stringify({role_code: roleCode}),
         credentials: 'include',
@@ -389,7 +389,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           boardData={boardData}
           key={boardData.board.shareToken}
           onReloadBoard={reloadBoard}
-          userGoogleSub={sessionState.googleSub ?? 'development-google-sub'}
+          userXUserId={sessionState.xUserId ?? 'development-x-user-id'}
         />
       </>
     );

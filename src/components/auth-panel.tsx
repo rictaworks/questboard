@@ -8,13 +8,13 @@ import {useTranslations} from "next-intl";
 
 import {QUEST_QUERY_ROOT_KEY} from "@/hooks/use-quests";
 import {
-  buildGoogleAuthorizationUrl,
+  buildXAuthorizationUrl,
   createCodeChallenge,
   createCodeVerifier,
   createOAuthState,
-  googleAuthStorageKeys,
-  readGoogleAuthSettings
-} from "@/lib/google-auth";
+  xAuthStorageKeys,
+  readXAuthSettings
+} from "@/lib/x-auth";
 
 type SessionState = {
   authenticated: boolean;
@@ -26,13 +26,13 @@ export default function AuthPanel() {
   const queryClient = useQueryClient();
   const isDev = process.env.NEXT_PUBLIC_ENV === "development";
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
-    process.env.NEXT_PUBLIC_ENV === "development" ? {authenticated: true, displayName: t("developmentDisplayName")} : null
+   isDev ? {authenticated: true, displayName: t("developmentDisplayName")} : null
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== "development");
+  const [loading, setLoading] = useState(!isDev);
 
   useEffect(() => {
-    if (process.env.NEXT_PUBLIC_ENV === "development") {
+    if (isDev) {
       return;
     }
 
@@ -41,7 +41,7 @@ export default function AuthPanel() {
     void (async () => {
       try {
         const fetchSession = async (signal: AbortSignal): Promise<SessionState> => {
-          const {backendUrl} = readGoogleAuthSettings();
+          const {backendUrl} = readXAuthSettings();
           const response = await fetch(`${backendUrl}/session`, {
             credentials: "include",
             signal
@@ -80,20 +80,20 @@ export default function AuthPanel() {
     return () => {
       abortController.abort();
     };
-  }, [t]);
+  }, [isDev, t]);
 
   async function handleSignIn() {
-    const settings = readGoogleAuthSettings();
+    const settings = readXAuthSettings();
     const codeVerifier = createCodeVerifier();
     const codeChallenge = await createCodeChallenge(codeVerifier);
     const state = createOAuthState();
     const returnTo = window.location.pathname + window.location.search;
 
-    window.sessionStorage.setItem(googleAuthStorageKeys.codeVerifier, codeVerifier);
-    window.sessionStorage.setItem(googleAuthStorageKeys.returnTo, returnTo);
-    window.sessionStorage.setItem(googleAuthStorageKeys.state, state);
+    window.sessionStorage.setItem(xAuthStorageKeys.codeVerifier, codeVerifier);
+    window.sessionStorage.setItem(xAuthStorageKeys.returnTo, returnTo);
+    window.sessionStorage.setItem(xAuthStorageKeys.state, state);
 
-    window.location.assign(buildGoogleAuthorizationUrl({
+    window.location.assign(buildXAuthorizationUrl({
       clientId: settings.clientId,
       codeChallenge,
       redirectUri: settings.redirectUri,
@@ -103,7 +103,7 @@ export default function AuthPanel() {
 
   async function handleSignOut() {
     try {
-      const {backendUrl} = readGoogleAuthSettings();
+      const {backendUrl} = readXAuthSettings();
       const response = await fetch(`${backendUrl}/session`, {
         credentials: "include",
         method: "DELETE"
@@ -135,7 +135,7 @@ export default function AuthPanel() {
     );
   }
 
-  if (process.env.NEXT_PUBLIC_ENV === "development") {
+  if (isDev) {
     const devTestId = ["development", "auth", "bypass"].join("-");
     return (
       <section className="auth-panel auth-panel-development" data-testid={devTestId}>

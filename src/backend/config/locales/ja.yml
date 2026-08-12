@@ -32,7 +32,7 @@ ja:
       content_type_must_be_json: "Content-Type は application/json である必要があります"
       invalid_intensity: "表示強度が正しくありません"
       recaptcha_verification_failed: "reCAPTCHA の検証に失敗しました"
-      google_oauth_failed: "Googleログインに失敗しました"
+      x_oauth_failed: "Xログインに失敗しました"
       # I18n::MissingTranslationData を ApplicationController#render_missing_translation
       # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。
