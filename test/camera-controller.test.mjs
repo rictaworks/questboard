@@ -535,7 +535,7 @@ test('zoomByScale は指間距離の倍率で直接ズームし、ホイール�
   const initialState = {x: 0, y: 0, zoom: 1, velocityX: 0, velocityY: 0, focus: null};
 
   const controller = new CameraController({...initialState});
-  const zoomed = controller.zoomByScale({scale: 2, origin, cursor, viewport: stageViewport});
+  const zoomed = controller.zoomByScale({scale: 2, origin, viewport: stageViewport});
   assert.equal(zoomed.zoom, 2, '倍率 2 のピンチはズームを 2 倍にする');
 
   // wheelZoomExponent を変えてもピンチの結果は変わらない
@@ -543,7 +543,7 @@ test('zoomByScale は指間距離の倍率で直接ズームし、ホイール�
     ...DEFAULT_CAMERA_CONTROLLER_OPTIONS,
     wheelZoomExponent: DEFAULT_CAMERA_CONTROLLER_OPTIONS.wheelZoomExponent * 10,
   });
-  assert.equal(retuned.zoomByScale({scale: 2, origin, cursor, viewport: stageViewport}).zoom, 2);
+  assert.equal(retuned.zoomByScale({scale: 2, origin, viewport: stageViewport}).zoom, 2);
 
   // pinch origin のワールド座標は保たれる（cursor ではなく origin を使う）
   const worldX = initialState.x + (origin.x - stageViewport.width / 2) / initialState.zoom;
@@ -552,8 +552,8 @@ test('zoomByScale は指間距離の倍率で直接ズームし、ホイール�
 
   // 不正な倍率は握りつぶさず例外にする
   const guarded = new CameraController({...initialState});
-  assert.throws(() => guarded.zoomByScale({scale: 0, cursor, viewport: stageViewport}), /positive finite scale/);
-  assert.throws(() => guarded.zoomByScale({scale: Number.NaN, cursor, viewport: stageViewport}), /positive finite scale/);
+  assert.throws(() => guarded.zoomByScale({scale: 0, origin, viewport: stageViewport}), /positive finite scale/);
+  assert.throws(() => guarded.zoomByScale({scale: Number.NaN, origin, viewport: stageViewport}), /positive finite scale/);
 });
 
 test('引き戻しの抑止は次の tick で必ず解除され、操作の取りこぼしで固定化しない', () => {
