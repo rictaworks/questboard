@@ -107,7 +107,7 @@ export type CanvasIntent =
   | {kind: 'connect'}
   | {kind: 'select'; mode: 'replace' | 'add' | 'remove' | 'clear'}
   | {kind: 'move'; duplicate: boolean}
-  | {kind: 'marquee'; pointer: 'mouse' | 'touch'}
+  | {kind: 'marquee'; pointer: 'mouse' | 'touch' | 'pen'}
   | {kind: 'create-note'}
   | {kind: 'edit-text'}
   | {kind: 'ignore'};
@@ -270,8 +270,8 @@ export function resolveCanvasIntent(
   }
 
   if (input.hitTarget.kind === 'blank') {
-    if (input.phase === 'change' && input.device === 'mouse') {
-      return {kind: 'marquee', pointer: 'mouse'};
+    if (input.phase === 'change' && (input.device === 'mouse' || input.device === 'pen')) {
+      return {kind: 'marquee', pointer: input.device};
     }
 
     if (input.phase === 'change' && input.device === 'touch' && input.activeTool === 'lasso') {
