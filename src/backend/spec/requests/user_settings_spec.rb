@@ -1,12 +1,12 @@
 require "rails_helper"
 
 RSpec.describe "User settings", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:user) { User.create!(google_sub: "google-sub-123", display_name: "Ada Lovelace") }
-  let(:other_user) { User.create!(google_sub: "google-sub-456", display_name: "Grace Hopper") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let(:user) { User.create!(x_user_id: "x-sub-123", display_name: "Ada Lovelace") }
+  let(:other_user) { User.create!(x_user_id: "x-sub-456", display_name: "Grace Hopper") }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     IntensityMaster.upsert_all(
       [ { code: "full" }, { code: "subtle" }, { code: "off" } ],
       unique_by: :index_intensity_masters_on_code
@@ -16,7 +16,7 @@ RSpec.describe "User settings", type: :request do
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"

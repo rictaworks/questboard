@@ -24,7 +24,7 @@ import {
   type BoardRestoreSuggestion,
   type BoardResyncRequired
 } from '@/lib/board-realtime';
-import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {readXAuthSettings} from '@/lib/x-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
@@ -101,7 +101,7 @@ export interface BoardCanvasData {
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
   onReloadBoard: () => Promise<void>;
-  userGoogleSub: string;
+  userXUserId: string;
 };
 
 type Interaction =
@@ -161,7 +161,7 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
 }
 
 
-export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSub}: BoardCanvasPanelProps) {
+export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
@@ -200,14 +200,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const [restoreGateOpen, setRestoreGateOpen] = useState(false);
   const hasAppliedInitialCameraRef = useRef(false);
   const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
-    () => readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full'
+    () => readIntensityFromStorage(`feedback_intensity:${userXUserId}`) ?? 'full'
   );
   const hasAppliedServerIntensityRef = useRef(false);
 
-  const [prevUserGoogleSub, setPrevUserGoogleSub] = useState(userGoogleSub);
-  if (userGoogleSub !== prevUserGoogleSub) {
-    setPrevUserGoogleSub(userGoogleSub);
-    setIntensity(readIntensityFromStorage(`feedback_intensity:${userGoogleSub}`) ?? 'full');
+  const [prevUserXUserId, setPrevUserXUserId] = useState(userXUserId);
+  if (userXUserId !== prevUserXUserId) {
+    setPrevUserXUserId(userXUserId);
+    setIntensity(readIntensityFromStorage(`feedback_intensity:${userXUserId}`) ?? 'full');
   }
   const selectionRef = useRef(selection);
   useEffect(() => {
@@ -229,14 +229,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const gesturePanTrackerRef = useRef<GesturePanTracker>(createGesturePanTracker());
   const gestureZoomTrackerRef = useRef<GestureZoomTracker>(createGestureZoomTracker());
   const queryClient = useQueryClient();
-  const {backendUrl} = readGoogleAuthSettings();
+  const {backendUrl} = readXAuthSettings();
 
   // クエスト状態の取得・再取得・順序保証・重複排除は TanStack Query に任せる。
   // 以前はこれらを自前で書いていたため、順序逆転・初回誤祝賀・再接続漏れといった
   // 不具合が繰り返し発生していた（PR #61 レビュー）。
-  const questsQuery = useQuestsQuery({backendUrl, userGoogleSub});
+  const questsQuery = useQuestsQuery({backendUrl, userXUserId});
   const userSettingsQuery = useQuery({
-    queryKey: ['user-settings', userGoogleSub],
+    queryKey: ['user-settings', userXUserId],
     queryFn: ({signal}) => fetchUserSettings({backendUrl}, signal)
   });
   const queueUserSettingsUpdate = useMemo(
@@ -261,14 +261,14 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
 
   useEffect(() => {
     hasAppliedServerIntensityRef.current = false;
-  }, [userGoogleSub]);
+  }, [userXUserId]);
 
   useEffect(() => {
     analyticsTrackerRef.current?.dispose();
     const tracker = new AnalyticsTracker({
       boardId: boardState.board.id,
       endpointUrl: `${backendUrl}/kpi_events`,
-      userId: userGoogleSub
+      userId: userXUserId
     });
     analyticsTrackerRef.current = tracker;
 
@@ -276,7 +276,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
       analyticsTrackerRef.current?.dispose();
       analyticsTrackerRef.current = null;
     };
-  }, [backendUrl, boardState.board.id, userGoogleSub]);
+  }, [backendUrl, boardState.board.id, userXUserId]);
 
   useEffect(() => {
     const serverIntensity = userSettingsQuery.data?.intensity;
@@ -286,8 +286,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
 
     hasAppliedServerIntensityRef.current = true;
     setIntensity(serverIntensity);
-    writeIntensityToStorage(`feedback_intensity:${userGoogleSub}`, serverIntensity);
-  }, [userGoogleSub, userSettingsQuery.data?.intensity]);
+    writeIntensityToStorage(`feedback_intensity:${userXUserId}`, serverIntensity);
+  }, [userXUserId, userSettingsQuery.data?.intensity]);
 
   useEffect(() => {
     analyticsTrackerRef.current?.setConnectionState(
@@ -669,13 +669,13 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
   const skipQuestMutation = useSkipQuestMutation({
     backendUrl,
     shareToken: boardState.board.shareToken,
-    userGoogleSub,
+    userXUserId,
     onError: notifyQuestActionFailed
   });
   const reopenQuestMutation = useReopenQuestMutation({
     backendUrl,
     shareToken: boardState.board.shareToken,
-    userGoogleSub,
+    userXUserId,
     onError: notifyQuestActionFailed
   });
 
@@ -1260,7 +1260,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
     }
 
     try {
-      const {backendUrl} = readGoogleAuthSettings();
+      const {backendUrl} = readXAuthSettings();
       const {url, method, headers} = buildMutationRequest(boardStateRef.current.board.shareToken, objectId, action);
       const body = headers && Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined;
       const response = await fetch(`${backendUrl}${url}`, {
@@ -1288,7 +1288,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
         return;
       }
 
-      const {backendUrl} = readGoogleAuthSettings();
+      const {backendUrl} = readXAuthSettings();
       const nextGeometry = resolveNewObjectGeometry(
         cameraStateRef.current,
         viewport,
@@ -1434,7 +1434,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userGoogleSu
                 const nextIntensity = e.target.value as FeedbackIntensityCode;
                 hasAppliedServerIntensityRef.current = true;
                 setIntensity(nextIntensity);
-                writeIntensityToStorage(`feedback_intensity:${userGoogleSub}`, nextIntensity);
+                writeIntensityToStorage(`feedback_intensity:${userXUserId}`, nextIntensity);
                 analyticsTrackerRef.current?.track({
                   eventId: 'intensity_changed',
                   attributes: { intensity: nextIntensity }
@@ -1995,7 +1995,7 @@ function BoardComments({
   );
 
   async function mutateComment(action: 'create' | 'update' | 'delete', commentId?: number) {
-    const {backendUrl} = readGoogleAuthSettings();
+    const {backendUrl} = readXAuthSettings();
     const prefix = `${backendUrl}/boards/${encodeURIComponent(boardData.board.shareToken)}/objects/${selectedObject.id}/comments`;
 
     try {

@@ -16,10 +16,10 @@ const root = process.cwd();
 //   code / state  … 下流でトークン交換に使う。配列のまま流すと 502 になるが、
 //                   捨てるとサインインが完全に止まる
 //   error         … 失敗の理由コード。access_denied かどうかで文言が変わる
-//   error_description … Google が書く自由文。潰すと切り分けができなくなる
+//   error_description … X が書く自由文。潰すと切り分けができなくなる
 // ---------------------------------------------------------------------------
 
-const pagePath = 'src/app/auth/google/callback/page.tsx';
+const pagePath = 'src/app/auth/x/callback/page.tsx';
 const reportPath = 'src/lib/oauth-callback-report.ts';
 
 // 重複した説明の区切りは、連結する側（page.tsx）と分割して丸める側

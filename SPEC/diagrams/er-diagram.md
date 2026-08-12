@@ -35,7 +35,7 @@ erDiagram
     }
     USERS {
         bigint id PK
-        string google_sub UK
+        string x_user_id UK
         string display_name
         datetime created_at
     }

@@ -26,9 +26,9 @@
 - **測定：あり**（KPIイベント計測。F8参照）
 - **保守：あり**（リリース後の不具合対応・機能改修。エラートラッキング＋週次パッチ運用）
 - **監視：あり**（死活監視・アラート通知。/healthz エンドポイント監視、WebSocket接続数・同期遅延のメトリクス監視、閾値超過でアラート）
-- MVPの制約をすべて継承：Googleログイン認証、PostgreSQL、Vercel（フロント）＋Railway優先（バックエンド・管理画面、不可時Render）、開発者用管理画面はBASIC認証、reCAPTCHA必須
+- MVPの制約をすべて継承：Xログイン認証、PostgreSQL、Vercel（フロント）＋Railway優先（バックエンド・管理画面、不可時Render）、開発者用管理画面はBASIC認証、reCAPTCHA必須
 - スケーラビリティ・高可用性：Gin同期サーバーは水平分割（ボードID単位のシャーディング）、Redis Pub/Subでノード間中継、DBはリードレプリカ構成を想定
-- 個人情報：プライバシーポリシー・個人情報管理規程に従い設計（Google subとGoogleアカウント表示名のみ保持。身体測定値は本課題では扱わない）
+- 個人情報：プライバシーポリシー・個人情報管理規程に従い設計（X user IDとX表示名のみ保持。身体測定値は本課題では扱わない）
 - 開発環境DBも本番もPostgreSQL
 
 ### 1.3 技術スタック
@@ -36,7 +36,7 @@
 | レイヤ | 技術 | 役割 |
 |---|---|---|
 | フロント | Next（TypeScript）+ Canvas/WebGL描画 | ボード描画、HUD、ラジアルメニュー、ミニマップ、演出 |
-| API | Rails | 認証（Googleログイン）、ボード/権限CRUD、クエスト、管理画面（BASIC認証） |
+| API | Rails | 認証（Xログイン）、ボード/権限CRUD、クエスト、管理画面（BASIC認証） |
 | リアルタイム | Gin（Go）+ WebSocket | 操作同期、プレゼンス、競合解決（高速並列処理要件のため採用） |
 | DB | PostgreSQL | 永続化。テキスト本文はCRDT状態をJSONBで保持 |
 | 計測 | Rails集約＋バッチ投入 | KPIイベント |
@@ -151,7 +151,7 @@ erDiagram
 
     USERS {
         bigint id PK
-        string google_sub UK "Google sub値"
+        string x_user_id UK "Google sub値"
         string display_name "Googleアカウント表示名"
         datetime created_at
     }
@@ -356,7 +356,7 @@ sequenceDiagram
     G-->>FE: 認可コード
     FE->>API: コード+reCAPTCHAトークン
     API->>G: トークン交換・sub/表示名取得
-    API->>DB: users UPSERT(google_sub, display_name)
+    API->>DB: users UPSERT(x_user_id, display_name)
     API-->>FE: セッション発行
 ```
 
@@ -424,7 +424,7 @@ classDiagram
         +role: Role
     }
     class User {
-        +googleSub
+        +xUserId
         +displayName
         +settings: UserSettings
     }

@@ -394,10 +394,10 @@ for (const [pathname, expected] of [
 }
 
 test('旧ロケール接頭辞つきの OAuth コールバック URL もリダイレクトされる', async () => {
-  const {status, location} = await get('/ar/auth/google/callback');
+  const {status, location} = await get('/ar/auth/x/callback');
 
   assert.equal(status, 307);
-  assert.equal(location, '/auth/google/callback');
+  assert.equal(location, '/auth/x/callback');
 });
 
 // 恒久リダイレクト（308）はブラウザがキャッシュし続けるため、将来これらの名前で
@@ -454,11 +454,11 @@ test('404 のペイロードにボードキャンバスのメッセージが含�
 // OAuth コールバックが失敗理由を取り違えないこと
 // ---------------------------------------------------------------------------
 
-// Google は同意画面のキャンセルを ?error=access_denied で返す。error を読まないと
+// X は同意画面のキャンセルを ?error=access_denied で返す。error を読まないと
 // code 欠落と同じ扱いになり、「認証に成功しました」の見出しの下に
 // 「認可コードが見つかりません」が並ぶ画面になる。
 test('OAuth のキャンセルが成功表示にならず、キャンセルとして表示される', async () => {
-  const {status, body} = await get('/auth/google/callback?error=access_denied');
+  const {status, body} = await get('/auth/x/callback?error=access_denied');
 
   assert.equal(status, 200);
   assert.match(mainContent(body), /認証を完了できませんでした/);
@@ -475,7 +475,7 @@ for (const query of [
   'error=%20access_denied'
 ]) {
   test(`OAuth の ?${query} がキャンセルとして表示される`, async () => {
-    const {body} = await get(`/auth/google/callback?${query}`);
+    const {body} = await get(`/auth/x/callback?${query}`);
 
     assert.match(mainContent(body), /キャンセルされました/);
     assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);
@@ -487,14 +487,14 @@ for (const query of [
 // 切り分けに要る生の値はバックエンドのログへ送る（reportClientError）。
 test('OAuth の error の生の値が画面に出ない', async () => {
   const attackerText = 'sagi-no-annai-desu-0120-000-000';
-  const {body} = await get(`/auth/google/callback?error=${attackerText}`);
+  const {body} = await get(`/auth/x/callback?error=${attackerText}`);
 
-  assert.match(mainContent(body), /Google 側で認証が中断されました/);
+  assert.match(mainContent(body), /X 側で認証が中断されました/);
   assert.doesNotMatch(mainContent(body), new RegExp(attackerText));
 });
 
 test('OAuth のパラメータ欠落は認可コード欠落として表示される', async () => {
-  const {status, body} = await get('/auth/google/callback');
+  const {status, body} = await get('/auth/x/callback');
 
   assert.equal(status, 200);
   assert.match(mainContent(body), /認証を完了できませんでした/);
@@ -502,12 +502,12 @@ test('OAuth のパラメータ欠落は認可コード欠落として表示さ�
   assert.doesNotMatch(mainContent(body), /認証に成功しました/);
 });
 
-// code の欠落と state の欠落を1つの真偽値に潰すと、Google が実際には認可コードを
+// code の欠落と state の欠落を1つの真偽値に潰すと、X が実際には認可コードを
 // 送っているのに「認可コードが見つかりません」と表示される。利用者もサポートも
 // 存在しない問題を探し回ることになる。state はプライバシー拡張による除去や
 // 中間リダイレクトで単独で落ちうる。
 test('state だけが欠けたコールバックは認可コード欠落と区別して表示される', async () => {
-  const {status, body} = await get('/auth/google/callback?code=4%2F0AX4');
+  const {status, body} = await get('/auth/x/callback?code=4%2F0AX4');
 
   assert.equal(status, 200);
   assert.match(mainContent(body), /認証状態が見つかりません/);
@@ -515,9 +515,9 @@ test('state だけが欠けたコールバックは認可コード欠落と区�
 });
 
 // クエリを再付与するリバースプロキシやリダイレクト連鎖は、同じパラメータを
-// 重複させる。捨てるとそのデプロイでは Google ログインが一切成立しなくなる。
+// 重複させる。捨てるとそのデプロイでは X ログインが一切成立しなくなる。
 test('重複した code と state でもサインインが止まらない', async () => {
-  const {status, body} = await get('/auth/google/callback?code=4%2F0AX4&code=4%2F0AX4&state=S1&state=S1');
+  const {status, body} = await get('/auth/x/callback?code=4%2F0AX4&code=4%2F0AX4&state=S1&state=S1');
 
   assert.equal(status, 200);
   assert.doesNotMatch(mainContent(body), /認可コードが見つかりません/);

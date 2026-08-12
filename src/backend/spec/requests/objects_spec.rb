@@ -1,14 +1,14 @@
 require "rails_helper"
 
 RSpec.describe "Objects", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
-  let(:editor) { User.create!(google_sub: "google-sub-editor", display_name: "Editor User") }
-  let(:another_editor) { User.create!(google_sub: "google-sub-editor-2", display_name: "Second Editor User") }
-  let(:viewer) { User.create!(google_sub: "google-sub-viewer", display_name: "Viewer User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
+  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User") }
+  let(:another_editor) { User.create!(x_user_id: "x-sub-editor-2", display_name: "Second Editor User") }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User") }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
     seed_object_support
   end
@@ -58,7 +58,7 @@ RSpec.describe "Objects", type: :request do
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"

@@ -27,8 +27,8 @@ RSpec.describe "Admin KPI dashboard", type: :request do
     board_one = Board.create!(title: "Board One")
     board_two = Board.create!(title: "Board Two")
 
-    user_one = User.create!(google_sub: "google-sub-one", display_name: "User One")
-    user_two = User.create!(google_sub: "google-sub-two", display_name: "User Two")
+    user_one = User.create!(x_user_id: "x-sub-one", display_name: "User One")
+    user_two = User.create!(x_user_id: "x-sub-two", display_name: "User Two")
 
     KpiEvent.create!(event_def: EventDef.find_by!(code: "object_created_sticky"), user: user_one, board: board_one, occurred_at: 8.days.ago.change(sec: 0, usec: 0))
     KpiEvent.create!(event_def: EventDef.find_by!(code: "object_created_sticky"), user: user_two, board: board_one, occurred_at: 8.days.ago.change(sec: 0, usec: 0))

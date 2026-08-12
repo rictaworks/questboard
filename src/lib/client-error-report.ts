@@ -12,7 +12,7 @@ import {sentryEnabled} from '@/lib/sentry-config';
 // 診断が分断される。
 //
 // 届いたかどうかを返す。呼び出し側には「同じ失敗を何度も送らない」ために送信済みの
-// 印を残すものがあり（google-callback）、送れなかった通報まで送信済みとして扱うと、
+// 印を残すものがあり（x-callback）、送れなかった通報まで送信済みとして扱うと、
 // オフライン・CORS 拒否・Sentry の読み込み失敗で消えた診断がその試行について
 // 二度と得られなくなる。返り値は必ず解決する（reject させると ClientErrorBridge が
 // それを拾い、送信失敗のループになる）。
@@ -69,7 +69,7 @@ function captureWithSentry(message: string, source: string): Promise<boolean> {
 }
 
 // バックエンドの URL が未設定のときは送らない。設定不備は起動時に
-// readGoogleAuthSettings が例外で知らせる領分で、ここで握り潰す対象ではない。
+// readXAuthSettings が例外で知らせる領分で、ここで握り潰す対象ではない。
 function sendToBackend(payload: {
   message: string;
   source: string;

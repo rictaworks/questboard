@@ -1,12 +1,12 @@
 require "rails_helper"
 
 RSpec.describe "Quests API", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:user) { User.create!(google_sub: "google-sub-quests", display_name: "Quests User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let(:user) { User.create!(x_user_id: "x-sub-quests", display_name: "Quests User") }
   let(:board) { Board.create!(title: "Test Board") }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
 
     Quest.find_or_create_by!(title: "付箋を3枚作る") do |q|
       q.condition_event = "object_created_sticky"
@@ -21,7 +21,7 @@ RSpec.describe "Quests API", type: :request do
   def sign_in
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"

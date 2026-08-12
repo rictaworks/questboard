@@ -28,8 +28,8 @@ async function loadModule() {
       return {__esModule: true, default: () => null};
     }
 
-    if (specifier === '@/lib/google-auth') {
-      return {readGoogleAuthSettings: () => ({backendUrl: 'http://localhost'})};
+    if (specifier === '@/lib/x-auth') {
+      return {readXAuthSettings: () => ({backendUrl: 'http://localhost'})};
     }
 
     if (specifier === 'next-intl') {

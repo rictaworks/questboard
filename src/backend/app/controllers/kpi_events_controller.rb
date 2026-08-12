@@ -116,7 +116,7 @@ class KpiEventsController < ApplicationController
   def parse_user_id!(value)
     user_id = value.to_s
     raise KpiEventValidationError, "userId is required" if user_id.blank?
-    raise KpiEventValidationError, "userId must match the active Google sub" if user_id != current_user.google_sub
+    raise KpiEventValidationError, "userId must match the active X user ID" if user_id != current_user.x_user_id
 
     user_id
   end

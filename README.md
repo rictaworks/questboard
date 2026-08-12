@@ -20,14 +20,14 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## 自動ログイン手順（開発環境）
 
-開発環境（`NEXT_PUBLIC_ENV` / Rails環境が development）では認証済み状態として分岐するため、Googleログインなしでそのまま各ページ・APIにアクセスできる。本番ビルドにはこの近道は存在しない。
+開発環境（`NEXT_PUBLIC_ENV` / Rails環境が development）では認証済み状態として分岐するため、Xログインなしでそのまま各ページ・APIにアクセスできる。本番ビルドにはこの近道は存在しない。
 
 ## Pages
 
 表示言語は日本語のみ。URL にロケール接頭辞は付かない。
 
-- `/` — Googleサインイン付きのランディングページ
-- `/auth/google/callback` — Google OAuthコールバック・reCAPTCHA検証
+- `/` — Xサインイン付きのランディングページ
+- `/auth/x/callback` — X OAuthコールバック・reCAPTCHA検証
 - `/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
 
 ## API一覧
@@ -41,8 +41,8 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 ## Authentication
 
-- Frontend env: `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_SYNC_SERVER_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_REDIRECT_URI`, `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `NEXT_PUBLIC_ENV`
-- Backend env: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`
+- Frontend env: `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_SYNC_SERVER_URL`, `NEXT_PUBLIC_X_CLIENT_ID`, `NEXT_PUBLIC_X_REDIRECT_URI`, `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `NEXT_PUBLIC_ENV`
+- Backend env: `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`
 - Development mode treats the app as already authenticated; this branch is not present in production builds
 
 ## Localization
