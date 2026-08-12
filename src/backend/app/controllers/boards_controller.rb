@@ -21,8 +21,6 @@ class BoardsController < ApplicationController
     return unless authorize_board_view!(board:, membership:)
 
     render json: serialize_canvas_board(board, membership)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   def create
@@ -41,10 +39,6 @@ class BoardsController < ApplicationController
       end
     end
     render json: serialize_board(board, board.member_for!(current_user)), status: :created
-  rescue InvalidBoardTitleError => e
-    render json: { error: invalid_title_message(e) }, status: :unprocessable_content
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def join
@@ -52,21 +46,16 @@ class BoardsController < ApplicationController
     role_code = invite_role_code
 
     unless Role.assignable_from_invite?(role_code)
-      render json: { error: I18n.t("api.errors.unsupported_invite_role") }, status: :unprocessable_content
-      return
+      raise ApplicationController::UnsupportedInviteRoleError
     end
 
     membership = board.join_member!(user: current_user, role_code:)
     render json: serialize_board(board, membership), status: :created
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def update_member_role
     board = find_board!
-    actor_member = board.member_for!(current_user)
+    actor_member = board.board_members.includes(:role).find_by(user: current_user) || raise(ApplicationController::BoardNotFoundError)
 
     unless PermissionService.new.authorize(actor_member.role.code, :change_role, {})
       head :forbidden
@@ -78,29 +67,24 @@ class BoardsController < ApplicationController
     # 指定されていません」に化けてしまい、本来の 404「Board not found」に届かなくなる
     # （find_board! の share_token と同じ理由）。
     user_id = params[:user_id]
-    role = Role.find_by!(code: role_code_param)
+    role = Role.find_by(code: role_code_param) || raise(ApplicationController::BoardNotFoundError)
 
     board.with_lock do
       target_member = board.board_members.includes(:role).find_by!(user_id:)
 
       if demotes_last_owner?(board:, target_member:, new_role: role)
-        render json: { error: I18n.t("api.errors.cannot_remove_the_last_owner") }, status: :unprocessable_content
-        return
+        raise ApplicationController::CannotRemoveLastOwnerError
       end
 
       target_member.update!(role:)
       render json: serialize_board(board, target_member)
     end
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy
     board = find_board!
     membership = board_membership_for(board)
-    return render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found unless membership
+    raise ApplicationController::BoardNotFoundError unless membership
 
     unless PermissionService.new.authorize(membership.role.code, :delete_board, {})
       head :forbidden
@@ -110,8 +94,6 @@ class BoardsController < ApplicationController
     deleted_at = board.tombstone!
     notify_board_deleted(board:, deleted_at:)
     head :no_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
   end
 
   private
@@ -128,7 +110,7 @@ class BoardsController < ApplicationController
   # show/join/update_member_role/destroy の全アクションがこのメソッドを経由する
   # （検索ロジックを変更する際はここ1箇所を直せば全アクションに反映される）。
   def find_board!
-    Board.active.find_by!(share_token: params[:share_token])
+    Board.active.find_by(share_token: params[:share_token]) || raise(ApplicationController::BoardNotFoundError)
   end
 
   # title が無い場合は空文字として扱い、Board の presence バリデーションに判定を任せる。
@@ -160,12 +142,6 @@ class BoardsController < ApplicationController
     raise InvalidBoardTitleError, "expected String but got #{title.class}" unless title.is_a?(String)
 
     title.strip
-  end
-
-  def invalid_title_message(error)
-    log_invalid_input(error)
-
-    I18n.t("api.errors.invalid_board_title")
   end
 
   def invite_role_code

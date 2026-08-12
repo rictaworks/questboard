@@ -576,4 +576,18 @@ RSpec.describe "Boards", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "招待された権限に対応していません")
   end
+
+  it "returns not found when updating member role with an invalid role code" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(member)
+    post "/boards/#{share_token}/join", params: { role_code: "editor" }, as: :json
+
+    sign_in(owner)
+    patch "/boards/#{share_token}/members/#{member.id}", params: { role_code: "invalid_role" }, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(JSON.parse(response.body)).to eq("error" => "ボードが見つかりません")
+  end
 end

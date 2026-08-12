@@ -79,10 +79,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_object(object), status: :created
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_type_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def move
@@ -114,10 +110,6 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_object(duplicated_object), status: :created
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def recolor
@@ -137,10 +129,6 @@ class ObjectsController < ApplicationController
     end
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def destroy
@@ -154,10 +142,6 @@ class ObjectsController < ApplicationController
     end
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def lock
@@ -171,12 +155,8 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_object(object.reload)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
-    render json: { error: I18n.t("api.errors.object_was_locked_by_another_user") }, status: :conflict
+    raise ApplicationController::ObjectLockedByAnotherUserError
   end
 
   def unlock
@@ -193,10 +173,6 @@ class ObjectsController < ApplicationController
       record_object_kpi_event!(object.board, object, "object_unlocked")
     end
     render json: serialize_object(object.reload)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   # Applies a Lamport-ordered operation coming from the sync-server. Unlike move/resize/
@@ -211,7 +187,11 @@ class ObjectsController < ApplicationController
     object = find_authorized_op_object!(action:, property:)
     return if performed?
 
-    lamport_ts = Integer(params.require(:lamport_ts))
+    begin
+      lamport_ts = Integer(params.require(:lamport_ts))
+    rescue ArgumentError, TypeError
+      raise ApplicationController::LamportTsMustBeAnIntegerError
+    end
     client_id = params.require(:client_id).to_s
     # LEGACY_OP_CLIENT_ID is reserved for record_and_apply_legacy_op! (see its declaration
     # above): a real client sending it here would share the (object_id, client_id,
@@ -309,25 +289,12 @@ class ObjectsController < ApplicationController
     end
 
     render json: serialize_op(confirmed_op, duplicate:)
-  rescue UnsupportedOpPropertyError, InvalidOpValueError, ImplausibleLamportJumpError, ReservedClientIdError => e
-    render json: { error: e.message }, status: :unprocessable_content
-  rescue ArgumentError, TypeError
-    render json: { error: I18n.t("api.errors.lamport_ts_must_be_an_integer") }, status: :unprocessable_content
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
   rescue ActiveRecord::RecordNotUnique
     # A concurrent request won the insert race for this exact (object_id, client_id,
     # lamport_ts). Echo back that record's own value/lamport_ts/client_id, same as the
     # ordinary idempotent-duplicate path above — never the object's current aggregate
     # state, which may already reflect a different, newer op.
     render json: serialize_op(ObjectOp.find_by!(object_id: object.id, client_id:, lamport_ts:), duplicate: true)
-  rescue StaleOpError, ConflictingOpError, DeletedObjectEditError, OutdatedReferenceError => e
-    payload = { error: e.message }
-    payload[:restoreSuggested] = true if e.is_a?(DeletedObjectEditError)
-    payload[:resyncRequired] = true if e.is_a?(OutdatedReferenceError)
-    render json: payload, status: :conflict
   end
 
   private
@@ -414,12 +381,6 @@ class ObjectsController < ApplicationController
     confirmed_op = record_and_apply_legacy_op!(object, "geometry", validate_numeric_geometry_fields!(geometry_params.to_h))
     broadcast_legacy_op(object.board, confirmed_op) if confirmed_op
     render json: serialize_object(object.reload)
-  rescue ActiveRecord::RecordNotFound
-    render json: { error: I18n.t("api.errors.board_or_object_not_found") }, status: :not_found
-  rescue ActiveRecord::RecordInvalid => e
-    render json: { error: e.record.errors.full_messages.to_sentence }, status: :unprocessable_content
-  rescue InvalidOpValueError => e
-    render json: { error: e.message }, status: :unprocessable_content
   end
 
   def lock_resolver_for(object)

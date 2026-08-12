@@ -15,7 +15,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: I18n.t("api.errors.cannot_skip_quest") }, status: :unprocessable_content
+      raise ApplicationController::CannotSkipQuestError
     end
   end
 
@@ -25,7 +25,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: I18n.t("api.errors.cannot_reopen_quest") }, status: :unprocessable_content
+      raise ApplicationController::CannotReopenQuestError
     end
   end
 
@@ -35,7 +35,7 @@ class QuestsController < ApplicationController
       user_quest = find_user_quest(params[:id])
       render json: { success: true, snapshot: user_quest.snapshot }
     else
-      render json: { error: I18n.t("api.errors.cannot_claim_reward") }, status: :unprocessable_content
+      raise ApplicationController::CannotClaimRewardError
     end
   end
 
@@ -52,11 +52,7 @@ class QuestsController < ApplicationController
 
   def find_board!
     share_token = params[:share_token]
-    @board = Board.find_by(share_token: share_token)
-    if @board
-      @board.member_for!(current_user)
-    else
-      render json: { error: I18n.t("api.errors.board_not_found") }, status: :not_found
-    end
+    @board = Board.find_by(share_token: share_token) || raise(ApplicationController::BoardNotFoundError)
+    @board.member_for!(current_user)
   end
 end
