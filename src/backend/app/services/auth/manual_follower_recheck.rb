@@ -11,7 +11,12 @@ module Auth
       end
     end
 
-    MAX_PAGES_LIMIT = 100
+    # 手動再判定は増分取得なので、通常は1〜2ページで打ち切られる（自分が見つかるか、
+    # 既知のキャッシュ済みIDに到達する）。キャッシュが空で後者が効かない場合に備えた
+    # 頭打ちであり、認証済み利用者がボタン1回で消費できるリクエスト数の上限そのもの
+    # でもあるため、全件同期用の Auth::FollowerCacheSync::MAX_PAGES_LIMIT より小さくする。
+    # 上限に達した場合はフォロワーと確認できず none 据え置き（fail-closed）となる。
+    MAX_PAGES_LIMIT = 5
 
     def initialize(
       user:,
@@ -79,7 +84,6 @@ module Auth
       seen_tokens = Set.new
       request_count = 0
       target_user_id = user.x_user_id.to_s
-      known_ids = follower_cache.pluck(:x_user_id).to_set
 
       loop do
         request_count += 1
@@ -100,7 +104,10 @@ module Auth
 
         ids.concat(page.ids)
         break if page.ids.include?(target_user_id)
-        break if page.ids.any? { |id| known_ids.include?(id) }
+        # 既知IDの判定はこのページのID（最大 page_size 件）に絞った索引検索で行う。
+        # キャッシュ全件を読み込むと、認証済み利用者が叩けるエンドポイントで
+        # フォロワー数に比例したメモリを毎回確保することになるため。
+        break if page.ids.any? && follower_cache.where(x_user_id: page.ids).exists?
 
         pagination_token = page.next_token
         break if pagination_token.blank?

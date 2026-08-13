@@ -136,6 +136,43 @@ RSpec.describe Auth::ManualFollowerRecheck do
       described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
     end
 
+    # キャッシュが空（定期バッチ未実行）の場合は「既知IDに到達」で打ち切れないため、
+    # 打ち切り条件が実質ページ数上限だけになる。上限が大きいとボタン1回で大量の
+    # リクエストを消費するので、増分前提の小さな上限で頭打ちにすること。
+    it "caps the number of X API requests when the cache is cold" do
+      expect(FollowerCache.count).to eq(0)
+
+      call_count = 0
+      allow(client).to receive(:fetch_followers_page) do
+        call_count += 1
+        instance_double(
+          Auth::XFollowersClient::Page,
+          ids: [ "other-#{call_count}" ],
+          next_token: "token-#{call_count}"
+        )
+      end
+
+      described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+
+      expect(call_count).to eq(described_class::MAX_PAGES_LIMIT)
+      expect(described_class::MAX_PAGES_LIMIT).to be <= 10
+      expect(user.reload.plan.code).to eq("none")
+    end
+
+    # 既知IDの判定にキャッシュ全件をメモリへ読み込むと、認証済み利用者が叩ける
+    # エンドポイントでフォロワー数に比例したメモリを毎回確保することになる。
+    # 判定はそのページのID（最大 INCREMENTAL_SYNC_PAGE_SIZE 件）に絞った索引検索で行う。
+    it "checks known ids with a bounded query instead of loading the whole cache" do
+      FollowerCache.create!(x_user_id: "known-1", fetched_at: 1.hour.ago)
+      expect(FollowerCache).not_to receive(:pluck)
+
+      allow(client).to receive(:fetch_followers_page).and_return(
+        instance_double(Auth::XFollowersClient::Page, ids: [ "known-1" ], next_token: "next")
+      )
+
+      described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+    end
+
     # 差分取得は先頭ページしか見ないため「一覧に居ない」ことを証明できない。
     # 降格（member -> none）は全件を走査する定期バッチのフル同期のみが担う。
     it "never demotes an existing member, because a partial fetch cannot prove absence" do
