@@ -39,7 +39,7 @@ export default function BoardCreatePanel() {
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 利用不可画面のフォロー案内で使う。レンダー中に環境変数を読むと未設定時の例外を
-  // 捕まえられないため、セッション読み込みと同じ try/catch の中で解決する。
+  // 捕まえられないため、セッション読み込みの際に解決する。
   const [followTargetHandle, setFollowTargetHandle] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
@@ -84,7 +84,7 @@ export default function BoardCreatePanel() {
         const followTarget = resolveFollowTargetHandle(
           nextSession,
           readFollowTargetHandle,
-          authT('sessionLoadError')
+          authT('followTargetUnavailable')
         );
 
         setFollowTargetHandle(followTarget.followTargetHandle);

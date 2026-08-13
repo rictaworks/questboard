@@ -45,7 +45,7 @@ test('isPlanGated blocks when the plan code is unknown', async () => {
 });
 
 // フォロー対象ハンドルの解決に失敗しても、それはセッションの失敗ではない。
-// セッション読み込みと同じ try/catch にまとめると、環境変数の設定漏れが
+// 解決をセッション読み込みから切り分けないと、環境変数の設定漏れが
 // 「未ログイン」として扱われ、認証済みの利用者に「ログインし直し」を促してしまう。
 test('resolveFollowTargetHandle reports its own failure without discarding the session', async () => {
   const resolution = sessionApi.resolveFollowTargetHandle(
@@ -57,7 +57,7 @@ test('resolveFollowTargetHandle reports its own failure without discarding the s
   );
 
   assert.equal(resolution.followTargetHandle, null);
-  assert.equal(resolution.errorMessage, 'NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required');
+  assert.equal(resolution.errorMessage, 'fallback');
 });
 
 // 案内はゲートに掛かった利用者にしか出さない。利用できる利用者まで読みに行くと、

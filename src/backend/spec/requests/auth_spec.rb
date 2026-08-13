@@ -19,6 +19,12 @@ RSpec.describe "X authentication", type: :request do
     expect(JSON.parse(response.body)).to eq("authenticated" => false)
   end
 
+  it "returns unauthorized when trying to recheck without a session" do
+    post "/session/recheck", as: :json
+
+    expect(response).to have_http_status(:unauthorized)
+  end
+
   it "creates a session after X login completes" do
     allow(session_creator).to receive(:call).and_return(user)
 
@@ -68,7 +74,7 @@ RSpec.describe "X authentication", type: :request do
         recaptcha_token: "recaptcha-token"
       }, as: :json
 
-      post "/session/recheck", params: { manualRecheck: true }, as: :json
+      post "/session/recheck", as: :json
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)).to eq(
@@ -96,7 +102,7 @@ RSpec.describe "X authentication", type: :request do
       recaptcha_token: "recaptcha-token"
     }, as: :json
 
-    post "/session/recheck", params: { manualRecheck: true }, as: :json
+    post "/session/recheck", as: :json
 
     expect(response).to have_http_status(:too_many_requests)
     expect(JSON.parse(response.body)).to eq(
@@ -125,7 +131,7 @@ RSpec.describe "X authentication", type: :request do
         recaptcha_token: "recaptcha-token"
       }, as: :json
 
-      post "/session/recheck", params: { manualRecheck: true }, as: :json
+      post "/session/recheck", as: :json
       expect(response).to have_http_status(:ok)
 
       # 1回目でX APIへ到達した回数を確定させ、以降の連打で増えないことを見る。
@@ -136,7 +142,7 @@ RSpec.describe "X authentication", type: :request do
       end
 
       3.times do
-        post "/session/recheck", params: { manualRecheck: true }, as: :json
+        post "/session/recheck", as: :json
         expect(response).to have_http_status(:too_many_requests)
       end
 
@@ -159,7 +165,7 @@ RSpec.describe "X authentication", type: :request do
       recaptcha_token: "recaptcha-token"
     }, as: :json
 
-    post "/session/recheck", params: { manualRecheck: true }, as: :json
+    post "/session/recheck", as: :json
 
     expect(response).to have_http_status(:bad_gateway)
     expect(JSON.parse(response.body)).to eq("error" => "フォロー状態を確認できませんでした。時間をおいて再度お試しください")

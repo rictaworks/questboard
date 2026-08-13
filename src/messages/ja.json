@@ -13,6 +13,7 @@
     "loginDescription": "X OAuth と reCAPTCHA を使ってログインします。",
     "signInButton": "Xで続ける",
     "sessionLoadError": "セッションの読み込みに失敗しました",
+    "followTargetUnavailable": "フォロー対象のハンドルが設定されていません。",
     "signedInHeading": "ログイン済みです",
     "signedInDescription": "{displayName} としてログインしています",
     "signOutButton": "ログアウト",

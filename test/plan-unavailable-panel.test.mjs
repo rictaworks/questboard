@@ -105,12 +105,12 @@ test('plan unavailable panel does not read the environment while rendering', asy
 // 「誰をフォローすればよいか分からない案内」は出さずにエラーを見せる。
 test('plan unavailable panel keeps the gate closed when the follow target is unresolved', async () => {
   const markup = await renderPanel({
-    errorMessage: 'NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required',
+    errorMessage: 'followTargetUnavailable',
     followTargetHandle: null
   });
 
   assert.match(markup, /unavailableHeading/);
-  assert.match(markup, /NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required/);
+  assert.match(markup, /followTargetUnavailable/);
   assert.equal(markup.includes('<a'), false);
   assert.equal(markup.includes('@null'), false);
   assert.equal(markup.includes('unavailableFollowGuide'), false);
@@ -135,7 +135,7 @@ test('plan unavailable panel follows the heading level its page needs', async ()
 
 // 環境変数の解決を親へ移すと、解決に失敗したまま利用不可画面へ進む経路が生まれ得る。
 // 「誰をフォローすればよいか分からない案内」を出さないため、両親はハンドルを
-// セッション読み込みと同じ try/catch の中で解決し、prop として渡す。
+// セッション読み込みの際に解決し、prop として渡す。
 test('both gate hosts resolve the follow target outside render and pass it down', async () => {
   for (const host of ['src/components/board-create-panel.tsx', 'src/components/board-invite-panel.tsx']) {
     const source = await readFile(path.join(root, host), 'utf8');

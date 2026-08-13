@@ -49,7 +49,7 @@ export type FollowTargetResolution = {
 export function resolveFollowTargetHandle(
   session: {planCode?: string} | null | undefined,
   readHandle: () => string,
-  fallbackErrorMessage: string
+  errorMessage: string
 ): FollowTargetResolution {
   if (!isPlanGated(session)) {
     return {errorMessage: null, followTargetHandle: null};
@@ -58,8 +58,13 @@ export function resolveFollowTargetHandle(
   try {
     return {errorMessage: null, followTargetHandle: readHandle()};
   } catch (error) {
+    if (error instanceof Error) {
+      console.error(error.message);
+    } else {
+      console.error(error);
+    }
     return {
-      errorMessage: error instanceof Error ? error.message : fallbackErrorMessage,
+      errorMessage,
       followTargetHandle: null
     };
   }
