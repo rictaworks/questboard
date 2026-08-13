@@ -4,6 +4,7 @@ RSpec.describe "X authentication", type: :request do
   include ActiveSupport::Testing::TimeHelpers
 
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
   let(:none_plan) { Plan.find_or_create_by!(code: "none") }
   let(:user) { User.create!(x_user_id: "x-sub-123", display_name: "Ada Lovelace", plan: none_plan) }
 
@@ -67,7 +68,7 @@ RSpec.describe "X authentication", type: :request do
         recaptcha_token: "recaptcha-token"
       }, as: :json
 
-      post "/session/recheck"
+      post "/session/recheck", params: { manualRecheck: true }, as: :json
 
       expect(response).to have_http_status(:ok)
       expect(JSON.parse(response.body)).to eq(
@@ -83,35 +84,26 @@ RSpec.describe "X authentication", type: :request do
     end
   end
 
-  it "returns a cooldown response and avoids X API calls when the user rechecks too soon" do
-    recheck_client = instance_double(Auth::XFollowersClient)
-    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
-    allow(recheck_client).to receive(:fetch_followers_page).and_return(
-      Auth::XFollowersClient::Page.new(ids: [ "x-sub-123" ], next_token: nil)
+  it "returns a cooldown response when the manual recheck service rejects the request" do
+    allow(Auth::ManualFollowerRecheck).to receive(:new).and_raise(
+      Auth::ManualFollowerRecheck::CooldownError.new(remaining_seconds: 900)
     )
     allow(session_creator).to receive(:call).and_return(user)
 
-    travel_to(Time.zone.local(2026, 8, 13, 12, 0, 0)) do
-      post "/auth/x_sessions", params: {
-        code: "authorization-code",
-        code_verifier: "pkce-verifier",
-        recaptcha_token: "recaptcha-token"
-      }, as: :json
+    post "/auth/x_sessions", params: {
+      code: "authorization-code",
+      code_verifier: "pkce-verifier",
+      recaptcha_token: "recaptcha-token"
+    }, as: :json
 
-      post "/session/recheck"
-      expect(response).to have_http_status(:ok)
+    post "/session/recheck", params: { manualRecheck: true }, as: :json
 
-      expect(recheck_client).not_to receive(:fetch_followers_page)
-
-      post "/session/recheck"
-
-      expect(response).to have_http_status(:too_many_requests)
-      expect(JSON.parse(response.body)).to eq(
-        "error" => "手動再判定はあと15分0秒後にできます",
-        "remainingMinutes" => 15,
-        "remainingSeconds" => 0
-      )
-    end
+    expect(response).to have_http_status(:too_many_requests)
+    expect(JSON.parse(response.body)).to eq(
+      "error" => "手動再判定はあと15分0秒後にできます",
+      "remainingMinutes" => 15,
+      "remainingSeconds" => 0
+    )
   end
 
   it "rejects the session when reCAPTCHA verification fails" do

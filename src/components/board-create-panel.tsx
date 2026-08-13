@@ -90,7 +90,11 @@ export default function BoardCreatePanel() {
     try {
       const {backendUrl} = readXAuthSettings();
       const response = await fetch(`${backendUrl}/session/recheck`, {
+        body: JSON.stringify({manualRecheck: true}),
         credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        },
         method: 'POST'
       });
 
