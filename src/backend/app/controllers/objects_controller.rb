@@ -188,7 +188,11 @@ class ObjectsController < ApplicationController
     object = find_authorized_op_object!(action:, property:)
     return if performed?
 
-    lamport_ts = parse_lamport_ts!
+    begin
+      lamport_ts = Integer(params.require(:lamport_ts))
+    rescue ArgumentError, TypeError
+      raise ApplicationController::LamportTsMustBeAnIntegerError
+    end
     client_id = params.require(:client_id).to_s
     # LEGACY_OP_CLIENT_ID is reserved for record_and_apply_legacy_op! (see its declaration
     # above): a real client sending it here would share the (object_id, client_id,
@@ -526,12 +530,6 @@ class ObjectsController < ApplicationController
     when "deleted_at" then deleted_at_op_value
     when "text_crdt" then validated_text_crdt_value
     end
-  end
-
-  def parse_lamport_ts!
-    Integer(params.require(:lamport_ts))
-  rescue ArgumentError, TypeError
-    raise ApplicationController::LamportTsMustBeAnIntegerError
   end
 
   def deleted_at_op_value
