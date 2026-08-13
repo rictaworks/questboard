@@ -1,8 +1,8 @@
 require "rails_helper"
 
 RSpec.describe Auth::FollowerGate do
-  let!(:member_plan) { Plan.create!(code: "member") }
-  let!(:none_plan) { Plan.create!(code: "none") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
 
   it "returns the member plan when the follower cache contains the user" do
     FollowerCache.create!(x_user_id: "x-1", fetched_at: Time.current)

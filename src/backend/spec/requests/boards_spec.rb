@@ -73,6 +73,27 @@ RSpec.describe "Boards", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
+  it "rejects board creation for users on an unknown plan" do
+    unknown_plan = Plan.find_or_create_by!(code: "unknown")
+    unknown_user = User.create!(x_user_id: "x-sub-unknown", display_name: "Unknown User", plan: unknown_plan)
+    sign_in(unknown_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "rejects board creation for users with a nil plan (fail-closed)" do
+    normal_user = User.create!(x_user_id: "x-sub-normal", display_name: "Normal User")
+    allow_any_instance_of(User).to receive(:plan).and_return(nil)
+
+    sign_in(normal_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+  end
+
   it "returns a Japanese validation message when the board title is blank" do
     sign_in(owner)
 

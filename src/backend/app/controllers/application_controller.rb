@@ -229,6 +229,6 @@ class ApplicationController < ActionController::API
   end
 
   def require_feature_plan!
-    head :forbidden if current_user&.plan&.code == "none"
+    head :forbidden unless current_user&.plan&.code == "member"
   end
 end

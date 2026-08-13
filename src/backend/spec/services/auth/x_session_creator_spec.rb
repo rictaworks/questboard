@@ -9,8 +9,8 @@ RSpec.describe Auth::XSessionCreator do
     )
   end
 
-  let!(:member_plan) { Plan.create!(code: "member") }
-  let!(:none_plan) { Plan.create!(code: "none") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
   let(:recaptcha_verifier) { instance_double(Auth::RecaptchaVerifier) }
   let(:x_oauth_client) { instance_double(Auth::XOauthClient) }
   let(:follower_gate) { Auth::FollowerGate.new }

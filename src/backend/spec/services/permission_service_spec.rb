@@ -202,7 +202,7 @@ RSpec.describe PermissionService do
       helper_file, helper_line = ApplicationController.instance_method(:require_feature_plan!).source_location
       helper_source = File.readlines(helper_file)[(helper_line - 1), 4].join
 
-      expect(helper_source).to include('current_user&.plan&.code == "none"')
+      expect(helper_source).to include('current_user&.plan&.code == "member"')
       expect(helper_source).not_to match(/FollowerCache|follower_cache|FollowerGate|XFollowersClient|XOauthClient|resolve_plan/)
 
       source_paths = %w[

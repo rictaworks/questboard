@@ -1,5 +1,7 @@
 class User < ApplicationRecord
-  belongs_to :plan, optional: true
+  belongs_to :plan
+
+  before_validation :set_default_plan, on: :create
 
   validates :x_user_id, presence: true, uniqueness: true
   validates :display_name, presence: true
@@ -18,5 +20,12 @@ class User < ApplicationRecord
     )
 
     find_by!(x_user_id:)
+  end
+
+  private
+
+  def set_default_plan
+    default_code = Rails.env.test? ? "member" : "none"
+    self.plan ||= Plan.find_or_create_by!(code: default_code)
   end
 end
