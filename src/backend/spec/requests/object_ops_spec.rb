@@ -270,7 +270,11 @@ RSpec.describe "Object ops", type: :request do
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
   end
 
-  it "does not rewrite string-valued text_crdt retain/delete counts as a lamport_ts validation error" do
+  # string-valued retain/delete never reach apply_op's lamport_ts rescue: they're rejected
+  # earlier by validate_text_crdt_op!'s own type check (InvalidOpValueError), with a
+  # field-specific message. This is still worth asserting on its own — a regression here
+  # would surface as a wrong 422 message, not as issue #121's bug (see the test below for that).
+  it "rejects string-valued text_crdt retain/delete counts with a field-specific message" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
 
@@ -297,6 +301,29 @@ RSpec.describe "Object ops", type: :request do
       expect(response.body).to match(payload.fetch(:expected_error))
       expect(response.body).not_to include("lamport_ts must be an integer")
     end
+  end
+
+  # Issue #121: apply_op's rescue used to wrap the entire method body, so any ArgumentError/
+  # TypeError raised anywhere inside it — not just from parsing lamport_ts — was relabeled as
+  # "lamport_ts must be an integer" and swallowed without a log entry. The rescue now wraps
+  # only `Integer(params.require(:lamport_ts))` (see the begin/rescue at the top of apply_op),
+  # so an error from elsewhere in the method (simulated here via apply_mutation_for!, which
+  # every property type passes through) must propagate uncaught instead of being relabeled.
+  # A valid lamport_ts is used throughout, so the narrow rescue is never in play.
+  it "does not relabel an unrelated TypeError from later in apply_op as a lamport_ts validation error" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    allow_any_instance_of(ObjectsController).to receive(:apply_mutation_for!).and_raise(TypeError, "simulated failure unrelated to lamport_ts")
+
+    expect do
+      apply_op(share_token:, object_id:, property: "color", value: { hex: "#FCA5A5" }, lamport_ts: 1, client_id: "client-a")
+    end.to raise_error(TypeError, "simulated failure unrelated to lamport_ts")
   end
 
   it "rejects a text_crdt op with no ref_revision once history already exists for the object" do
