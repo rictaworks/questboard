@@ -106,6 +106,66 @@ RSpec.describe "X authentication", type: :request do
     )
   end
 
+  # クールダウン判定はサービス層の spec でも見ているが、それだけでは
+  # 「コントローラ側でクールダウン判定より前にX APIへ到達する経路が生えた」場合に
+  # 気づけない。Issue #133 の受け入れ要件は「連打がX APIに到達しないこと」なので、
+  # エンドポイント経由でX APIクライアントが呼ばれないことをここで固定する。
+  it "never reaches the X API when the endpoint is hit again during the cooldown" do
+    recheck_client = instance_double(Auth::XFollowersClient)
+    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
+    allow(recheck_client).to receive(:fetch_followers_page).and_return(
+      Auth::XFollowersClient::Page.new(ids: [], next_token: nil)
+    )
+    allow(session_creator).to receive(:call).and_return(user)
+
+    travel_to(Time.zone.local(2026, 8, 13, 12, 0, 0)) do
+      post "/auth/x_sessions", params: {
+        code: "authorization-code",
+        code_verifier: "pkce-verifier",
+        recaptcha_token: "recaptcha-token"
+      }, as: :json
+
+      post "/session/recheck", params: { manualRecheck: true }, as: :json
+      expect(response).to have_http_status(:ok)
+
+      # 1回目でX APIへ到達した回数を確定させ、以降の連打で増えないことを見る。
+      calls_after_first = 0
+      allow(recheck_client).to receive(:fetch_followers_page) do
+        calls_after_first += 1
+        Auth::XFollowersClient::Page.new(ids: [], next_token: nil)
+      end
+
+      3.times do
+        post "/session/recheck", params: { manualRecheck: true }, as: :json
+        expect(response).to have_http_status(:too_many_requests)
+      end
+
+      expect(calls_after_first).to eq(0)
+    end
+  end
+
+  # 設計書 4.4「X API障害 → 一時的な失敗として通知 / plan は据え置く」。
+  # rescue_from が無いと素の 500 になり、利用者にも運用にも障害だと伝わらない。
+  it "reports an X API outage as a temporary failure and keeps the plan unchanged" do
+    recheck_client = instance_double(Auth::XFollowersClient)
+    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
+    allow(recheck_client).to receive(:fetch_followers_page)
+      .and_raise(Auth::XFollowersClient::RequestError, "X API is unavailable")
+    allow(session_creator).to receive(:call).and_return(user)
+
+    post "/auth/x_sessions", params: {
+      code: "authorization-code",
+      code_verifier: "pkce-verifier",
+      recaptcha_token: "recaptcha-token"
+    }, as: :json
+
+    post "/session/recheck", params: { manualRecheck: true }, as: :json
+
+    expect(response).to have_http_status(:bad_gateway)
+    expect(JSON.parse(response.body)).to eq("error" => "フォロー状態を確認できませんでした。時間をおいて再度お試しください")
+    expect(user.reload.plan.code).to eq("none")
+  end
+
   it "rejects the session when reCAPTCHA verification fails" do
     allow(session_creator).to receive(:call).and_raise(Auth::RecaptchaVerifier::Error, "reCAPTCHA verification failed")
 

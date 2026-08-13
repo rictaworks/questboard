@@ -49,11 +49,20 @@ module Auth
         user.update!(manual_rechecked_at: Time.current)
       end
 
-      current_ids = fetch_current_follower_ids
-      synchronize_cache!(current_ids)
+      previous_plan_code = user.plan&.code
+      current_ids, pages_consumed = fetch_current_follower_ids
+      added_count = synchronize_cache!(current_ids)
 
       resolved_plan = follower_gate.resolve_plan(user.x_user_id)
       user.update!(plan: resolved_plan)
+
+      # プラン値はアクセス制御の根拠（ApplicationController#require_feature_plan!）であり、
+      # 誰がいつ変えたか、その際X APIを何ページ消費したかは監査・調査の対象になる。
+      Rails.logger.info(
+        "[#{self.class.name}] x_user_id=#{user.x_user_id} pages=#{pages_consumed} " \
+        "fetched=#{current_ids.size} cache_added=#{added_count} " \
+        "plan: #{previous_plan_code} -> #{resolved_plan.code}"
+      )
 
       user.reload
     end
@@ -113,7 +122,9 @@ module Auth
         break if pagination_token.blank?
       end
 
-      ids.uniq
+      # 消費ページ数は監査ログに残す。X APIの従量課金・レート制限に直結するため、
+      # 「どの再判定がどれだけ使ったか」を後から追えるようにする。
+      [ ids.uniq, [ request_count, MAX_PAGES_LIMIT ].min ]
     end
 
     # 差分取得は先頭ページしか見ないため「一覧に居ない」ことを証明できない。よってここでは
@@ -127,8 +138,12 @@ module Auth
 
       follower_cache.transaction do
         follower_cache.where(x_user_id: existing_ids.to_a).update_all(fetched_at: now) if existing_ids.any?
+        # insert_all は ON CONFLICT DO NOTHING を発行するため、既存IDの照会後・書き込み前に
+        # 定期バッチが同じIDを入れても重複エラーにはならない。
         follower_cache.insert_all(added_ids.map { |x_user_id| { x_user_id:, fetched_at: now } }) if added_ids.any?
       end
+
+      added_ids.size
     end
   end
 end

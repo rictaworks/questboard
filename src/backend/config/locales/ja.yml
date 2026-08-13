@@ -34,6 +34,7 @@ ja:
       recaptcha_verification_failed: "reCAPTCHA の検証に失敗しました"
       x_oauth_failed: "Xログインに失敗しました"
       manual_recheck_cooldown_active: "手動再判定はあと%{remainingMinutes}分%{remainingSeconds}秒後にできます"
+      x_followers_unavailable: "フォロー状態を確認できませんでした。時間をおいて再度お試しください"
       # I18n::MissingTranslationData を ApplicationController#render_missing_translation
       # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。

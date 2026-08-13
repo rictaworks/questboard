@@ -107,6 +107,7 @@ class ApplicationController < ActionController::API
   rescue_from "Auth::RecaptchaVerifier::Error", with: :render_recaptcha_verification_failed
   rescue_from "Auth::XOauthClient::Error", with: :render_x_oauth_failed
   rescue_from "Auth::ManualFollowerRecheck::CooldownError", with: :render_manual_follower_recheck_cooldown
+  rescue_from "Auth::XFollowersClient::Error", with: :render_x_followers_unavailable
   rescue_from ActiveRecord::RecordNotFound, with: :render_record_not_found
   rescue_from LamportTsMustBeAnIntegerError, with: :render_api_error
   rescue_from ObjectLockedByAnotherUserError, with: :render_api_error
@@ -209,6 +210,15 @@ class ApplicationController < ActionController::API
     logger.error("[#{self.class.name}##{action_name}] #{error.message}")
 
     render json: { error: I18n.t("api.errors.x_oauth_failed") }, status: :bad_gateway
+  end
+
+  # X API 障害時。設計書 4.4 のとおり「一時的な失敗」として通知し、plan は据え置く
+  # （Auth::ManualFollowerRecheck は取得成功後にしか plan を更新しない）。
+  # 上流の障害なので 5xx 系のうち 502 を返し、原因追跡のため詳細はログに残す。
+  def render_x_followers_unavailable(error)
+    logger.error("[#{self.class.name}##{action_name}] #{error.class}: #{error.message}")
+
+    render json: { error: I18n.t("api.errors.x_followers_unavailable") }, status: :bad_gateway
   end
 
   def render_manual_follower_recheck_cooldown(error)

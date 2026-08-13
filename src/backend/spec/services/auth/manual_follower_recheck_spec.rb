@@ -110,6 +110,49 @@ RSpec.describe Auth::ManualFollowerRecheck do
     end
   end
 
+  describe "監査ログと並行実行" do
+    # プラン値はアクセス制御の根拠（ApplicationController#require_feature_plan!）であり、
+    # その変更と、誰がいつX APIを何ページ消費したかは調査対象になる。
+    it "logs who rechecked, how many pages were consumed, and how the plan changed" do
+      allow(client).to receive(:fetch_followers_page).and_return(
+        instance_double(Auth::XFollowersClient::Page, ids: [ "x-1" ], next_token: nil)
+      )
+      messages = []
+      allow(Rails.logger).to receive(:info) { |message| messages << message }
+
+      described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+
+      audit = messages.find { |message| message.include?("ManualFollowerRecheck") }
+      expect(audit).to be_present
+      expect(audit).to include("x-1")
+      expect(audit).to include("none")
+      expect(audit).to include("member")
+      expect(audit).to include("pages=1")
+    end
+
+    # follower_cache は x_user_id が主キー。定期バッチと手動再判定が同時に走ると
+    # 同じIDを挿入しうるため、重複で 500 にならないようにする。
+    it "does not raise when the same follower id is inserted concurrently" do
+      allow(client).to receive(:fetch_followers_page).and_return(
+        instance_double(Auth::XFollowersClient::Page, ids: [ "x-1" ], next_token: nil)
+      )
+      # 「既存IDの照会が済んだ後、書き込みの直前に定期バッチが同じIDを入れた」状況を作る。
+      # 照会より前に入れると追加対象から外れてしまい、競合が再現しない。
+      injected = false
+      allow(FollowerCache).to receive(:transaction).and_wrap_original do |original, *args, &block|
+        unless injected
+          injected = true
+          FollowerCache.create!(x_user_id: "x-1", fetched_at: Time.current)
+        end
+        original.call(*args, &block)
+      end
+
+      expect do
+        described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+      end.not_to raise_error
+    end
+  end
+
   describe "差分取得（Issue #133「X APIへ差分取得を実行し」）" do
     # 手動再判定を押すのは定義上 plan=none のユーザー、つまりフォロワー一覧に載っていない
     # ユーザーである。「自分が見つかったら停止」だけを終了条件にすると、正常系がそのまま
@@ -140,7 +183,9 @@ RSpec.describe Auth::ManualFollowerRecheck do
     # 打ち切り条件が実質ページ数上限だけになる。上限が大きいとボタン1回で大量の
     # リクエストを消費するので、増分前提の小さな上限で頭打ちにすること。
     it "caps the number of X API requests when the cache is cold" do
-      expect(FollowerCache.count).to eq(0)
+      # 「既知IDに到達」で打ち切れない状況であることだけを前提にする。
+      # テーブル全体が空であることを前提にすると、無関係な行の有無でテストが壊れる。
+      expect(FollowerCache.where(x_user_id: (1..20).map { |index| "other-#{index}" })).to be_empty
 
       call_count = 0
       allow(client).to receive(:fetch_followers_page) do
