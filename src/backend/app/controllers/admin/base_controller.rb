@@ -1,5 +1,7 @@
 module Admin
   class BaseController < ActionController::Base
+    protect_from_forgery with: :exception
+
     include ActionController::HttpAuthentication::Basic::ControllerMethods
     include RequestOriginGuard
 

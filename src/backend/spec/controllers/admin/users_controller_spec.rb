@@ -123,4 +123,21 @@ RSpec.describe Admin::UsersController, type: :controller do
       expect(user.plan).to eq(member_plan)
     end
   end
+
+  describe "CSRF protection" do
+    it "raises InvalidAuthenticityToken when authenticity token is missing on POST/PATCH" do
+      original_allow_forgery_protection = ActionController::Base.allow_forgery_protection
+      ActionController::Base.allow_forgery_protection = true
+
+      begin
+        allow(controller).to receive(:verify_authenticity_token).and_call_original
+
+        expect {
+          post :create, params: { x_user_id: "12345", display_name: "Manual User" }
+        }.to raise_error(ActionController::InvalidAuthenticityToken)
+      ensure
+        ActionController::Base.allow_forgery_protection = original_allow_forgery_protection
+      end
+    end
+  end
 end
