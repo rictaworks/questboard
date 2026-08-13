@@ -438,3 +438,25 @@ test('sync server scaffold is workspace-enabled and board-shard aware', async ()
   assert.match(server, /GET\("\/healthz"/);
   assert.match(server, /GET\("\/ws"/);
 });
+
+// `.env.example` は設定漏れを防ぐための一覧なので、書き写しで作ると
+// 後から追加された変数が黙って抜ける。実際にコードが読んでいる
+// NEXT_PUBLIC_* を走査して突き合わせる（NEXT_PUBLIC_ はビルド成果物に
+// 埋め込まれる公開値で、値そのものは秘密ではない）。
+test('.env.example lists every NEXT_PUBLIC_ variable the frontend reads', async () => {
+  const sources = (await walk('src')).filter((file) => /\.(ts|tsx)$/.test(file));
+  const referenced = new Set();
+
+  for (const file of sources) {
+    for (const [, name] of (await read(file)).matchAll(/process\.env\.(NEXT_PUBLIC_[A-Z0-9_]+)/g)) {
+      referenced.add(name);
+    }
+  }
+
+  assert.ok(referenced.size > 0, 'src から NEXT_PUBLIC_ の参照が1つも見つからない');
+
+  const example = await read('.env.example');
+  const missing = [...referenced].filter((name) => !new RegExp(`^${name}=`, 'm').test(example)).sort();
+
+  assert.deepEqual(missing, [], `.env.example に ${missing.join(', ')} が無い`);
+});

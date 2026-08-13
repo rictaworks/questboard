@@ -33,6 +33,38 @@ export function isPlanGated(session: {planCode?: string} | null | undefined): bo
   return session?.planCode !== MEMBER_PLAN_CODE;
 }
 
+export type FollowTargetResolution = {
+  errorMessage: string | null;
+  followTargetHandle: string | null;
+};
+
+// 利用不可画面のフォロー案内で使うハンドルを解決する。
+//
+// 解決の失敗はセッションの失敗ではない。セッション読み込みと同じ try/catch にまとめると、
+// 環境変数の設定漏れが「未ログイン」として扱われ、認証済みの利用者に「ログインし直し」を
+// 促してしまう（利用不可画面にも到達しなくなる）。失敗はここで切り分けて文言だけ返す。
+//
+// 読み取りはゲートに掛かったセッションに限る。無条件に読むと、この環境変数の設定漏れが
+// 機能を使える利用者まで巻き込む。
+export function resolveFollowTargetHandle(
+  session: {planCode?: string} | null | undefined,
+  readHandle: () => string,
+  fallbackErrorMessage: string
+): FollowTargetResolution {
+  if (!isPlanGated(session)) {
+    return {errorMessage: null, followTargetHandle: null};
+  }
+
+  try {
+    return {errorMessage: null, followTargetHandle: readHandle()};
+  } catch (error) {
+    return {
+      errorMessage: error instanceof Error ? error.message : fallbackErrorMessage,
+      followTargetHandle: null
+    };
+  }
+}
+
 export function toSessionUser(payload: SessionPayload): SessionUser {
   return {
     authenticated: payload.authenticated,

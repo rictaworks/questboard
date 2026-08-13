@@ -34,7 +34,8 @@ async function loadModule() {
 
     if (specifier === '@/lib/session-api') {
       return {
-        isPlanGated: (session) => session?.planCode === 'none',
+        isPlanGated: (session) => session?.planCode !== 'member',
+        resolveFollowTargetHandle: () => ({errorMessage: null, followTargetHandle: 'rictaworks'}),
         requestManualRecheck: async () => ({authenticated: true}),
         SessionExpiredError: class SessionExpiredError extends Error {}
       };

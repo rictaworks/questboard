@@ -142,6 +142,9 @@ test('both gate hosts resolve the follow target outside render and pass it down'
 
     assert.match(source, /readFollowTargetHandle/, `${host} がフォロー対象を解決していない`);
     assert.match(source, /followTargetHandle=\{/, `${host} が followTargetHandle を渡していない`);
+    // 解決の失敗をセッション読み込みの catch に流すと、認証済みの利用者が
+    // 未ログイン扱いになり、利用不可画面の null 分岐に到達しなくなる。
+    assert.match(source, /resolveFollowTargetHandle/, `${host} が解決の失敗を切り分けていない`);
   }
 });
 

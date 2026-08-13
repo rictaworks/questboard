@@ -6,7 +6,13 @@ import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
-import {isPlanGated, MEMBER_PLAN_CODE, requestManualRecheck, SessionExpiredError} from '@/lib/session-api';
+import {
+  isPlanGated,
+  MEMBER_PLAN_CODE,
+  requestManualRecheck,
+  resolveFollowTargetHandle,
+  SessionExpiredError
+} from '@/lib/session-api';
 import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
@@ -75,11 +81,15 @@ export default function BoardCreatePanel() {
           planCode: payload.user?.planCode
         };
 
-        // フォロー案内は利用不可画面でしか使わない。無条件に読むと、この環境変数の
-        // 設定漏れが利用できる利用者まで巻き込む。必要になった時点でだけ解決する。
-        setFollowTargetHandle(isPlanGated(nextSession) ? readFollowTargetHandle() : null);
+        const followTarget = resolveFollowTargetHandle(
+          nextSession,
+          readFollowTargetHandle,
+          authT('sessionLoadError')
+        );
+
+        setFollowTargetHandle(followTarget.followTargetHandle);
         setSessionState(nextSession);
-        setErrorMessage(null);
+        setErrorMessage(followTarget.errorMessage);
       } catch (error) {
         setSessionState({authenticated: false});
         setErrorMessage(error instanceof Error ? error.message : authT('sessionLoadError'));

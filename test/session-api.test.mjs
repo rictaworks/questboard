@@ -44,6 +44,58 @@ test('isPlanGated blocks when the plan code is unknown', async () => {
   assert.equal(sessionApi.isPlanGated(undefined), true);
 });
 
+// フォロー対象ハンドルの解決に失敗しても、それはセッションの失敗ではない。
+// セッション読み込みと同じ try/catch にまとめると、環境変数の設定漏れが
+// 「未ログイン」として扱われ、認証済みの利用者に「ログインし直し」を促してしまう。
+test('resolveFollowTargetHandle reports its own failure without discarding the session', async () => {
+  const resolution = sessionApi.resolveFollowTargetHandle(
+    {planCode: 'none'},
+    () => {
+      throw new Error('NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required');
+    },
+    'fallback'
+  );
+
+  assert.equal(resolution.followTargetHandle, null);
+  assert.equal(resolution.errorMessage, 'NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required');
+});
+
+// 案内はゲートに掛かった利用者にしか出さない。利用できる利用者まで読みに行くと、
+// この環境変数の設定漏れが member の利用者まで巻き込む。
+test('resolveFollowTargetHandle only reads the environment for gated sessions', async () => {
+  let reads = 0;
+  const readHandle = () => {
+    reads += 1;
+    return 'rictaworks';
+  };
+
+  assert.deepEqual(
+    sessionApi.resolveFollowTargetHandle({planCode: 'member'}, readHandle, 'fallback'),
+    {followTargetHandle: null, errorMessage: null}
+  );
+  assert.equal(reads, 0);
+
+  assert.deepEqual(
+    sessionApi.resolveFollowTargetHandle({planCode: 'none'}, readHandle, 'fallback'),
+    {followTargetHandle: 'rictaworks', errorMessage: null}
+  );
+  assert.equal(reads, 1);
+});
+
+// Error 以外が投げられても、利用者に何も出ないまま利用不可画面だけが残る状態にしない。
+test('resolveFollowTargetHandle falls back to the caller message for non-Error throws', async () => {
+  const resolution = sessionApi.resolveFollowTargetHandle(
+    {planCode: 'none'},
+    () => {
+      throw 'boom';
+    },
+    'fallback'
+  );
+
+  assert.equal(resolution.followTargetHandle, null);
+  assert.equal(resolution.errorMessage, 'fallback');
+});
+
 // サーバー（SessionController#recheck）はリクエストボディを一切参照せず、
 // SPEC/api/rails-backend.md にもボディ仕様は無い。読まれない値を送ると、
 // 「送れば何かが変わる」という誤った仕様が curl 手順や後続の実装に伝播する。
