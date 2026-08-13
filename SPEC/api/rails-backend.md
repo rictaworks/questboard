@@ -16,6 +16,7 @@
 | POST | `/auth/x_sessions` | XユーザーID（+ reCAPTCHA）を検証し、セッションCookieを発行 |
 | GET | `/session` | 現在のログイン状態とユーザー情報を返す（未認証時 401） |
 | DELETE | `/session` | ログアウト（セッション破棄） |
+| POST | `/session/recheck` | フォロー状態を手動で再判定し、プラン値を更新して返す。クールダウン（既定15分）が未経過なら 429 と残り時間を返す |
 
 ## ボード
 

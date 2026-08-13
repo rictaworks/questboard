@@ -19,7 +19,7 @@
     "signOutError": "ログアウトに失敗しました",
     "unavailableHeading": "このプランでは利用できません",
     "unavailableDescription": "現在の判定では、ボード作成や参加は利用できません。",
-    "unavailableFollowGuide": "対象アカウントをフォローしてから、手動再判定を実行してください。",
+    "unavailableFollowGuide": "ボードを使うには {handle} をフォローしてください。フォロー後に手動再判定を実行すると利用できるようになります。",
     "manualRecheckButton": "手動再判定",
     "manualRecheckingButton": "再判定中",
     "manualRecheckError": "手動再判定に失敗しました",
@@ -38,7 +38,9 @@
     "callbackProviderError": "X 側で認証が中断されました",
     "callbackStateMismatch": "認証状態が一致しません",
     "callbackFailure": "Xログインに失敗しました",
-    "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。"
+    "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。",
+    "unavailableFollowLink": "{handle} のプロフィールを開く",
+    "sessionExpired": "セッションの有効期限が切れました。もう一度ログインしてください。"
   },
   "BoardCreate": {
     "heading": "ボードを作成",

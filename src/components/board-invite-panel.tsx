@@ -7,11 +7,14 @@ import {useTranslations} from 'next-intl';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
+import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
+import {isPlanGated, requestManualRecheck, SessionExpiredError} from '@/lib/session-api';
 import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  planCode?: string;
   xUserId?: string;
 };
 
@@ -174,6 +177,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   // 参加直後に表示する成功メッセージ。ロールはサーバーが確定したものを使う
   // （既存メンバーは再参加してもロールが変わらないため、選択値とは一致しない）。
   const [joinSuccess, setJoinSuccess] = useState<BoardJoinSuccess | null>(null);
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -201,12 +205,13 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string; xUserId?: string};
+          user?: {displayName?: string; planCode?: string; xUserId?: string};
         };
 
         setSessionState({
           authenticated: payload.authenticated,
           displayName: payload.user?.displayName,
+          planCode: payload.user?.planCode,
           xUserId: payload.user?.xUserId
         });
         setErrorMessage(null);
@@ -237,8 +242,32 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     setBoardData(await response.json() as BoardCanvasData);
   }, [shareToken, t]);
 
+  async function handleManualRecheck() {
+    setRechecking(true);
+
+    try {
+      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
+      setErrorMessage(null);
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        setSessionState({authenticated: false});
+        setErrorMessage(authT('sessionExpired'));
+        return;
+      }
+
+      setErrorMessage(error instanceof Error ? error.message : authT('manualRecheckError'));
+    } finally {
+      setRechecking(false);
+    }
+  }
+
+  const authenticated = sessionState?.authenticated ?? false;
+  const planGated = isPlanGated(sessionState);
+
   useEffect(() => {
-    if (!sessionState?.authenticated) {
+    // none プランでは機能APIが403を返すため、ボード取得自体を試みない。
+    // 試みると意味のないエラーが利用不可画面に重なって出る。
+    if (!authenticated || planGated) {
       return;
     }
 
@@ -290,7 +319,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return () => {
       abortController.abort();
     };
-  }, [sessionState?.authenticated, shareToken, t]);
+  }, [authenticated, planGated, shareToken, t]);
 
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,6 +395,20 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
         <AuthPanel />
       </section>
+    );
+  }
+
+  // 共有URLから入った none プランの利用者にも、403を返すだけで終わらせず
+  // 理由と再判定導線を出す（Issue #133「利用不可画面＋フォロー案内＋手動再判定」）。
+  if (isPlanGated(sessionState)) {
+    return (
+      <PlanUnavailablePanel
+        errorMessage={errorMessage}
+        headingId="board-invite-heading"
+        headingLevel="h1"
+        onManualRecheck={handleManualRecheck}
+        rechecking={rechecking}
+      />
     );
   }
 

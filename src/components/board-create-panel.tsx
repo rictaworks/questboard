@@ -6,6 +6,7 @@ import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
+import {isPlanGated, requestManualRecheck, SessionExpiredError} from '@/lib/session-api';
 import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
@@ -88,38 +89,15 @@ export default function BoardCreatePanel() {
     setRechecking(true);
 
     try {
-      const {backendUrl} = readXAuthSettings();
-      const response = await fetch(`${backendUrl}/session/recheck`, {
-        body: JSON.stringify({manualRecheck: true}),
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        method: 'POST'
-      });
-
-      if (response.status === 401) {
-        setSessionState({authenticated: false});
-        throw new Error(authT('loginHeading'));
-      }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as {error?: string};
-        throw new Error(payload.error ?? authT('manualRecheckError'));
-      }
-
-      const payload = await response.json() as {
-        authenticated: boolean;
-        user?: {displayName?: string; planCode?: string};
-      };
-
-      setSessionState({
-        authenticated: payload.authenticated,
-        displayName: payload.user?.displayName,
-        planCode: payload.user?.planCode
-      });
+      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
       setErrorMessage(null);
     } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        setSessionState({authenticated: false});
+        setErrorMessage(authT('sessionExpired'));
+        return;
+      }
+
       setErrorMessage(error instanceof Error ? error.message : authT('manualRecheckError'));
     } finally {
       setRechecking(false);
@@ -193,10 +171,12 @@ export default function BoardCreatePanel() {
     );
   }
 
-  if (sessionState.planCode === 'none') {
+  if (isPlanGated(sessionState)) {
     return (
       <PlanUnavailablePanel
         errorMessage={errorMessage}
+        headingId="board-create-heading"
+        headingLevel="h2"
         onManualRecheck={handleManualRecheck}
         rechecking={rechecking}
       />
