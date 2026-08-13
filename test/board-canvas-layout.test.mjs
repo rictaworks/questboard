@@ -14,6 +14,7 @@ const SELECTOR = {
   boardShellWithBanner: '.home-shell:has(.board-canvas-shell):has(.board-join-success)',
   canvasShell: '.board-canvas-shell',
   canvasBody: '.board-canvas-body',
+  constrainedCanvasBody: '.home-shell:has(.board-canvas-shell) .board-canvas-body',
   stage: '.board-stage',
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
@@ -178,7 +179,10 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   assertDeclaration(rules, SELECTOR.canvasShell, 'height', '100%');
   assertDeclaration(rules, SELECTOR.canvasShell, 'grid-template-rows', 'auto minmax(0, 1fr)');
 
-  assertDeclaration(rules, SELECTOR.canvasBody, 'min-height', '0');
+  assertDeclaration(rules, SELECTOR.canvasBody, 'min-height', STAGE_MIN_HEIGHT);
+  assertDeclaration(rules, SELECTOR.constrainedCanvasBody, 'min-height', '0');
+  assertDeclaration(rules, SELECTOR.stage, 'min-height', STAGE_MIN_HEIGHT);
+  assertDeclaration(rules, SELECTOR.constrainedStage, 'min-height', '0');
   assertDeclaration(rules, SELECTOR.sidebar, 'min-height', '0');
 
   assertDeclaration(rules, SELECTOR.sidebarPanels, 'overflow', 'auto');
@@ -248,9 +252,10 @@ test('高さ制約の解除はモバイル幅の分岐だけに限定され、�
   const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
 
   // .board-scene は position: absolute; inset: 0 なので .board-stage には内在高さがない。
-  // トップレベルで min-height を 0 にできるのは、100dvh 制約が行高さを与えているからで、
-  // 制約を外すメディアクエリは必ず最低高さを戻さなければならない。
-  assertDeclaration(indexRules(topLevel), SELECTOR.stage, 'min-height', '0');
+  // 100dvh 制約が効いている文脈だけで min-height を 0 にし、非対応環境では
+  // 既定の最低高さを残しておく。
+  assertDeclaration(indexRules(topLevel), SELECTOR.stage, 'min-height', STAGE_MIN_HEIGHT);
+  assertDeclaration(indexRules(topLevel), SELECTOR.constrainedStage, 'min-height', '0');
 
   const releasingMedia = [...mediaBlocks.entries()]
     .filter(([, block]) => indexRules(block).has(selectorKey(SELECTOR.boardShell)))

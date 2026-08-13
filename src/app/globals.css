@@ -45,6 +45,18 @@ a {
   grid-template-rows: minmax(0, 1fr);
 }
 
+/* .board-canvas-body / .board-stage の既定 min-height（下部）は :has() 非対応環境で
+   キャンバスが0に潰れないための保険。ここは :has() 対応環境限定で、上の
+   .home-shell の 100dvh 制約がグリッド行の高さを与えている前提のもとでのみ
+   0 へ上書きする。この上書きが効かない環境では既定の min-height が残る。 */
+.home-shell:has(.board-canvas-shell) .board-canvas-body {
+  min-height: 0;
+}
+
+.home-shell:has(.board-canvas-shell) .board-stage {
+  min-height: 0;
+}
+
 .home-shell:has(.board-canvas-shell):has(.board-join-success) {
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -351,11 +363,15 @@ a {
   white-space: nowrap;
 }
 
+/* min-height: 36rem が既定。:has() 対応環境では上部の
+   .home-shell:has(.board-canvas-shell) .board-canvas-body が 0 へ上書きし、
+   100dvh 制約がグリッド行の高さを与える。:has() 非対応環境ではこの上書きが
+   効かないため、既定の 36rem が残ってレイアウトが潰れない（issue #109）。 */
 .board-canvas-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18rem;
   gap: var(--space-4);
-  min-height: 0;
+  min-height: 36rem;
 }
 
 .board-stage,
@@ -369,13 +385,16 @@ a {
   box-shadow: var(--shadow-glow-md);
 }
 
-/* .board-scene は position: absolute; inset: 0 なので、.board-stage には内在高さがない。
-   min-height: 0 にできるのは .home-shell の 100dvh 制約がグリッド行の高さを与えている前提で、
-   その制約を外す分岐（下部の max-width: 960px）では必ず最低高さを戻すこと。 */
+/* .board-scene は position: absolute; inset: 0 なので、.board-stage 自体には内在高さがない。
+   min-height: 36rem が既定で、:has() 対応環境では上部の
+   .home-shell:has(.board-canvas-shell) .board-stage が 0 へ上書きする（100dvh 制約が
+   グリッド行の高さを与えている前提）。この上書きが効かない :has() 非対応環境や、
+   下部の max-width: 960px 分岐で制約を外す場合は、既定の 36rem が残る／戻る
+   ことでキャンバスが潰れない（issue #109）。 */
 .board-stage {
   position: relative;
   overflow: hidden;
-  min-height: 0;
+  min-height: 36rem;
   touch-action: none;
 }
 
