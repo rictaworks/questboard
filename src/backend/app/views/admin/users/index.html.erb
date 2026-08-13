@@ -1,0 +1,315 @@
+<style>
+  .admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  }
+
+  .btn-secondary {
+    background: #e7ecf5;
+    color: var(--text);
+  }
+
+  .btn-secondary:hover {
+    background: #dbe1ee;
+  }
+
+  .btn-danger {
+    background: #ef4444;
+    color: white;
+  }
+
+  .btn-success {
+    background: #10b981;
+    color: white;
+  }
+
+  .form-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 24px;
+    margin-bottom: 24px;
+    box-shadow: 0 12px 36px rgba(20, 33, 61, .04);
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) auto;
+    gap: 16px;
+    align-items: end;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+  }
+
+  .form-control {
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .form-control:focus {
+    border-color: var(--accent);
+  }
+
+  .table-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 20px;
+    box-shadow: 0 12px 36px rgba(20, 33, 61, .04);
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+
+  th {
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--muted);
+    border-bottom: 2px solid var(--border);
+  }
+
+  td {
+    padding: 16px;
+    font-size: 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  .badge {
+    display: inline-flex;
+    padding: 4px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+
+  .badge-member {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .badge-none {
+    background: #f3f4f6;
+    color: #374151;
+  }
+
+  .badge-manual {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+  }
+
+  .flash {
+    padding: 12px 16px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .flash-notice {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+  }
+
+  .flash-alert {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+</style>
+
+<div class="admin-header">
+  <div>
+    <p class="eyebrow">管理ダッシュボード</p>
+    <h1>手動ログイン許可（例外ユーザー）管理</h1>
+  </div>
+  <%= link_to "KPIダッシュボードへ戻る", admin_root_path, class: "btn btn-secondary" %>
+</div>
+
+<% if flash[:notice] %>
+  <div class="flash flash-notice"><%= flash[:notice] %></div>
+<% end %>
+<% if flash[:alert] %>
+  <div class="flash flash-alert"><%= flash[:alert] %></div>
+<% end %>
+
+<div class="form-panel">
+  <h2>新しい例外ログインユーザーの追加</h2>
+  <p class="footnote" style="margin-bottom: 16px;">X APIのフォロワー一覧に存在しない場合でも、ログインを常時許可するユーザーを登録できます。</p>
+  
+  <%= form_with url: admin_users_path, method: :post, local: true, class: "form-grid" do |f| %>
+    <div class="form-group">
+      <%= f.label :x_user_id, "X ユーザーID (数字のみのID)" %>
+      <%= f.text_field :x_user_id, class: "form-control", placeholder: "例: 44196397", required: true %>
+    </div>
+    <div class="form-group">
+      <%= f.label :display_name, "表示名 (識別用の名前)" %>
+      <%= f.text_field :display_name, class: "form-control", placeholder: "例: 山田太郎", required: true %>
+    </div>
+    <%= f.submit "手動許可リストに追加", class: "btn btn-primary" %>
+  <% end %>
+</div>
+
+<div class="table-panel">
+  <h2>登録済みユーザー一覧</h2>
+  <p class="footnote" style="margin-bottom: 16px;">最新の登録・更新ユーザー50件を表示しています。特定のユーザーは以下の検索フォームから検索できます。</p>
+
+  <div style="margin-bottom: 16px;">
+    <%= form_with url: admin_users_path, method: :get, local: true, class: "form-grid", style: "grid-template-columns: minmax(200px, 1fr) auto auto; gap: 8px;" do |f| %>
+      <div class="form-group" style="gap: 0; margin-bottom: 0;">
+        <%= f.text_field :search_user, value: params[:search_user], class: "form-control", placeholder: "表示名、または X ユーザーIDで検索...", style: "width: 100%;" %>
+      </div>
+      <%= f.submit "検索", class: "btn btn-primary" %>
+      <%= link_to "クリア", admin_users_path, class: "btn btn-secondary" %>
+    <% end %>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>表示名</th>
+        <th>X ユーザーID</th>
+        <th>現在のプラン</th>
+        <th>手動ログイン許可状態</th>
+        <th>アクション</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @users.each do |user| %>
+        <tr>
+          <td><strong><%= user.display_name %></strong></td>
+          <td><code><%= user.x_user_id %></code></td>
+          <td>
+            <% if user.plan == @member_plan %>
+              <span class="badge badge-member">MEMBER</span>
+            <% else %>
+              <span class="badge badge-none">NONE</span>
+            <% end %>
+          </td>
+          <td>
+            <% if user.is_manual_member %>
+              <span class="badge badge-manual">手動許可中</span>
+            <% else %>
+              <span class="badge badge-none">通常判定 (X API基準)</span>
+            <% end %>
+          </td>
+          <td>
+            <%= button_to user.is_manual_member ? "許可を解除" : "ログインを許可", 
+                          toggle_bypass_admin_user_path(user), 
+                          method: :patch, 
+                          class: "btn #{user.is_manual_member ? 'btn-secondary' : 'btn-primary'}" %>
+          </td>
+        </tr>
+      <% end %>
+      <% if @users.empty? %>
+        <tr>
+          <td colspan="5" style="text-align: center; color: var(--muted); padding: 32px;">
+            登録されているユーザーはいません。
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+
+<div class="table-panel" style="margin-top: 24px;">
+  <h2>現在のフォロワーキャッシュ一覧 (FollowerCache)</h2>
+  <p class="footnote" style="margin-bottom: 16px;">X APIのバッチ同期によって取得され、データベースに保存されているフォロワー（最新50件）の一覧です。特定のフォロワーIDは以下の検索フォームから検索できます。</p>
+
+  <div style="margin-bottom: 16px;">
+    <%= form_with url: admin_users_path, method: :get, local: true, class: "form-grid", style: "grid-template-columns: minmax(200px, 1fr) auto auto; gap: 8px;" do |f| %>
+      <div class="form-group" style="gap: 0; margin-bottom: 0;">
+        <%= f.text_field :search_cache, value: params[:search_cache], class: "form-control", placeholder: "X ユーザーIDで検索...", style: "width: 100%;" %>
+      </div>
+      <%= f.submit "検索", class: "btn btn-primary" %>
+      <%= link_to "クリア", admin_users_path, class: "btn btn-secondary" %>
+    <% end %>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>X ユーザーID</th>
+        <th>ユーザー名 (アプリ内登録済)</th>
+        <th>最終取得日時</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% @follower_caches.each do |cache| %>
+        <% matched_user = @users_by_x_id[cache.x_user_id] %>
+        <tr>
+          <td><code><%= cache.x_user_id %></code></td>
+          <td>
+            <% if matched_user %>
+              <strong><%= matched_user.display_name %></strong>
+            <% else %>
+              <span style="color: var(--muted); font-style: italic;">未ログイン</span>
+            <% end %>
+          </td>
+          <td><%= cache.fetched_at.strftime("%Y-%m-%d %H:%M:%S") %></td>
+        </tr>
+      <% end %>
+      <% if @follower_caches.empty? %>
+        <tr>
+          <td colspan="3" style="text-align: center; color: var(--muted); padding: 32px;">
+            フォロワーキャッシュは空です。
+          </td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

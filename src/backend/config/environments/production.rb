@@ -34,6 +34,11 @@ Rails.application.configure do
   # Change to "debug" to log everything (including potentially personally-identifiable information!)
   config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
 
+  # Railway cron/runner invocations execute the follower cache sync task directly,
+  # but we still pin the Active Job adapter so any enqueued jobs use a lightweight
+  # in-process backend in this deployment.
+  config.active_job.queue_adapter = :async
+
   # Prevent health checks from clogging up the logs.
   config.silence_healthcheck_path = "/healthz"
 

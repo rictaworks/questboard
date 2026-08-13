@@ -4,6 +4,11 @@ Rails.application.routes.draw do
 
   namespace :admin do
     root to: "dashboard#show"
+    resources :users, only: [ :index, :create ] do
+      member do
+        patch :toggle_bypass
+      end
+    end
   end
 
   namespace :auth do

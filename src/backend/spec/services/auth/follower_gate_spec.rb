@@ -17,4 +17,11 @@ RSpec.describe Auth::FollowerGate do
 
     expect(plan).to eq(none_plan)
   end
+
+  it "returns the member plan when the user is in the bypass list" do
+    gate = described_class.new(bypass_user_ids: Set.new([ "x-3" ]))
+    plan = gate.resolve_plan("x-3")
+
+    expect(plan).to eq(member_plan)
+  end
 end

@@ -14,13 +14,14 @@ This document captures the main application-specific threats that matter for the
 - PostgreSQL data store
 - BASIC-auth protected admin dashboard
 - KPI/event pipeline
+- X REST API (Followers Sync)
 
 ## Primary threats
 
 | ID | Threat | Why it matters | Main defenses |
 |---|---|---|---|
 | T1 | X OAuth account takeover / login CSRF | User identity is the primary auth boundary | Validate disposable `state` bound to session, verify `sub` (and OIDC `iss`/`aud`/`exp`/`signature`/`nonce` / PKCE), use secure session cookies |
-| T2 | BASIC-auth admin compromise | Admin dashboard exposes operational and KPI data | Strong credentials, HTTPS only, lock down routes and headers |
+| T2 | BASIC-auth admin compromise | Admin dashboard exposes operational and KPI data, plus plan authorization/manual bypass configuration | Strong credentials, HTTPS only, lock down routes and headers, Rails protect_from_forgery for admin web forms (API RequestOriginGuard skipped) |
 | T3 | F7 authorization bypass | Board role checks gate edit/comment/view actions | Enforce F7 server-side for every Rails and WS action |
 | T4 | F6 concurrent-edit race conditions | Conflicting ops can corrupt board state | Lamport/LWW rules, CRDT for text, deterministic tie-breaking |
 | T5 | WebSocket op injection | A forged op could mutate other users’ objects | Authenticate sockets, validate board membership, schema-check ops |
@@ -29,6 +30,7 @@ This document captures the main application-specific threats that matter for the
 | T8 | KPI PII leakage | Analytics must not contain personal data | Reject PII fields before buffering or sending |
 | T9 | Shared URL guessing | Board share tokens may expose private boards | High-entropy tokens, rotation, access checks on lookup |
 | T10 | Admin/ops data exposure | Logs, dashboards, and metrics can reveal sensitive state | Minimize logged data, protect dashboards, audit access |
+| T11 | X Bearer Token exposure or X REST API rate limiting / DoS | Leaked bearer tokens allow arbitrary X API queries; API rate limits or failures block follower caching and member access control | Store bearer token securely in environment variables, mask token in logs, implement robust automatic HTTP 429 rate limit backoff/retries with proper time parsing, fallback to safe states on API errors |
 
 ## App-specific notes
 
