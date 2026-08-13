@@ -10,7 +10,7 @@ Rails API scaffold for questboard.
 4. Set `DATABASE_URL` for production Postgres
 5. Set `CORS_ALLOWED_ORIGINS` for the frontend origin(s)
 6. Set `ADMIN_BASIC_AUTH_USERNAME` and `ADMIN_BASIC_AUTH_PASSWORD`
-7. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GOOGLE_OAUTH_REDIRECT_URI`, and `RECAPTCHA_SECRET_KEY`
+7. Set `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, and `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`
 
 ## Admin access
 
@@ -32,7 +32,7 @@ API surface grows. Current endpoints:
 | GET    | `/admin`   | Admin dashboard   | HTTP Basic  |
 | GET    | `/session` | Current session   | cookie      |
 | DELETE | `/session` | Logout            | cookie      |
-| POST   | `/auth/google_sessions` | Google login callback | none |
+| POST   | `/auth/x_sessions` | X login callback | none |
 | POST   | `/boards` | Create a board | cookie |
 | GET    | `/boards/:share_token` | Load board canvas state | cookie |
 | DELETE | `/boards/:share_token` | Delete a board | cookie |
@@ -53,6 +53,10 @@ API surface grows. Current endpoints:
 - Poll `/healthz` from an external uptime monitor.
 - Alert on 3 consecutive failures or any 5-minute outage.
 - The sync-server exports Prometheus metrics at `/metrics` for WebSocket connection count and sync-operation latency.
+- Follower cache maintenance runs as `bundle exec rails auth:sync_follower_cache` from a Railway scheduled job.
+- By default, it performs incremental syncs (adding new followers only) by checking if a fetched user is already in the cache, and automatically triggers a full sync (including unfollower demotions) when the oldest cache entry is older than 24 hours (configurable via `X_FOLLOWER_CACHE_FULL_SYNC_INTERVAL_HOURS`). You can also force a full sync by running `bundle exec rails auth:sync_follower_cache[true]` or setting `X_FOLLOWER_CACHE_FULL_SYNC=true`.
+- Incremental syncs early-exit as soon as a known follower is found in a page, saving API usage and metered costs. Regular full syncs guarantee demotions (unfollow detection) and recovery from any sequence gaps.
+- The API client automatically handles HTTP 429 Rate Limit responses by parsing `x-rate-limit-reset` or `Retry-After` headers and sleeping before retrying (up to 3 retries). Configure the external scheduler execution interval and set `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE` appropriately to align with your overall sync schedule and target execution time.
 
 ## Lint & security
 

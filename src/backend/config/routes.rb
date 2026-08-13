@@ -4,10 +4,15 @@ Rails.application.routes.draw do
 
   namespace :admin do
     root to: "dashboard#show"
+    resources :users, only: [ :index, :create ] do
+      member do
+        patch :toggle_bypass
+      end
+    end
   end
 
   namespace :auth do
-    post "/google_sessions", to: "google_sessions#create"
+    post "/x_sessions", to: "x_sessions#create"
   end
 
   resource :user_settings, only: %i[show update]

@@ -158,8 +158,9 @@ test('resolveCanvasIntent returns the expected intent for key F1 scenarios', () 
     [{kind: 'pointer', phase: 'longpress', device: 'mouse', buttons: 1, touchCount: 1, movementX: 1, movementY: 1, elapsedTimeMs: 500, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'radial-menu', source: 'longpress'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: text, modifiers: modifiers(), selection: selected}, {kind: 'edit-text'}],
     [{kind: 'pointer', phase: 'dblclick', device: 'mouse', buttons: 1, touchCount: 1, movementX: 0, movementY: 0, elapsedTimeMs: 0, hitTarget: blank, modifiers: modifiers(), selection: selected}, {kind: 'create-note'}],
-    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 0}, {kind: 'draw'}],
-    [{kind: 'pointer', phase: 'change', device: 'mouse', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 2400}, {kind: 'ignore'}],
+    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 30, movementY: 10, elapsedTimeMs: 12, hitTarget: object, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 0}, {kind: 'move', duplicate: false}],
+    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 30, movementY: 10, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 0}, {kind: 'marquee', pointer: 'pen'}],
+    [{kind: 'pointer', phase: 'change', device: 'pen', buttons: 1, touchCount: 1, movementX: 1, movementY: 0, elapsedTimeMs: 12, hitTarget: blank, modifiers: modifiers(), selection: selected, palmContactAreaPx2: 2400}, {kind: 'ignore'}],
   ];
 
   for (const [input, expected] of cases) {
@@ -1241,6 +1242,93 @@ test('往復して開始点付近へ戻したボタンドラッグでも終端 i
   assert.ok(endPan !== undefined, '往復しても終端の pan intent が届く');
   assert.equal(endPan.source, 'button');
   assert.ok(endPan.velocityX !== undefined && endPan.velocityY !== undefined, '解放時慣性の速度が乗る');
+
+  controller.detach();
+});
+
+test('ピンチズーム後に指間距離を固定したまま中心を切り返して離した場合、最後の切り返し方向への慣性速度が保持される', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  // 1. 指をタッチダウン (指間距離 10px)
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 100, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 101, pointerType: 'touch', buttons: 1, button: 0, clientX: 40, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 2. 指2を右へ動かしてズームを適用（距離 60px、右へ 50px 動いた。ズーム閾値 8px を超える）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 101, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 3. 指間距離を保ったまま（60px）、中心を左へ動かす（パン）
+  // 指1: (20, 30), 指2: (80, 30) => 中心は 60 から 50 へ（左方向）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 100, pointerType: 'touch', buttons: 1, button: 0, clientX: 20, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 101, pointerType: 'touch', buttons: 1, button: 0, clientX: 80, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 4. 指間距離を保ったまま（60px）、中心をさらに左へ動かす
+  // 指1: (10, 30), 指2: (70, 30) => 中心は 50 から 40 へ（左方向）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 100, pointerType: 'touch', buttons: 1, button: 0, clientX: 10, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 101, pointerType: 'touch', buttons: 1, button: 0, clientX: 70, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 5. 指間距離を保ったまま（60px）、中心を右へ切り返す（反転）
+  // 指1: (15, 30), 指2: (75, 30) => 中心は 40 から 45 へ（右方向、反転）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 100, pointerType: 'touch', buttons: 1, button: 0, clientX: 15, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 101, pointerType: 'touch', buttons: 1, button: 0, clientX: 75, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 6. 指を離す
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 101, pointerType: 'touch', buttons: 0, button: 0, clientX: 75, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 100, pointerType: 'touch', buttons: 0, button: 0, clientX: 15, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 7. 検証：最後の zoom intent (source: 'pinch') に、切り返し方向である右方向の慣性（velocityX > 0）が乗っていることを確認
+  const zoomIntents = intents.filter((intent) => intent.kind === 'zoom' && intent.source === 'pinch');
+  const lastZoomIntent = zoomIntents.at(-1);
+  assert.ok(lastZoomIntent !== undefined, 'ズーム intent が取得できる');
+  assert.ok(lastZoomIntent.velocityX > 0, `慣性の速度（X方向）が右向き（正）に保持されていること (実際: ${lastZoomIntent.velocityX})`);
+
+  controller.detach();
+});
+
+test('ズーム（指間距離が変化）しながら中心を切り返して離した場合でも、最後の切り返し方向への慣性速度が保持される', async () => {
+  const intents = [];
+  const canvas = new FakeHitElement();
+  const controller = new CanvasInputController({
+    onIntent(intent) {
+      intents.push(intent);
+    },
+  });
+
+  await controller.attach(canvas);
+  canvas.nextHitTarget = null;
+
+  // 1. 指をタッチダウン (指間距離 10px, 中心 35)
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 102, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerdown', {pointerId: 103, pointerType: 'touch', buttons: 1, button: 0, clientX: 40, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 2. 指2を右へ動かしてズームを適用（距離 60px、中心 60）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 103, pointerType: 'touch', buttons: 1, button: 0, clientX: 90, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 3. ズームしつつ（距離 70px）、中心を左へ大きく動かす（中心 45, centerDelta = 15）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 102, pointerType: 'touch', buttons: 1, button: 0, clientX: 10, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 103, pointerType: 'touch', buttons: 1, button: 0, clientX: 80, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 4. さらにズームしつつ（距離 80px）、中心を右へ大きく切り返す（中心 70, centerDelta = 25, 方向反転！）
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 102, pointerType: 'touch', buttons: 1, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointermove', {pointerId: 103, pointerType: 'touch', buttons: 1, button: 0, clientX: 110, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 5. 指を離す
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 103, pointerType: 'touch', buttons: 0, button: 0, clientX: 110, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+  canvas.dispatchEvent(new FakePointerEvent('pointerup', {pointerId: 102, pointerType: 'touch', buttons: 0, button: 0, clientX: 30, clientY: 30, ctrlKey: false, shiftKey: false, altKey: false, metaKey: false}));
+
+  // 6. 検証：最後の zoom intent に、切り返し方向である右方向の慣性（velocityX > 0）が乗っていることを確認
+  const zoomIntents = intents.filter((intent) => intent.kind === 'zoom' && intent.source === 'pinch');
+  const lastZoomIntent = zoomIntents.at(-1);
+  assert.ok(lastZoomIntent !== undefined, 'ズーム intent が取得できる');
+  assert.ok(lastZoomIntent.velocityX > 0, `ズーム中のパン反転でも、慣性の速度（X方向）が右向き（正）に保持されていること (実際: ${lastZoomIntent.velocityX})`);
 
   controller.detach();
 });

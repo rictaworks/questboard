@@ -1,8 +1,35 @@
+<style>
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+  }
+</style>
+
 <header class="hero">
   <div>
     <p class="eyebrow">管理ダッシュボード</p>
     <h1>KPI開発者ダッシュボード</h1>
     <p class="footnote">継続率は初回イベントから7日以上経過した利用者のみを母数に集計</p>
+  </div>
+  <div>
+    <%= link_to "例外ユーザー（手動ログイン許可）管理", admin_users_path, class: "btn btn-primary" %>
   </div>
 </header>
 

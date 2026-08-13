@@ -71,7 +71,7 @@ test('state が一致するプロバイダエラーは生の値を載せて通�
 });
 
 // 一致しない場合でも黙ってはいけない。sessionStorage はタブ単位なので、
-// 別タブで開始した・クラッシュから復元した・Google が state を落としたという、
+// 別タブで開始した・クラッシュから復元した・X が state を落としたという、
 // まさに切り分けが要る場面ほどここに落ちる。
 // ただしクエリ由来の値は載せない。載せると誰でもログへ好きな文章を書ける。
 test('state が一致しないプロバイダエラーは理由コードだけを通報する', () => {
@@ -307,7 +307,7 @@ function createMarkerStore(initial = null) {
   };
 }
 
-const sampleReport = {marker: 'provider-error|S1|invalid_request', message: 'google oauth callback'};
+const sampleReport = {marker: 'provider-error|S1|invalid_request', message: 'x oauth callback'};
 
 test('同じコールバックの印が残っていれば送らない', async () => {
   const {marker, state} = createMarkerStore(sampleReport.marker);
@@ -381,7 +381,7 @@ test('送信に届かなかったら印を取り消して送り直せるよう�
 // 重複して送られてレート枠を削る。
 test('失敗した通報は、後から成功した別の通報の印を消さない', async () => {
   const {marker, state} = createMarkerStore();
-  const otherReport = {marker: 'missing-state|S2|', message: 'google oauth callback other'};
+  const otherReport = {marker: 'missing-state|S2|', message: 'x oauth callback other'};
   let settleFirst = null;
 
   const first = deliverCallbackReportOnce(sampleReport, marker, () => new Promise((resolve) => {

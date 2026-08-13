@@ -14,23 +14,23 @@ import {
 } from "@/lib/browser-storage";
 import {reportClientError} from "@/lib/client-error-report";
 import {
-  googleAuthStorageKeys,
+  xAuthStorageKeys,
   loadRecaptchaToken,
-  readGoogleAuthSettings
-} from "@/lib/google-auth";
+  readXAuthSettings
+} from "@/lib/x-auth";
 import {
   buildCallbackReport,
   deliverCallbackReportOnce,
   type CallbackMissingParamKey
 } from "@/lib/oauth-callback-report";
 
-const callbackStateKey = googleAuthStorageKeys.state;
+const callbackStateKey = xAuthStorageKeys.state;
 
 // 通報済みのコールバックを覚えておく場所。ログインできない利用者がリロードを
 // 連打するのは自然な反応で、そのたびに送ると毎分10件/IP の枠を使い切る。
-const reportedCallbackKey = "questboard.google.reportedCallback";
+const reportedCallbackKey = "questboard.x.reportedCallback";
 
-const reportSource = "google-callback";
+const reportSource = "x-callback";
 
 type CallbackStatus = "loading" | "success" | "error";
 
@@ -54,9 +54,9 @@ const callbackDescriptionKeys: Record<CallbackStatus, string | null> = {
   error: null
 };
 
-// Google が返す error の値は access_denied（利用者がキャンセル）のほか、
+// X が返す error の値は access_denied（利用者がキャンセル）のほか、
 // invalid_request や admin_policy_enforced など設定・ポリシー由来のものがある。
-// 利用者に伝えられるのは「キャンセルされた」か「Google 側で中断された」かの区別まで。
+// 利用者に伝えられるのは「キャンセルされた」か「X 側で中断された」かの区別まで。
 //
 // 生の値は画面に出さない。この経路は誰でも叩ける公開 GET で error は任意の文字列を
 // 取れるため、そのまま描画すると攻撃者が書いた文章を製品自身のエラーメッセージとして
@@ -70,7 +70,7 @@ function readProviderErrorKey(error: string | null): "callbackDenied" | "callbac
   return error.trim() === "access_denied" ? "callbackDenied" : "callbackProviderError";
 }
 
-export default function GoogleCallback({
+export default function XCallback({
   code,
   error,
   errorDescription,
@@ -84,12 +84,12 @@ export default function GoogleCallback({
   const t = useTranslations("Auth");
   const router = useRouter();
 
-  // Google がエラーを返した場合は、code の有無に関わらずそれを理由として表示する。
+  // X がエラーを返した場合は、code の有無に関わらずそれを理由として表示する。
   // 見ずに code 欠落として扱うと、同意画面でキャンセルしただけの利用者に
   // 「認可コードが見つかりません」という無関係な原因が示される。
   const providerErrorKey = readProviderErrorKey(error);
 
-  // code の欠落と state の欠落を1つの真偽値に潰さない。潰すと、Google が実際には
+  // code の欠落と state の欠落を1つの真偽値に潰さない。潰すと、X が実際には
   // 認可コードを送っているのに「認可コードが見つかりません」と表示することになり、
   // 利用者もサポートも存在しない問題を探し回る。state はプライバシー拡張による
   // 除去や中間リダイレクトで単独で落ちうる。
@@ -103,7 +103,7 @@ export default function GoogleCallback({
 
   // 失敗理由は props から毎回導出する。useState の遅延初期化に閉じ込めると、
   // クライアント遷移で同じインスタンスが使い回されたときに初期化関数が再実行されず、
-  // 画面が「Google ログインを完了しています」のまま止まる。
+  // 画面が「X ログインを完了しています」のまま止まる。
   const [asyncState, setCallbackState] = useState<CallbackState>({
     codeVerifier: null,
     errorMessage: null,
@@ -156,8 +156,8 @@ export default function GoogleCallback({
 
     void (async () => {
       const storedState = readSessionItem(callbackStateKey);
-      const codeVerifier = readSessionItem(googleAuthStorageKeys.codeVerifier);
-      const rawReturnTo = readSessionItem(googleAuthStorageKeys.returnTo);
+      const codeVerifier = readSessionItem(xAuthStorageKeys.codeVerifier);
+      const rawReturnTo = readSessionItem(xAuthStorageKeys.returnTo);
       const returnTo = normalizeReturnTo(rawReturnTo);
 
       if (storedState !== state || !codeVerifier) {
@@ -171,9 +171,9 @@ export default function GoogleCallback({
       }
 
       try {
-        const settings = readGoogleAuthSettings();
+        const settings = readXAuthSettings();
         const recaptchaToken = await loadRecaptchaToken(settings.recaptchaSiteKey, "login");
-        const response = await fetch(`${settings.backendUrl}/auth/google_sessions`, {
+        const response = await fetch(`${settings.backendUrl}/auth/x_sessions`, {
           body: JSON.stringify({
             code,
             code_verifier: codeVerifier,
@@ -191,9 +191,9 @@ export default function GoogleCallback({
           throw new Error(payload.error ?? t("callbackFailure"));
         }
 
-        removeSessionItem(googleAuthStorageKeys.codeVerifier);
-        removeSessionItem(googleAuthStorageKeys.state);
-        removeSessionItem(googleAuthStorageKeys.returnTo);
+        removeSessionItem(xAuthStorageKeys.codeVerifier);
+        removeSessionItem(xAuthStorageKeys.state);
+        removeSessionItem(xAuthStorageKeys.returnTo);
         removeSessionItem(reportedCallbackKey);
         setCallbackState({
           codeVerifier: null,

@@ -1,14 +1,17 @@
 require "rails_helper"
 
 RSpec.describe "Comments", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
-  let(:editor) { User.create!(google_sub: "google-sub-editor", display_name: "Editor User") }
-  let(:commenter) { User.create!(google_sub: "google-sub-commenter", display_name: "Commenter User") }
-  let(:viewer) { User.create!(google_sub: "google-sub-viewer", display_name: "Viewer User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
+  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User", plan: member_plan) }
+  let(:commenter) { User.create!(x_user_id: "x-sub-commenter", display_name: "Commenter User", plan: member_plan) }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User", plan: member_plan) }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-comment", display_name: "Blocked Comment User", plan: none_plan) }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
     seed_comment_support
     seed_object_support
@@ -78,7 +81,7 @@ RSpec.describe "Comments", type: :request do
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
@@ -161,6 +164,26 @@ RSpec.describe "Comments", type: :request do
       event_def: EventDef.find_by!(code: "comment_created")
     )
     expect(kpi_event.props).to include("comment_id" => comment_payload.fetch("id"), "object_id" => object_id)
+  end
+
+  it "rejects comment access for users on the none plan before comment permissions" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    BoardMember.create!(board: Board.find_by!(share_token:), user: blocked_user, role: Role.find_by!(code: "commenter"))
+    sign_in(blocked_user)
+
+    get "/boards/#{share_token}/objects/#{object_id}/comments", as: :json
+
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "allows commenters to mutate only their own comments while editors can manage all comments" do

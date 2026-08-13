@@ -66,8 +66,8 @@ class ApplicationController < ActionController::API
     def initialize = super("api.errors.recaptcha_verification_failed", status: :unprocessable_content)
   end
 
-  class GoogleOauthFailedError < ApiError
-    def initialize = super("api.errors.google_oauth_failed", status: :bad_gateway)
+  class XOauthFailedError < ApiError
+    def initialize = super("api.errors.x_oauth_failed", status: :bad_gateway)
   end
 
   class ObjectLockedByAnotherUserError < ApiError
@@ -105,7 +105,7 @@ class ApplicationController < ActionController::API
               with: :render_conflict_message
   rescue_from "UserSettingsController::InvalidIntensityError", with: :render_invalid_intensity
   rescue_from "Auth::RecaptchaVerifier::Error", with: :render_recaptcha_verification_failed
-  rescue_from "Auth::GoogleOauthClient::Error", with: :render_google_oauth_failed
+  rescue_from "Auth::XOauthClient::Error", with: :render_x_oauth_failed
   rescue_from ActiveRecord::RecordNotFound, with: :render_record_not_found
   rescue_from LamportTsMustBeAnIntegerError, with: :render_api_error
   rescue_from ObjectLockedByAnotherUserError, with: :render_api_error
@@ -204,10 +204,10 @@ class ApplicationController < ActionController::API
     render json: { error: I18n.t("api.errors.recaptcha_verification_failed") }, status: :unprocessable_content
   end
 
-  def render_google_oauth_failed(error)
+  def render_x_oauth_failed(error)
     logger.error("[#{self.class.name}##{action_name}] #{error.message}")
 
-    render json: { error: I18n.t("api.errors.google_oauth_failed") }, status: :bad_gateway
+    render json: { error: I18n.t("api.errors.x_oauth_failed") }, status: :bad_gateway
   end
 
   # 「型不正（空とは別の事象）」を検出したときにログへ残す定型処理。
@@ -226,5 +226,9 @@ class ApplicationController < ActionController::API
 
   def current_user
     @current_user ||= User.find_by(id: session[:user_id]) if session[:user_id].present?
+  end
+
+  def require_feature_plan!
+    head :forbidden unless current_user&.plan&.code == "member"
   end
 end

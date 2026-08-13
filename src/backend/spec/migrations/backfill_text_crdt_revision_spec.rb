@@ -12,7 +12,7 @@ RSpec.describe BackfillTextCrdtRevision do
   end
 
   def create_user
-    User.create!(google_sub: "google-sub-#{SecureRandom.hex(4)}", display_name: "Migration User")
+    User.create!(x_user_id: "x-sub-#{SecureRandom.hex(4)}", display_name: "Migration User")
   end
 
   def create_board

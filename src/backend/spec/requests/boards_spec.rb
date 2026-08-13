@@ -1,13 +1,16 @@
 require "rails_helper"
 
 RSpec.describe "Boards", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
-  let(:member) { User.create!(google_sub: "google-sub-member", display_name: "Member User") }
-  let(:viewer) { User.create!(google_sub: "google-sub-viewer", display_name: "Viewer User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
+  let(:member) { User.create!(x_user_id: "x-sub-member", display_name: "Member User", plan: member_plan) }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User", plan: member_plan) }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-board", display_name: "Blocked Board User", plan: none_plan) }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
   end
 
@@ -26,7 +29,7 @@ RSpec.describe "Boards", type: :request do
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
@@ -61,6 +64,35 @@ RSpec.describe "Boards", type: :request do
     expect(board.title).to eq("Launch Plan")
     expect(board.share_token).to match(/\A[1-9A-HJ-NP-Za-km-z]{24}\z/)
     expect(membership.role.code).to eq("owner")
+  end
+
+  it "rejects board creation for users on the none plan" do
+    sign_in(blocked_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "rejects board creation for users on an unknown plan" do
+    unknown_plan = Plan.find_or_create_by!(code: "unknown")
+    unknown_user = User.create!(x_user_id: "x-sub-unknown", display_name: "Unknown User", plan: unknown_plan)
+    sign_in(unknown_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
+  end
+
+  it "rejects board creation for users with a nil plan (fail-closed)" do
+    normal_user = User.create!(x_user_id: "x-sub-normal", display_name: "Normal User")
+    allow_any_instance_of(User).to receive(:plan).and_return(nil)
+
+    sign_in(normal_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "returns a Japanese validation message when the board title is blank" do

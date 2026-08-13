@@ -6,7 +6,7 @@ import {fetchQuests, reopenQuest, skipQuest} from '@/lib/quest-api';
 import {QUEST_POLL_INTERVAL_MS} from '@/lib/query-client';
 import type {QuestSnapshot} from '@/lib/quest-engine';
 
-// WebSocketハンドラは userGoogleSub を持たないため、前方一致で無効化できるルートキーを公開する。
+// WebSocketハンドラは userXUserId を持たないため、前方一致で無効化できるルートキーを公開する。
 export const QUEST_QUERY_ROOT_KEY = ['quests'] as const;
 
 /**
@@ -14,18 +14,18 @@ export const QUEST_QUERY_ROOT_KEY = ['quests'] as const;
  * キャッシュの次元はボードではなくユーザー。アカウント切替時に
  * 前のユーザーのクエストが残らないことも同時に担保される。
  */
-export function questQueryKey(userGoogleSub: string) {
-  return [...QUEST_QUERY_ROOT_KEY, userGoogleSub] as const;
+export function questQueryKey(userXUserId: string) {
+  return [...QUEST_QUERY_ROOT_KEY, userXUserId] as const;
 }
 
 export interface UseQuestsOptions {
   backendUrl: string;
-  userGoogleSub: string;
+  userXUserId: string;
 }
 
-export function useQuestsQuery({backendUrl, userGoogleSub}: UseQuestsOptions) {
+export function useQuestsQuery({backendUrl, userXUserId}: UseQuestsOptions) {
   return useQuery({
-    queryKey: questQueryKey(userGoogleSub),
+    queryKey: questQueryKey(userXUserId),
     // signal の転送は必須。invalidateQueries は cancelRefetch: true が既定だが、
     // signal を渡していないと実際のリクエストが中断されず、古い応答が
     // 新しい応答を追い越す余地が残る。
@@ -42,7 +42,7 @@ interface QuestActionOptions extends UseQuestsOptions {
 
 function useQuestAction(
   action: (questId: string, options: {backendUrl: string; shareToken: string}) => Promise<void>,
-  {backendUrl, shareToken, userGoogleSub, onError}: QuestActionOptions
+  {backendUrl, shareToken, userXUserId, onError}: QuestActionOptions
 ) {
   const queryClient = useQueryClient();
 
@@ -51,7 +51,7 @@ function useQuestAction(
     onError,
     // onSuccess ではなく onSettled。422（別タブで既にスキップ済み等）でも
     // サーバー真実へ再同期したいため。応答の snapshot はキャッシュに書き戻さない。
-    onSettled: () => queryClient.invalidateQueries({queryKey: questQueryKey(userGoogleSub)})
+    onSettled: () => queryClient.invalidateQueries({queryKey: questQueryKey(userXUserId)})
   });
 }
 

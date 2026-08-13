@@ -11,7 +11,7 @@ class SessionController < ApplicationController
       authenticated: true,
       user: {
         id: user.id,
-        googleSub: user.google_sub,
+        xUserId: user.x_user_id,
         displayName: user.display_name
       }
     }

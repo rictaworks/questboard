@@ -1,14 +1,17 @@
 require "rails_helper"
 
 RSpec.describe "Objects", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:owner) { User.create!(google_sub: "google-sub-owner", display_name: "Owner User") }
-  let(:editor) { User.create!(google_sub: "google-sub-editor", display_name: "Editor User") }
-  let(:another_editor) { User.create!(google_sub: "google-sub-editor-2", display_name: "Second Editor User") }
-  let(:viewer) { User.create!(google_sub: "google-sub-viewer", display_name: "Viewer User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
+  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User", plan: member_plan) }
+  let(:another_editor) { User.create!(x_user_id: "x-sub-editor-2", display_name: "Second Editor User", plan: member_plan) }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User", plan: member_plan) }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-object", display_name: "Blocked Object User", plan: none_plan) }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
     seed_object_support
   end
@@ -58,7 +61,7 @@ RSpec.describe "Objects", type: :request do
   def sign_in(user)
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
@@ -128,6 +131,21 @@ RSpec.describe "Objects", type: :request do
       )
       expect(BoardObject.find(payload.fetch("id")).object_type.code).to eq(object_type_code)
     end
+  end
+
+  it "rejects object creation for users on the none plan before role checks" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+    board = Board.find_by!(share_token:)
+    BoardMember.create!(board:, user: blocked_user, role: Role.find_by!(code: "editor"))
+
+    sign_in(blocked_user)
+    post "/boards/#{share_token}/objects", params: {
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "moves, resizes, rotates, and tombstones objects while enforcing permissions" do

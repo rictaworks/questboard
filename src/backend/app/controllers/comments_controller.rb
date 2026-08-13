@@ -3,6 +3,7 @@ class CommentsController < ApplicationController
   class InvalidCommentBodyError < StandardError; end
 
   before_action :require_current_user!
+  before_action :require_feature_plan!
 
   def index
     board = find_board!

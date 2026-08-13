@@ -11,7 +11,7 @@ This checklist maps OWASP Top 10 concerns to Questboard-specific checks.
 
 ## A02 Cryptographic Failures
 
-- [ ] Google OAuth flow requires disposable `state` bound to session (login CSRF prevention), verifies `sub` (plus OIDC `iss`/`aud`/`exp`/`signature`/`nonce` and PKCE if applicable), and uses secure session cookies
+- [ ] X OAuth flow requires disposable `state` bound to session (login CSRF prevention), verifies `sub` (plus OIDC `iss`/`aud`/`exp`/`signature`/`nonce` and PKCE if applicable), and uses secure session cookies
 - [ ] BASIC-auth credentials are stored and transmitted securely
 - [ ] shared board tokens are high-entropy and not guessable
 - [ ] HTTPS is required for auth, session, and admin traffic
@@ -45,7 +45,7 @@ This checklist maps OWASP Top 10 concerns to Questboard-specific checks.
 
 ## A07 Identification and Authentication Failures
 
-- [ ] Google OAuth login is the only consumer login path
+- [ ] X OAuth login is the only consumer login path
 - [ ] reCAPTCHA is present where required by the design
 - [ ] admin authentication is protected and brute-force resistant
 - [ ] sessions expire and logout revokes access as expected
@@ -69,4 +69,3 @@ This checklist maps OWASP Top 10 concerns to Questboard-specific checks.
 - [ ] any future URL-fetching or preview feature validates allowed schemes and hosts
 - [ ] current code paths do not blindly fetch attacker-controlled URLs
 - [ ] outbound requests are restricted to known services when added
-

@@ -1,5 +1,6 @@
 class QuestsController < ApplicationController
   before_action :require_current_user!
+  before_action :require_feature_plan!
   before_action :find_board!, only: %i[skip reopen claim]
 
   def index

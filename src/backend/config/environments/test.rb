@@ -6,6 +6,10 @@
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
+  ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"] = ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"].to_s.strip.presence || "123456789"
+  ENV["X_FOLLOWER_CACHE_SYNC_PAGE_SIZE"] = ENV["X_FOLLOWER_CACHE_SYNC_PAGE_SIZE"].to_s.strip.presence || "100"
+  ENV["X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN"] = ENV["X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN"].to_s.strip.presence || "test-bearer-token"
+
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false
 

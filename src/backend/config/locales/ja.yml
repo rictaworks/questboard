@@ -32,7 +32,7 @@ ja:
       content_type_must_be_json: "Content-Type は application/json である必要があります"
       invalid_intensity: "表示強度が正しくありません"
       recaptcha_verification_failed: "reCAPTCHA の検証に失敗しました"
-      google_oauth_failed: "Googleログインに失敗しました"
+      x_oauth_failed: "Xログインに失敗しました"
       # I18n::MissingTranslationData を ApplicationController#render_missing_translation
       # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。
@@ -56,10 +56,12 @@ ja:
       color_palette: "カラーパレット"
       comment: "コメント"
       effect_master: "エフェクト"
+      follower_cache: "フォロワーキャッシュ"
       event_def: "イベント定義"
       frame_lock: "フレームロック"
       intensity_master: "表示強度"
       kpi_event: "KPIイベント"
+      plan: "プラン"
       object_op: "オブジェクト操作"
       object_type: "オブジェクト種別"
       quest: "クエスト"
@@ -84,12 +86,16 @@ ja:
         effect_master: "エフェクト"
       frame_lock:
         locked_by_user: "ロックしたユーザー"
+      follower_cache:
+        fetched_at: "取得時刻"
       kpi_event:
         event_def: "イベント定義"
       object_op:
         property: "プロパティ"
         client_id: "クライアントID"
         lamport_ts: "Lamport時刻"
+      plan:
+        code: "プランコード"
       quest:
         title: "クエスト名"
         condition_event: "条件イベント"
@@ -97,8 +103,9 @@ ja:
       role:
         code: "権限コード"
       user:
-        google_sub: "Googleサブ"
-        display_name: "表示名"
+        x_user_id: "XユーザーID"
+        display_name: "X表示名"
+        plan: "プラン"
       user_quest:
         quest: "クエスト"
         state: "状態"
@@ -121,3 +128,13 @@ ja:
         full: "フル"
         subtle: "控えめ"
         "off": "オフ"
+    users:
+      create:
+        params_missing: "XユーザーIDと表示名は必須です。"
+        success: "手動ログインを許可しました。"
+        failure: "ユーザーの保存に失敗しました。"
+      toggle_bypass:
+        success: "手動ログイン許可状態を更新しました。"
+        failure: "更新に失敗しました。"
+        status_allow: "許可"
+        status_disallow: "解除"

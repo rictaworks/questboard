@@ -1,11 +1,12 @@
 require "rails_helper"
 
 RSpec.describe "KPI events", type: :request do
-  let(:session_creator) { instance_double(Auth::GoogleSessionCreator) }
-  let(:user) { User.create!(google_sub: "google-sub-analytics", display_name: "Analytics User") }
+  let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let(:user) { User.create!(x_user_id: "x-sub-analytics", display_name: "Analytics User", plan: member_plan) }
 
   before do
-    allow(Auth::GoogleSessionCreator).to receive(:new).and_return(session_creator)
+    allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
     seed_roles
     seed_kpi_masters
   end
@@ -51,7 +52,7 @@ RSpec.describe "KPI events", type: :request do
   def sign_in
     allow(session_creator).to receive(:call).and_return(user)
 
-    post "/auth/google_sessions", params: {
+    post "/auth/x_sessions", params: {
       code: "authorization-code",
       code_verifier: "pkce-verifier",
       recaptcha_token: "recaptcha-token"
@@ -76,14 +77,14 @@ RSpec.describe "KPI events", type: :request do
         {
           eventId: "radial_opened",
           boardId: board.fetch("id"),
-          userId: user.google_sub,
+          userId: user.x_user_id,
           timestamp: Time.current.iso8601,
           attributes: { source: "contextmenu" }
         },
         {
           eventId: "camera_zoomed",
           boardId: board.fetch("id"),
-          userId: user.google_sub,
+          userId: user.x_user_id,
           timestamp: 1.minute.ago.iso8601,
           attributes: { source: "fit-to-content", zoom: 1.25 }
         }
@@ -109,7 +110,7 @@ RSpec.describe "KPI events", type: :request do
         {
           eventId: "camera_zoomed",
           boardId: board.fetch("id"),
-          userId: user.google_sub,
+          userId: user.x_user_id,
           timestamp: Time.current.iso8601,
           attributes: {
             source: "fit-to-content",
@@ -135,7 +136,7 @@ RSpec.describe "KPI events", type: :request do
         {
           eventId: "intensity_changed",
           boardId: board.fetch("id"),
-          userId: user.google_sub,
+          userId: user.x_user_id,
           timestamp: Time.current.iso8601,
           attributes: { intensity: "invalid" }
         }
@@ -163,7 +164,7 @@ RSpec.describe "KPI events", type: :request do
     }, as: :json
 
     expect(response).to have_http_status(:unprocessable_content)
-    expect(JSON.parse(response.body)).to eq("error" => "userId must match the active Google sub")
+    expect(JSON.parse(response.body)).to eq("error" => "userId must match the active X user ID")
     expect(KpiEvent.count).to eq(0)
   end
 
@@ -177,7 +178,7 @@ RSpec.describe "KPI events", type: :request do
         {
           eventId: "object_created_sticky",
           boardId: board.fetch("id"),
-          userId: user.google_sub,
+          userId: user.x_user_id,
           timestamp: Time.current.iso8601,
           attributes: { source: "toolbar" }
         }
@@ -198,7 +199,7 @@ RSpec.describe "KPI events", type: :request do
       {
         eventId: "radial_opened",
         boardId: board.fetch("id"),
-        userId: user.google_sub,
+        userId: user.x_user_id,
         timestamp: Time.current.iso8601,
         attributes: { source: "toolbar" }
       }
@@ -268,7 +269,7 @@ RSpec.describe "KPI events", type: :request do
           {
             eventId: "radial_opened",
             boardId: board.fetch("id"),
-            userId: user.google_sub,
+            userId: user.x_user_id,
             timestamp: Time.current.iso8601,
             attributes: { source: "toolbar" }
           }

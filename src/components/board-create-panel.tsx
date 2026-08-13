@@ -5,7 +5,7 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
-import {readGoogleAuthSettings} from '@/lib/google-auth';
+import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
@@ -40,7 +40,7 @@ export default function BoardCreatePanel() {
 
     void (async () => {
       try {
-        const {backendUrl} = readGoogleAuthSettings();
+        const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/session`, {
           credentials: 'include',
           signal: abortController.signal
@@ -85,7 +85,7 @@ export default function BoardCreatePanel() {
     setCreating(true);
 
     try {
-      const {backendUrl} = readGoogleAuthSettings();
+      const {backendUrl} = readXAuthSettings();
       const response = await fetch(`${backendUrl}/boards`, {
         body: JSON.stringify({title}),
         credentials: 'include',

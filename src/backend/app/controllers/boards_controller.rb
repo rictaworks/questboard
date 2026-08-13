@@ -2,6 +2,7 @@ class BoardsController < ApplicationController
   class InvalidBoardTitleError < StandardError; end
 
   before_action :require_current_user!
+  before_action :require_feature_plan!
 
   class BoardDeletionRelayOp
     attr_reader :relay_object_id, :property, :value, :lamport_ts, :client_id

@@ -26,7 +26,8 @@
 - **測定：あり**（KPIイベント計測。F8参照）
 - **保守：あり**（リリース後の不具合対応・機能改修。エラートラッキング＋週次パッチ運用）
 - **監視：あり**（死活監視・アラート通知。/healthz エンドポイント監視、WebSocket接続数・同期遅延のメトリクス監視、閾値超過でアラート）
-- MVPの制約の継承は外す：認証はXログイン、@rictaworksフォロワー限定、reCAPTCHA確認、プラン値はusers.plan_idで単一管理
+- MVPから継承する制約：PostgreSQL、Vercel（フロント）＋Railway優先（バックエンド・管理画面、不可時Render）、開発者用管理画面はBASIC認証、reCAPTCHA必須
+- MVPから変更する点：認証はXログインとし、`@rictaworks` フォロワーのみ機能を利用可とする。フォロー状態はプラン値（`users.plan_id`）へ写し取り、機能側の可否判定はプラン値のみを参照する
 - スケーラビリティ・高可用性：Gin同期サーバーは水平分割（ボードID単位のシャーディング）、Redis Pub/Subでノード間中継、DBはリードレプリカ構成を想定
 - 個人情報：プライバシーポリシー・個人情報管理規程に従い設計（XユーザーIDとXアカウント表示名のみ保持。身体測定値は本課題では扱わない）
 - 開発環境DBも本番もPostgreSQL
@@ -37,7 +38,7 @@
 |---|---|---|
 | フロント | Next（TypeScript）+ Canvas/WebGL描画 | ボード描画、HUD、ラジアルメニュー、ミニマップ、演出 |
 | 入力レイヤ | @use-gesture/vanilla | ジェスチャ正規化、CanvasInputControllerへの橋渡し |
-| API | Rails | 認証（X OAuth、X APIフォロワー照会、@rictaworksフォロワー判定、プラン管理、reCAPTCHA）、ボード/権限CRUD、クエスト、管理画面（BASIC認証） |
+| API | Rails | 認証（X OAuth、フォロワーキャッシュ照合、プラン管理、reCAPTCHA）、ボード/権限CRUD、クエスト、管理画面（BASIC認証）。X APIへのフォロワー照会は定期バッチと手動再判定からのみ行う |
 | リアルタイム | Gin（Go）+ WebSocket | 操作同期、プレゼンス、競合解決（高速並列処理要件のため採用） |
 | DB | PostgreSQL | 永続化。テキスト本文はCRDT状態をJSONBで保持 |
 | 計測 | Rails集約＋バッチ投入 | KPIイベント |
@@ -60,7 +61,7 @@
 ### 1.5 コア関数仕様（自然言語ロジック・テスト合格版 v4）
 
 #### F1 入力インテント解決関数
-CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け取り、DOM非依存の純粋ロジックとして意図を一意に返す。ペンは描画、接触面積が閾値超の入力はパームとして拒否する。
+CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け取り、DOM非依存の純粋ロジックとして意図を一意に返す。ペンはポインタ同等（選択・移動）として扱い、接触面積が閾値超の入力はパームとして拒否する。
 入力（デバイス種別、ボタン/タッチ数、修飾キー、ヒット対象、移動量、押下時間、現在選択、パーム接触面積）を受け取り、以下の優先順で意図を一意に返す。
 1. ホイール＝ズーム（Ctrl+ホイール＝精密ズーム、Shift+ホイール＝横パン）
 2. 中ボタンドラッグ／右ボタンドラッグ／Space+左ドラッグ／2本指ドラッグ＝パン（2本指の指間距離変化が閾値超ならピンチズーム）
@@ -69,14 +70,14 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 5. オブジェクト上：左クリック＝選択（Shift+クリック＝追加/除外選択）、左ドラッグ＝移動（Ctrl+ドラッグ＝複製移動）
 6. 空白：左クリック＝選択解除、**マウスの**左ドラッグ＝範囲選択（タッチは投げ縄ツールをラジアルメニューで明示選択した時のみ範囲選択）、ダブルクリック＝付箋作成
 7. テキスト可能オブジェクトのダブルクリック＝テキスト編集開始
-8. ペン＝描画。接触面積が閾値超の接触はパームとして拒否
+8. ペン＝マウス同等の選択・移動として扱う（フリーハンド描画は本仕様の対象外。オブジェクト種別マスタにも描画系の型を持たない）。接触面積が閾値超の接触はパームとして拒否
 9. いずれにも該当しない入力は無視（例外を出さない）
 
 #### F2 ラジアルメニュー構成関数
 （対象種別、選択数、ユーザー権限、利用頻度統計）を受け取り、**最初にF7で実行可能アクションへフィルタ**した上で、最大8スロットの放射状メニューを返す。9件以上は利用頻度順に第1リング8件＋第2リングへ配置。中心は常にキャンセル。複数選択時は共通アクション（整列・グループ化・複製・削除）のみ。commenterはコメント系のみ、viewerはメニュー非表示。
 
 #### F3 カメラ制御関数
-（現在カメラ、入力、入力速度、コンテンツ外接矩形）から次フレームのカメラを返す。パンは入力層から委譲された速度ベクトルに摩擦係数0.92/frameの慣性。ズームは2%〜400%にクランプしカーソル位置を不動点とする。フォーカス指令（ミニマップクリック、オブジェクトジャンプ）は300msイーズアウトで移動。可動範囲はコンテンツ外接矩形+20%マージンの弾性境界。**ボードが空の場合は原点・ズーム100%を既定とし境界計算をスキップ**。
+（現在カメラ、入力、入力速度、コンテンツ外接矩形）から次フレームのカメラを返す。パンは入力層から委譲された速度ベクトルに摩擦係数0.92/frameの慣性。ズームは2%〜400%にクランプする。不動点はホイール時のみカーソル位置とし、ピンチ時は `@use-gesture/vanilla` 由来の origin（2点の中心）を用いる。倍率もピンチは指間距離の scale をそのまま受け取り、ホイールの感度係数に従属させない。フォーカス指令（ミニマップクリック、オブジェクトジャンプ）は300msイーズアウトで移動。可動範囲はコンテンツ外接矩形+20%マージンの弾性境界。**ボードが空の場合は原点・ズーム100%を既定とし境界計算をスキップ**。
 
 #### F4 フィードバック演出決定関数
 （イベント種別、演出強度設定[フル/控えめ/オフ]、OS reduced-motion）から演出定義を返す。全演出は非モーダルかつ400ms以内で入力を一切ブロックしない。reduced-motion時は強度を強制的に「オフ」相当（色変化のみ）へ。音声は既定でオフ。クエスト達成等の祝福演出も必ず本関数を経由する。
@@ -94,7 +95,16 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 イベント（eventId, boardId, userId=XユーザーID, timestamp, 属性）を検証し、PII（氏名・メール・住所・電話・生年月日）を含む属性を拒否した上でバッファへ積む。10秒経過または20件到達でバッチ送信。オフライン時はローカルバッファ（上限500件、超過は古い順に破棄）。KPI：D1/D7継続率、ボードあたり同時編集人数、ラジアルメニュー到達率、クエスト完了率、演出強度の設定分布。
 
 #### F9 認証・アクセス権判定関数
-（XユーザーID、フォロワーキャッシュ、X API応答、plan_id、reCAPTCHA結果）→ ログイン可否・アクセス可否・プラン状態。X OAuthで取得したXユーザーIDを `users.x_user_id` に紐づけ、`@rictaworks` フォロワーのみ有効とする。FOLLOWER_CACHE が有効期限内なら再照会を省略し、期限切れ/未登録時は X API で再判定する。X API 障害時は正のキャッシュがある場合のみ一時継続し、なければ手動再判定を要求する。プラン値は単一項目（`users.plan_id`）で管理し、利用可否と表示範囲も本関数で返す。
+（XユーザーID、フォロワーキャッシュ、reCAPTCHA結果）→ プラン値（`member`/`none`）。X OAuthで取得したXユーザーIDを `users.x_user_id` に紐づけ、`@rictaworks` フォロワーのみ `member` とする。
+
+**ログイン経路からX APIを呼び出してはならない。** ログイン時はFOLLOWER_CACHEの存在照合のみを行い、キャッシュに存在すれば `member`、存在しなければ `none` を付与する（キャッシュに行があること自体がフォロワーの証であり、有効期限や真偽値は持たない）。フォロー直後などキャッシュ未反映のユーザーもログイン自体は成立し、`none` として利用不可画面へ誘導する。ログインを拒否する分岐は設けない。
+
+X APIへの照会は次の2経路のみとする。ログイン試行や連打がX APIのレート制限・従量課金を消費しないようにするための制約である。
+
+1. 定期バッチによるフォロワーキャッシュ同期（新規フォロー・アンフォローの反映）
+2. クールダウン（既定15分・設定値。ハードコードしない）を通過した手動再判定
+
+`member` への例外的な引き上げとして、設定によるバイパス指定と管理画面での手動メンバー指定を認める。機能側の可否判定はプラン値（`users.plan_id`）のみを参照し、フォロワーキャッシュやX APIを直接参照しない。
 
 ### 1.6 テスト結果サマリ
 
@@ -108,10 +118,10 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 | F6 同期 | 競合4型×対象状態3×接続状態2＝24 | 75% | 92% | **100%** |
 | F7 権限 | 4ロール×10アクション×2ロック状態（有効52） | 96% | 98% | **100%** |
 | F8 計測 | 3接続状態×2PII有無×バッファ境界＝6 | 100% | 100% | **100%** |
-| F9 認証・アクセス権 | 5判定×2キャッシュ状態×2API状態＝20 | 94% | 99% | **100%** |
+| F9 認証・アクセス権 | 5判定×2キャッシュ状態×2API状態＝20（改訂前ロジック） | 94% | 99% | **100%** |
 | **合計** | **638** | **84.3%** | **96.6%** | **100%** |
 
-主な改善履歴：ペンのパーム拒否追加、長押し/ドラッグの閾値分離（500ms・8px）、F2冒頭のF7フィルタ必須化、タッチ範囲選択の投げ縄限定、削除済みオブジェクト編集の破棄+復元提案、演出のF4強制経由、空ボードのカメラ既定値、フレームロック解除権限の是正、F9のXログインキャッシュ照合・手動再判定・X API障害時の再試行追加。
+主な改善履歴：ペンのパーム拒否追加、長押し/ドラッグの閾値分離（500ms・8px）、F2冒頭のF7フィルタ必須化、タッチ範囲選択の投げ縄限定、削除済みオブジェクト編集の破棄+復元提案、演出のF4強制経由、空ボードのカメラ既定値、フレームロック解除権限の是正、F9のログイン経路からのX API呼び出し排除（キャッシュ存在照合のみ）とクールダウン付き手動再判定への一本化、ペンをポインタ同等へ是正、ピンチのorigin委譲明記。なおF9行の組み合わせ表は改訂前ロジックに対する結果であり、是正後のロジックは実装側の自動テスト（`spec/services/auth/follower_gate_spec.rb` 等）で担保する。
 
 ### 1.7 マスタデータ件数（製品版フルエディション）
 
@@ -124,7 +134,7 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 | 演出強度マスタ | **3件** | フル / 控えめ / オフ |
 | クエストマスタ | **8件** | 付箋作成、パン/ズーム、ラジアルメニュー、共有、コメント 等 |
 | KPIイベント定義マスタ | **15件** | object_created, radial_opened, quest_completed 等 |
-| プランマスタ | **2件** | basic / pro |
+| プランマスタ | **2件** | member / none |
 | カラーパレットマスタ | **10件** | 付箋・図形の標準色 |
 | **マスタ合計** | **74件** | |
 
@@ -155,31 +165,24 @@ erDiagram
     USERS ||--o{ KPI_EVENTS : "発生させる"
     BOARDS ||--o{ KPI_EVENTS : "文脈となる"
     USERS ||--|| USER_SETTINGS : "設定を持つ"
-    USERS ||--o| FOLLOWER_CACHE : "フォロワー判定を持つ"
     EFFECT_MASTERS ||--o{ EVENT_DEFS : "演出を対応付ける"
     INTENSITY_MASTERS ||--o{ USER_SETTINGS : "強度を与える"
 
     PLANS {
         int id PK
-        string code "basic/pro"
-        string name
-        datetime created_at
+        string code UK "member/none"
     }
     USERS {
         bigint id PK
         string x_user_id UK "XユーザーID"
-        int plan_id FK
+        int plan_id FK "NOT NULL"
+        boolean is_manual_member "管理画面での手動メンバー指定"
         string display_name "Xアカウント表示名"
         datetime created_at
     }
     FOLLOWER_CACHE {
-        bigint id PK
-        bigint user_id FK
-        string x_user_id UK
-        boolean follows_rictaworks
-        datetime checked_at
-        datetime expires_at
-        string source_status "X API結果"
+        string x_user_id PK "フォロワーのXユーザーID"
+        datetime fetched_at "同期時刻"
     }
     ROLES {
         int id PK
@@ -278,6 +281,8 @@ erDiagram
     }
 ```
 
+> **FOLLOWER_CACHE は `users` から独立したテーブルとする。** 主キーはXユーザーIDで、`users` への外部キーを持たない。定期バッチは「まだログインしたことがない `@rictaworks` フォロワー」も先行してキャッシュへ取り込むため、`users` に行が存在することを前提にできないからである。行が存在すること自体がフォロワーである証で、有効期限やフォロー可否の真偽値は持たない（アンフォローは同期時に行を落として表現する）。
+
 ## 3. DFD（データフロー図）
 
 ```mermaid
@@ -298,17 +303,19 @@ flowchart LR
         P6(("P6 競合解決・同期 F6"))
     end
     subgraph API["APIサーバー（Rails / Railway）"]
-        P9(("P9 フォロワー判定 F9"))
+        P9(("P9 プラン判定 F9<br/>ログイン経路"))
+        P10(("P10 フォロワーキャッシュ同期<br/>定期バッチ / 手動再判定"))
         P7(("P7 権限判定 F7"))
         P5(("P5 クエスト進行 F5"))
         P8(("P8 計測集約 F8"))
         ADM(("管理ダッシュボード<br/>BASIC認証"))
     end
-    X["X OAuth"] -->|"認可コード/IDトークン"| P9
-    XAPI["X API"] -->|"followers/lookup"| P9
+    X["X OAuth"] -->|"認可コード/アクセストークン"| P9
     RC[reCAPTCHA] -->|検証| P9
-    P9 -->|ログイン可否/plan| P7
-    P9 --> D5[(D5 users/plans/follower_cache)]
+    P9 -->|"キャッシュ存在照合のみ"| D5[(D5 users/plans/follower_cache)]
+    P9 -->|"plan（member/none）"| P7
+    XAPI["X API"] -->|"フォロワー一覧（バッチ・手動再判定のみ）"| P10
+    P10 -->|"キャッシュ更新・plan再付与"| D5
     P6 <-->|"opブロードキャスト"| OTHERS[他の参加者]
     P6 -->|確定op| D1[(D1 objects/object_ops)]
     P7 -->|可否| P6
@@ -368,7 +375,7 @@ sequenceDiagram
     WS-->>B: 確定(赤)へ収束通知
 ```
 
-### 4.3 Xログイン（キャッシュ照合・手動再判定・API障害時）
+### 4.3 Xログイン（フォロワーキャッシュ照合のみ）
 
 ```mermaid
 sequenceDiagram
@@ -377,7 +384,6 @@ sequenceDiagram
     participant X as X OAuth
     participant API as Rails
     participant DB as PostgreSQL
-    participant XAPI as X API
     participant CACHE as FOLLOWER_CACHE
 
     U->>FE: ログイン
@@ -385,28 +391,49 @@ sequenceDiagram
     X-->>FE: 認可コード
     FE->>API: コード+reCAPTCHAトークン
     API->>X: トークン交換・x_user_id/表示名取得
-    API->>DB: users UPSERT(x_user_id, display_name, plan_id)
-    API->>CACHE: フォロワーキャッシュ照会
-    alt キャッシュ有効
-        CACHE-->>API: フォロワー判定OK
+    API->>CACHE: x_user_id の存在照合
+    alt キャッシュに存在（＝フォロワー）
+        CACHE-->>API: hit
+        API->>DB: users UPSERT(x_user_id, display_name, plan=member)
         API-->>FE: セッション発行
-    else キャッシュ期限切れ/未登録
-        API->>XAPI: @rictaworksフォロワー照会
-        alt API成功かつフォロワー
-            XAPI-->>API: follower=true
-            API->>CACHE: 判定結果を更新
-            API-->>FE: セッション発行
-        else API成功だが非フォロワー
-            XAPI-->>API: follower=false
-            API-->>FE: ログイン拒否
+        FE-->>U: ボードを表示
+    else キャッシュに無い
+        CACHE-->>API: miss
+        API->>DB: users UPSERT(x_user_id, display_name, plan=none)
+        API-->>FE: セッション発行
+        FE-->>U: 利用不可画面（フォロー案内＋手動再判定ボタン）
+    end
+    Note over API,CACHE: ログイン経路からX APIは呼ばない。<br/>キャッシュ未反映のユーザーもログインは成立し、plan=none として扱う
+```
+
+### 4.4 フォロワー手動再判定（クールダウン付き）
+
+```mermaid
+sequenceDiagram
+    actor U as 利用者
+    participant FE as Next
+    participant API as Rails
+    participant DB as PostgreSQL
+    participant CACHE as FOLLOWER_CACHE
+    participant XAPI as X API
+
+    U->>FE: 再判定ボタン
+    FE->>API: 手動再判定を要求
+    alt クールダウン未経過
+        API-->>FE: 拒否＋残り時間
+        FE-->>U: あと N 分お待ちくださいと表示
+        Note over API,XAPI: X APIへは到達しない（連打による消費を防ぐ）
+    else クールダウン経過済み（既定15分・設定値）
+        API->>XAPI: フォロワー差分取得
+        alt 取得成功
+            XAPI-->>API: フォロワー一覧（差分）
+            API->>CACHE: 追加・削除を反映
+            API->>DB: 再照合して plan を更新
+            API-->>FE: 判定結果（member/none）
         else X API障害
             XAPI-->>API: error
-            API-->>FE: 手動再判定を要求
-            FE-->>U: 再判定ボタンを表示
-            U->>FE: 再判定を実行
-            FE->>API: フォロワー再判定
-            API->>XAPI: 再照会
-            Note over API,CACHE: 正のキャッシュが有効期限内なら一時許可
+            API-->>FE: 一時的な失敗として通知
+            Note over API,DB: 既存キャッシュを正とし、plan は据え置く
         end
     end
 ```
@@ -437,9 +464,15 @@ classDiagram
         -clampElastic(bounds) void
     }
     class FollowerGate {
-        +authorize(xUserId, plan, cache, apiStatus) AccessDecision
-        -isCacheFresh(cache) bool
-        -needsManualRecheck(cache, apiStatus) bool
+        +resolvePlan(xUserId) Plan
+        -isBypassed(xUserId) bool
+        -isManualMember(user) bool
+        -cacheHit(xUserId) bool
+    }
+    class FollowerCacheSync {
+        +syncFromXApi() SyncResult
+        +manualRecheck(xUserId) Plan
+        -cooldownRemaining(xUserId) Duration
     }
     class FeedbackDirector {
         +decide(event, intensity, reducedMotion) Effect
@@ -572,19 +605,22 @@ stateDiagram-v2
 
 ### 6.4 プラン状態（F9）
 
+プラン値は `member`（機能利用可）と `none`（利用不可画面）の2値のみで、中間状態を持たない。
+
 ```mermaid
 stateDiagram-v2
-    [*] --> ベーシック
-    ベーシック --> プロ : plan変更
-    プロ --> ベーシック : plan変更
-    ベーシック --> 再判定待ち : フォロワー再判定
-    プロ --> 再判定待ち : フォロワー再判定
-    再判定待ち --> ベーシック : 判定OK
-    再判定待ち --> プロ : 判定OK
-    再判定待ち --> 停止 : 判定NG / API障害継続
-    ベーシック --> 停止 : フォロー解除
-    プロ --> 停止 : フォロー解除
-    停止 --> [*]
+    [*] --> member : ログイン時にキャッシュhit
+    [*] --> none : ログイン時にキャッシュmiss
+    none --> member : 定期同期でフォロー検出 / 手動再判定OK / 管理画面で手動メンバー指定
+    member --> none : 定期同期でアンフォロー検出 / 手動再判定NG / 手動メンバー指定の解除
+    member --> [*]
+    none --> [*]
+
+    note right of none
+        利用不可画面（フォロー案内＋手動再判定ボタン）。
+        再判定はクールダウン（既定15分）未経過なら
+        残時間を提示して拒否し、X APIへ到達させない。
+    end note
 ```
 
 ## 7. ユースケース図
@@ -617,6 +653,7 @@ flowchart LR
         DEV["👤 開発者"]
         XO["🌐 X OAuth"]
         XAPI["🌐 X API"]
+        RCApt["🌐 reCAPTCHA"]
         MONI["🌐 監視サービス"]
     end
 
@@ -625,7 +662,7 @@ flowchart LR
     CM --> UC1 & UC1b & UC8 & UC9 & UC6 & UC11
     VW --> UC1 & UC1b & UC9 & UC6
     DEV --> UC12 & UC13
-    UC1 -.-> XO
+    UC1 -.-> XO & RCApt
     UC1b -.-> XAPI
     UC13 -.-> MONI
 ```
@@ -633,6 +670,6 @@ flowchart LR
 ## 8. 補足
 
 - 本設計は製品版フルエディションのみを対象とし、他エディションの設計・比較は行っていない。
-- テストは自然言語ロジックに対する組み合わせ検証（全638ケース、F9追加後は9関数すべて100%合格）であり、コードは未作成。実装時は各関数のロジックをそのまま受け入れ条件（テスト仕様）として転記する。
+- 1.6 のテスト結果サマリは、設計フェーズで自然言語ロジックに対して行った組み合わせ検証（全638ケース）の記録である。以降の実装で各関数のロジックは受け入れ条件（テスト仕様）として転記済みで、現行の担保は実装側の自動テスト（RSpec / node:test）が持つ。
 - **本エディションでは最小単位のデータでしかテストできない**（各マスタの最小構成・ボード1面・ロール4名・オブジェクト種別ごと1個）。負荷・大規模同時編集の検証は保守・監視フェーズの負荷試験で実施する。
-- 入力は `@use-gesture/vanilla` を採用し、ジェスチャ正規化と手書き描画は別仕様書で扱う。
+- 入力は `@use-gesture/vanilla` を採用する。本仕様ではペンをポインタ同等に扱い、フリーハンド描画（手書き）は対象外として別仕様書で扱う。
