@@ -19,7 +19,10 @@ module Auth
       follower_cache: FollowerCache,
       follower_gate: FollowerGate.new,
       target_account_id: Rails.configuration.x.follower_gate_target_account_id,
-      page_size: Rails.configuration.x.follower_cache_sync_page_size,
+      # 手動再判定は「フォロー直後の取りこぼしを救済する」差分取得であり、全件同期ではない。
+      # フルシンク用の page_size を流用すると1回のボタン押下で大量のIDを引くことになるため、
+      # Auth::FollowerCacheSync の増分同期と同じページサイズを既定とする。
+      page_size: FollowerCacheSync::INCREMENTAL_SYNC_PAGE_SIZE,
       cooldown_minutes: Rails.configuration.x.follower_gate_manual_recheck_cooldown_minutes
     )
       @user = user
@@ -65,12 +68,18 @@ module Auth
       [ (expires_at - Time.current).ceil, 0 ].max
     end
 
+    # フォロワー一覧は新しい順に返るため、フォローしたばかりの利用者は先頭ページに現れる。
+    # そこで (1) 自分が見つかった (2) キャッシュ済みの既知IDに到達した のいずれかで打ち切る。
+    # (2) が無いと、手動再判定を押すのは定義上フォロワー一覧に居ない plan=none の利用者で
+    # あるため、正常系がそのまま全ページ走査となり、クールダウンで守ろうとしている
+    # X APIのレート制限・従量課金をボタン1回で消費してしまう。
     def fetch_current_follower_ids
       ids = []
       pagination_token = nil
       seen_tokens = Set.new
       request_count = 0
       target_user_id = user.x_user_id.to_s
+      known_ids = follower_cache.pluck(:x_user_id).to_set
 
       loop do
         request_count += 1
@@ -91,6 +100,7 @@ module Auth
 
         ids.concat(page.ids)
         break if page.ids.include?(target_user_id)
+        break if page.ids.any? { |id| known_ids.include?(id) }
 
         pagination_token = page.next_token
         break if pagination_token.blank?
@@ -99,6 +109,10 @@ module Auth
       ids.uniq
     end
 
+    # 差分取得は先頭ページしか見ないため「一覧に居ない」ことを証明できない。よってここでは
+    # 追加と fetched_at の更新のみを行い、キャッシュ行の削除（＝降格）は行わない。
+    # member -> none の降格は、全件を走査する定期バッチのフル同期だけが担う
+    # （Auth::FollowerCacheSync#synchronize! の full_sync 分岐）。設計書 4.4 / 6.4 も同じ。
     def synchronize_cache!(current_ids)
       now = Time.current
       existing_ids = follower_cache.where(x_user_id: current_ids).pluck(:x_user_id).to_set

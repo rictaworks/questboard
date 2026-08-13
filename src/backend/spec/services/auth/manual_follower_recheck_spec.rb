@@ -109,4 +109,47 @@ RSpec.describe Auth::ManualFollowerRecheck do
       expect(errors.first).to be_a(Auth::ManualFollowerRecheck::CooldownError)
     end
   end
+
+  describe "差分取得（Issue #133「X APIへ差分取得を実行し」）" do
+    # 手動再判定を押すのは定義上 plan=none のユーザー、つまりフォロワー一覧に載っていない
+    # ユーザーである。「自分が見つかったら停止」だけを終了条件にすると、正常系がそのまま
+    # 最悪ケース（全ページ走査）になり、クールダウンを導入した目的であるレート制限保護を
+    # 打ち消す。Auth::FollowerCacheSync の増分同期と同じく、既知のキャッシュ済みIDに
+    # 到達した時点で打ち切ること。
+    it "stops paging once a already-cached follower id is reached" do
+      FollowerCache.create!(x_user_id: "known-1", fetched_at: 1.hour.ago)
+
+      expect(client).to receive(:fetch_followers_page).once.and_return(
+        instance_double(Auth::XFollowersClient::Page, ids: [ "new-1", "known-1" ], next_token: "token-2")
+      )
+
+      described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+
+      expect(FollowerCache.exists?(x_user_id: "new-1")).to be(true)
+    end
+
+    it "uses the incremental page size instead of the full-sync page size" do
+      expect(client).to receive(:fetch_followers_page)
+        .with(hash_including(max_results: Auth::FollowerCacheSync::INCREMENTAL_SYNC_PAGE_SIZE))
+        .and_return(instance_double(Auth::XFollowersClient::Page, ids: [], next_token: nil))
+
+      described_class.new(user:, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+    end
+
+    # 差分取得は先頭ページしか見ないため「一覧に居ない」ことを証明できない。
+    # 降格（member -> none）は全件を走査する定期バッチのフル同期のみが担う。
+    it "never demotes an existing member, because a partial fetch cannot prove absence" do
+      member = User.create!(x_user_id: "x-member", display_name: "Grace Hopper", plan: member_plan)
+      FollowerCache.create!(x_user_id: "x-member", fetched_at: 1.hour.ago)
+
+      allow(client).to receive(:fetch_followers_page).and_return(
+        instance_double(Auth::XFollowersClient::Page, ids: [ "someone-else" ], next_token: nil)
+      )
+
+      described_class.new(user: member, client:, target_account_id: "123456789", cooldown_minutes: 15).call
+
+      expect(member.reload.plan.code).to eq("member")
+      expect(FollowerCache.exists?(x_user_id: "x-member")).to be(true)
+    end
+  end
 end
