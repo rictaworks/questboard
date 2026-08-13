@@ -54,7 +54,8 @@ API surface grows. Current endpoints:
 - Alert on 3 consecutive failures or any 5-minute outage.
 - The sync-server exports Prometheus metrics at `/metrics` for WebSocket connection count and sync-operation latency.
 - Follower cache maintenance runs as `bundle exec rails auth:sync_follower_cache` from a Railway scheduled job.
-- To guarantee absolute correctness under X API pagination order and prevent false-positives during user re-follow events, the sync scans all pages until `next_token` is exhausted, adding new followers and removing unfollowed users.
+- By default, it performs incremental syncs (adding new followers only) by checking if a fetched user is already in the cache, and automatically triggers a full sync (including unfollower demotions) when the oldest cache entry is older than 24 hours (configurable via `X_FOLLOWER_CACHE_FULL_SYNC_INTERVAL_HOURS`). You can also force a full sync by running `bundle exec rails auth:sync_follower_cache[true]` or setting `X_FOLLOWER_CACHE_FULL_SYNC=true`.
+- Incremental syncs early-exit as soon as a known follower is found in a page, saving API usage and metered costs. Regular full syncs guarantee demotions (unfollow detection) and recovery from any sequence gaps.
 - The API client automatically handles HTTP 429 Rate Limit responses by parsing `x-rate-limit-reset` or `Retry-After` headers and sleeping before retrying (up to 3 retries). Configure the external scheduler execution interval and set `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE` appropriately to align with your overall sync schedule and target execution time.
 
 ## Lint & security

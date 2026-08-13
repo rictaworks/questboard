@@ -127,3 +127,13 @@ ja:
         full: "フル"
         subtle: "控えめ"
         "off": "オフ"
+    users:
+      create:
+        params_missing: "XユーザーIDと表示名は必須です。"
+        success: "手動ログインを許可しました。"
+        failure: "ユーザーの保存に失敗しました。"
+      toggle_bypass:
+        success: "手動ログイン許可状態を更新しました。"
+        failure: "更新に失敗しました。"
+        status_allow: "許可"
+        status_disallow: "解除"
