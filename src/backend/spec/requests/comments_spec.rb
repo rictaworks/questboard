@@ -2,11 +2,12 @@ require "rails_helper"
 
 RSpec.describe "Comments", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
   let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
-  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
-  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User") }
-  let(:commenter) { User.create!(x_user_id: "x-sub-commenter", display_name: "Commenter User") }
-  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
+  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User", plan: member_plan) }
+  let(:commenter) { User.create!(x_user_id: "x-sub-commenter", display_name: "Commenter User", plan: member_plan) }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User", plan: member_plan) }
   let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-comment", display_name: "Blocked Comment User", plan: none_plan) }
 
   before do

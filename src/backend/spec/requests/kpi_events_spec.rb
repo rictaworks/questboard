@@ -2,7 +2,8 @@ require "rails_helper"
 
 RSpec.describe "KPI events", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
-  let(:user) { User.create!(x_user_id: "x-sub-analytics", display_name: "Analytics User") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let(:user) { User.create!(x_user_id: "x-sub-analytics", display_name: "Analytics User", plan: member_plan) }
 
   before do
     allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)

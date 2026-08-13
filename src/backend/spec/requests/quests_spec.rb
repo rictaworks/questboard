@@ -2,8 +2,9 @@ require "rails_helper"
 
 RSpec.describe "Quests API", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
   let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
-  let(:user) { User.create!(x_user_id: "x-sub-quests", display_name: "Quests User") }
+  let(:user) { User.create!(x_user_id: "x-sub-quests", display_name: "Quests User", plan: member_plan) }
   let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-quest", display_name: "Blocked Quest User", plan: none_plan) }
   let(:board) { Board.create!(title: "Test Board") }
 

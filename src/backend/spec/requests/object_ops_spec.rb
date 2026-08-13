@@ -2,9 +2,10 @@ require "rails_helper"
 
 RSpec.describe "Object ops", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
-  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
-  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User") }
-  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
+  let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User", plan: member_plan) }
+  let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User", plan: member_plan) }
 
   before do
     allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)

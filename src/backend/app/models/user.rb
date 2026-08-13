@@ -25,7 +25,6 @@ class User < ApplicationRecord
   private
 
   def set_default_plan
-    default_code = Rails.env.test? ? "member" : "none"
-    self.plan ||= Plan.find_or_create_by!(code: default_code)
+    self.plan ||= Plan.find_or_create_by!(code: "none")
   end
 end

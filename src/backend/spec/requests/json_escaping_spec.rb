@@ -14,7 +14,8 @@ require "rails_helper"
 # 埋め込む側でエスケープすること。フレームワーク側の保険はもう無い。
 RSpec.describe "JSON レスポンスの HTML エスケープ方針", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
-  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User", plan: member_plan) }
 
   before do
     allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
