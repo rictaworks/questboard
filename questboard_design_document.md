@@ -97,7 +97,9 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 #### F9 認証・アクセス権判定関数
 （XユーザーID、フォロワーキャッシュ、reCAPTCHA結果）→ プラン値（`member`/`none`）。X OAuthで取得したXユーザーIDを `users.x_user_id` に紐づけ、`@rictaworks` フォロワーのみ `member` とする。
 
-**ログイン経路からX APIを呼び出してはならない。** ログイン時はFOLLOWER_CACHEの存在照合のみを行い、キャッシュに存在すれば `member`、存在しなければ `none` を付与する（キャッシュに行があること自体がフォロワーの証であり、有効期限や真偽値は持たない）。フォロー直後などキャッシュ未反映のユーザーもログイン自体は成立し、`none` として利用不可画面へ誘導する。ログインを拒否する分岐は設けない。
+**ログイン経路からX APIを呼び出してはならない。** ログイン時はFOLLOWER_CACHEの存在照合のみを行う（キャッシュに行があること自体がフォロワーの証であり、有効期限や真偽値は持たない）。キャッシュに存在すれば `member` を付与し、存在しなければ新規ユーザーには `none` を付与して利用不可画面へ誘導する。フォロー直後などキャッシュ未反映のユーザーもログイン自体は成立させ、ログインを拒否する分岐は設けない。
+
+**ログイン経路でプラン値を降格させてはならない。** 既に `member` のユーザーがキャッシュmissとなった場合、`none` へ落とさず既存の `member` を据え置く。キャッシュ同期の遅延や部分的な失敗といった一時的な状態で、正当なフォロワーが利用中に締め出されることを防ぐためである。`member` から `none` への降格は、フォロー状態を実際に確認できる次の2経路（定期バッチのアンフォロー検出、手動再判定）でのみ行う。
 
 X APIへの照会は次の2経路のみとする。ログイン試行や連打がX APIのレート制限・従量課金を消費しないようにするための制約である。
 
@@ -399,11 +401,18 @@ sequenceDiagram
         FE-->>U: ボードを表示
     else キャッシュに無い
         CACHE-->>API: miss
-        API->>DB: users UPSERT(x_user_id, display_name, plan=none)
-        API-->>FE: セッション発行
-        FE-->>U: 利用不可画面（フォロー案内＋手動再判定ボタン）
+        API->>DB: 既存ユーザーの現プラン値を照会
+        alt 既存ユーザーが member
+            API->>DB: users UPSERT(x_user_id, display_name, plan=member据え置き)
+            API-->>FE: セッション発行
+            FE-->>U: ボードを表示
+        else 新規ユーザー、または既存が none
+            API->>DB: users UPSERT(x_user_id, display_name, plan=none)
+            API-->>FE: セッション発行
+            FE-->>U: 利用不可画面（フォロー案内＋手動再判定ボタン）
+        end
     end
-    Note over API,CACHE: ログイン経路からX APIは呼ばない。<br/>キャッシュ未反映のユーザーもログインは成立し、plan=none として扱う
+    Note over API,CACHE: ログイン経路からX APIは呼ばず、プラン値の降格も行わない。<br/>キャッシュ未反映のユーザーもログインは成立する
 ```
 
 ### 4.4 フォロワー手動再判定（クールダウン付き）
@@ -503,9 +512,7 @@ classDiagram
     }
     class FollowerCache {
         +xUserId
-        +following
-        +checkedAt
-        +expiresAt
+        +fetchedAt
     }
     class Board {
         +id
