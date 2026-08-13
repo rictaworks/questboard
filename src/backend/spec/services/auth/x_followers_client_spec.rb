@@ -129,6 +129,60 @@ RSpec.describe Auth::XFollowersClient do
           client.fetch_followers_page(user_id: "123456789", max_results: 100)
         }.to raise_error(Auth::XFollowersClient::RequestError, /failed with 429/)
       end
+
+      # 利用者のリクエストを処理するスレッド上で呼ぶ経路（Auth::ManualFollowerRecheck）は
+      # max_retries: 0 を渡す。x-rate-limit-reset は X のレート制限窓の終端（最大15分先）を
+      # 指すため、待ってから再試行するとその間 Puma のワーカースレッドが塞がる。
+      context "when max_retries is 0" do
+        let(:client) { described_class.new(bearer_token: "test-bearer-token", max_retries: 0) }
+
+        it "raises RequestError immediately without sleeping" do
+          response_429 = instance_double(Net::HTTPTooManyRequests, code: "429")
+          allow(response_429).to receive(:is_a?).with(Net::HTTPSuccess).and_return(false)
+
+          expect(http_double).to receive(:request).once.and_return(response_429)
+          expect(client).not_to receive(:sleep)
+
+          expect {
+            client.fetch_followers_page(user_id: "123456789", max_results: 100)
+          }.to raise_error(Auth::XFollowersClient::RequestError, /failed with 429/)
+        end
+      end
+    end
+
+    # タイムアウトは X API 側の一時的な障害であり、ApplicationController が
+    # Auth::XFollowersClient::Error を 502（api.errors.x_followers_unavailable）へ
+    # 変換する経路に載せる必要がある。素の Net::ReadTimeout のままだと 500 になり、
+    # 「一時的な失敗なので時間をおいて再試行してほしい」と伝えられない。
+    it "reports a read timeout as a request error" do
+      allow(Net::HTTP).to receive(:start).and_raise(Net::ReadTimeout)
+
+      expect {
+        client.fetch_followers_page(user_id: "123456789", max_results: 100)
+      }.to raise_error(Auth::XFollowersClient::RequestError, /timed out/)
+    end
+
+    it "reports a connection timeout as a request error" do
+      allow(Net::HTTP).to receive(:start).and_raise(Net::OpenTimeout)
+
+      expect {
+        client.fetch_followers_page(user_id: "123456789", max_results: 100)
+      }.to raise_error(Auth::XFollowersClient::RequestError, /timed out/)
+    end
+
+    # 再試行を止めても、応答を返さない相手に対しては Net::HTTP の既定（無制限）のままだと
+    # スレッドが張り付いたままになる。接続・読み取りの両方に上限を置く。
+    it "bounds how long a single request can occupy the calling thread" do
+      client.fetch_followers_page(user_id: "123456789", max_results: 100)
+
+      expect(Net::HTTP).to have_received(:start).with(
+        "api.x.com",
+        443,
+        hash_including(
+          open_timeout: Auth::XFollowersClient::OPEN_TIMEOUT_SECONDS,
+          read_timeout: Auth::XFollowersClient::READ_TIMEOUT_SECONDS
+        )
+      )
     end
   end
 end

@@ -7,11 +7,20 @@ import {useTranslations} from 'next-intl';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
-import {readXAuthSettings} from '@/lib/x-auth';
+import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
+import {
+  isPlanGated,
+  MEMBER_PLAN_CODE,
+  requestManualRecheck,
+  resolveFollowTargetHandle,
+  SessionExpiredError
+} from '@/lib/session-api';
+import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  planCode?: string;
   xUserId?: string;
 };
 
@@ -162,11 +171,21 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
-      ? {authenticated: true, displayName: authT('developmentDisplayName'), xUserId: 'development-x-user-id'}
+      // 開発環境は認証済みとして扱う。ゲート判定は「member 以外を塞ぐ」ので、
+      // プラン値も併せて与えないと開発環境が利用不可画面に落ちる。
+      ? {
+          authenticated: true,
+          displayName: authT('developmentDisplayName'),
+          planCode: MEMBER_PLAN_CODE,
+          xUserId: 'development-x-user-id'
+        }
       : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 利用不可画面のフォロー案内で使う。レンダー中に環境変数を読むと未設定時の例外を
+  // 捕まえられないため、セッション読み込みの際に解決する。
+  const [followTargetHandle, setFollowTargetHandle] = useState<string | null>(null);
   const [roleCode, setRoleCode] = useState<BoardInviteRoleCode>('viewer');
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
@@ -174,6 +193,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   // 参加直後に表示する成功メッセージ。ロールはサーバーが確定したものを使う
   // （既存メンバーは再参加してもロールが変わらないため、選択値とは一致しない）。
   const [joinSuccess, setJoinSuccess] = useState<BoardJoinSuccess | null>(null);
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -201,15 +221,25 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string; xUserId?: string};
+          user?: {displayName?: string; planCode?: string; xUserId?: string};
         };
 
-        setSessionState({
+        const nextSession = {
           authenticated: payload.authenticated,
           displayName: payload.user?.displayName,
+          planCode: payload.user?.planCode,
           xUserId: payload.user?.xUserId
-        });
-        setErrorMessage(null);
+        };
+
+        const followTarget = resolveFollowTargetHandle(
+          nextSession,
+          readFollowTargetHandle,
+          authT('followTargetUnavailable')
+        );
+
+        setFollowTargetHandle(followTarget.followTargetHandle);
+        setSessionState(nextSession);
+        setErrorMessage(followTarget.errorMessage);
       } catch (error) {
         setSessionState({authenticated: false});
         setErrorMessage(error instanceof Error ? error.message : authT('sessionLoadError'));
@@ -237,8 +267,32 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     setBoardData(await response.json() as BoardCanvasData);
   }, [shareToken, t]);
 
+  async function handleManualRecheck() {
+    setRechecking(true);
+
+    try {
+      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
+      setErrorMessage(null);
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        setSessionState({authenticated: false});
+        setErrorMessage(authT('sessionExpired'));
+        return;
+      }
+
+      setErrorMessage(error instanceof Error ? error.message : authT('manualRecheckError'));
+    } finally {
+      setRechecking(false);
+    }
+  }
+
+  const authenticated = sessionState?.authenticated ?? false;
+  const planGated = isPlanGated(sessionState);
+
   useEffect(() => {
-    if (!sessionState?.authenticated) {
+    // none プランでは機能APIが403を返すため、ボード取得自体を試みない。
+    // 試みると意味のないエラーが利用不可画面に重なって出る。
+    if (!authenticated || planGated) {
       return;
     }
 
@@ -290,7 +344,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return () => {
       abortController.abort();
     };
-  }, [sessionState?.authenticated, shareToken, t]);
+  }, [authenticated, planGated, shareToken, t]);
 
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -366,6 +420,21 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
         <AuthPanel />
       </section>
+    );
+  }
+
+  // 共有URLから入った none プランの利用者にも、403を返すだけで終わらせず
+  // 理由と再判定導線を出す（Issue #133「利用不可画面＋フォロー案内＋手動再判定」）。
+  if (isPlanGated(sessionState)) {
+    return (
+      <PlanUnavailablePanel
+        errorMessage={errorMessage}
+        followTargetHandle={followTargetHandle}
+        headingId="board-invite-heading"
+        headingLevel="h1"
+        onManualRecheck={handleManualRecheck}
+        rechecking={rechecking}
+      />
     );
   }
 

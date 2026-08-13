@@ -5,11 +5,20 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
-import {readXAuthSettings} from '@/lib/x-auth';
+import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
+import {
+  isPlanGated,
+  MEMBER_PLAN_CODE,
+  requestManualRecheck,
+  resolveFollowTargetHandle,
+  SessionExpiredError
+} from '@/lib/session-api';
+import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  planCode?: string;
 };
 
 type CreatedBoard = {
@@ -22,14 +31,20 @@ export default function BoardCreatePanel() {
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
-      ? {authenticated: true, displayName: authT('developmentDisplayName')}
+      // 開発環境は認証済みとして扱う。ゲート判定は「member 以外を塞ぐ」ので、
+      // プラン値も併せて与えないと開発環境が利用不可画面に落ちる。
+      ? {authenticated: true, displayName: authT('developmentDisplayName'), planCode: MEMBER_PLAN_CODE}
       : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 利用不可画面のフォロー案内で使う。レンダー中に環境変数を読むと未設定時の例外を
+  // 捕まえられないため、セッション読み込みの際に解決する。
+  const [followTargetHandle, setFollowTargetHandle] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
   const [creating, setCreating] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -57,14 +72,24 @@ export default function BoardCreatePanel() {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string};
+          user?: {displayName?: string; planCode?: string};
         };
 
-        setSessionState({
+        const nextSession = {
           authenticated: payload.authenticated,
-          displayName: payload.user?.displayName
-        });
-        setErrorMessage(null);
+          displayName: payload.user?.displayName,
+          planCode: payload.user?.planCode
+        };
+
+        const followTarget = resolveFollowTargetHandle(
+          nextSession,
+          readFollowTargetHandle,
+          authT('followTargetUnavailable')
+        );
+
+        setFollowTargetHandle(followTarget.followTargetHandle);
+        setSessionState(nextSession);
+        setErrorMessage(followTarget.errorMessage);
       } catch (error) {
         setSessionState({authenticated: false});
         setErrorMessage(error instanceof Error ? error.message : authT('sessionLoadError'));
@@ -79,6 +104,25 @@ export default function BoardCreatePanel() {
   }, [authT]);
 
   const shareUrl = useMemo(() => createdBoard?.shareUrl ?? null, [createdBoard]);
+
+  async function handleManualRecheck() {
+    setRechecking(true);
+
+    try {
+      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
+      setErrorMessage(null);
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        setSessionState({authenticated: false});
+        setErrorMessage(authT('sessionExpired'));
+        return;
+      }
+
+      setErrorMessage(error instanceof Error ? error.message : authT('manualRecheckError'));
+    } finally {
+      setRechecking(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,6 +188,19 @@ export default function BoardCreatePanel() {
         </a>
         {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
       </section>
+    );
+  }
+
+  if (isPlanGated(sessionState)) {
+    return (
+      <PlanUnavailablePanel
+        errorMessage={errorMessage}
+        followTargetHandle={followTargetHandle}
+        headingId="board-create-heading"
+        headingLevel="h2"
+        onManualRecheck={handleManualRecheck}
+        rechecking={rechecking}
+      />
     );
   }
 

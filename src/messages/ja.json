@@ -13,10 +13,17 @@
     "loginDescription": "X OAuth と reCAPTCHA を使ってログインします。",
     "signInButton": "Xで続ける",
     "sessionLoadError": "セッションの読み込みに失敗しました",
+    "followTargetUnavailable": "フォロー対象のハンドルが設定されていません。",
     "signedInHeading": "ログイン済みです",
     "signedInDescription": "{displayName} としてログインしています",
     "signOutButton": "ログアウト",
     "signOutError": "ログアウトに失敗しました",
+    "unavailableHeading": "このプランでは利用できません",
+    "unavailableDescription": "現在の判定では、ボード作成や参加は利用できません。",
+    "unavailableFollowGuide": "ボードを使うには {handle} をフォローしてください。フォロー後に手動再判定を実行すると利用できるようになります。",
+    "manualRecheckButton": "手動再判定",
+    "manualRecheckingButton": "再判定中",
+    "manualRecheckError": "手動再判定に失敗しました",
     "developmentHeading": "開発環境では認証済みとして扱われます",
     "developmentDescription": "本番 UI には表示されない開発専用の分岐です。",
     "developmentDisplayName": "開発ユーザー",
@@ -32,7 +39,9 @@
     "callbackProviderError": "X 側で認証が中断されました",
     "callbackStateMismatch": "認証状態が一致しません",
     "callbackFailure": "Xログインに失敗しました",
-    "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。"
+    "callbackRecovery": "ログイン画面に戻って、もう一度お試しください。",
+    "unavailableFollowLink": "{handle} のプロフィールを開く",
+    "sessionExpired": "セッションの有効期限が切れました。もう一度ログインしてください。"
   },
   "BoardCreate": {
     "heading": "ボードを作成",

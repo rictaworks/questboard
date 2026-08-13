@@ -46,4 +46,5 @@ Rails.application.routes.draw do
   end
 
   resource :session, controller: "session", only: %i[show destroy]
+  post "/session/recheck", to: "session#recheck"
 end

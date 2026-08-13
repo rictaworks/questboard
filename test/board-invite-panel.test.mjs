@@ -28,6 +28,19 @@ async function loadModule() {
       return {__esModule: true, default: () => null};
     }
 
+    if (specifier === '@/components/plan-unavailable-panel') {
+      return {__esModule: true, default: () => null};
+    }
+
+    if (specifier === '@/lib/session-api') {
+      return {
+        isPlanGated: (session) => session?.planCode !== 'member',
+        resolveFollowTargetHandle: () => ({errorMessage: null, followTargetHandle: 'rictaworks'}),
+        requestManualRecheck: async () => ({authenticated: true}),
+        SessionExpiredError: class SessionExpiredError extends Error {}
+      };
+    }
+
     if (specifier === '@/lib/x-auth') {
       return {readXAuthSettings: () => ({backendUrl: 'http://localhost'})};
     }

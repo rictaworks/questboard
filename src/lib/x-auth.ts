@@ -33,6 +33,24 @@ export function readXAuthSettings() {
   };
 }
 
+// 利用不可画面のフォロー案内で表示する対象アカウントのハンドル（先頭の @ は含まない）。
+// バックエンドの X_FOLLOWER_GATE_TARGET_ACCOUNT_ID は数値IDでハンドルを含まないため、
+// 表示用の値は別に持つ。未設定時に既定値へ倒すと「誰をフォローすればよいか分からない
+// 案内」を出してしまうため、フォールバックせず例外にする。
+export function readFollowTargetHandle(): string {
+  const handle = process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE;
+
+  if (!handle) {
+    throw new Error("NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required");
+  }
+
+  return handle.replace(/^@/, "");
+}
+
+export function buildXProfileUrl(handle: string): string {
+  return `https://x.com/${encodeURIComponent(handle)}`;
+}
+
 export function createOAuthState(): string {
   return crypto.randomUUID();
 }

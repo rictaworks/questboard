@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_13_065139) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_13_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -173,6 +173,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_13_065139) do
     t.datetime "created_at", null: false
     t.string "display_name", null: false, comment: "X表示名"
     t.boolean "is_manual_member", default: false, null: false
+    t.datetime "manual_rechecked_at"
     t.bigint "plan_id", null: false
     t.string "x_user_id", null: false, comment: "XユーザーID"
     t.index ["plan_id"], name: "index_users_on_plan_id"
