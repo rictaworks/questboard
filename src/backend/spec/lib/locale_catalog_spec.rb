@@ -434,7 +434,7 @@ RSpec.describe "日本語ロケールカタログ" do
     catalog = YAML.load_file(BackendSourceTree.root.join("config/locales/ja.yml")).fetch("ja")
 
     unresolved = leaf_keys(catalog).reject do |key|
-      translation(key, count: 1, attribute: "属性", message: "メッセージ", record: "レコード", model: "モデル", errors: "エラー") != missing_sentinel
+      translation(key, count: 1, attribute: "属性", message: "メッセージ", record: "レコード", model: "モデル", errors: "エラー", remainingMinutes: 1, remainingSeconds: 1) != missing_sentinel
     end
 
     expect(unresolved).to be_empty, <<~MESSAGE

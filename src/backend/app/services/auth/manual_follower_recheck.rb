@@ -32,16 +32,20 @@ module Auth
     end
 
     def call
-      raise CooldownError.new(remaining_seconds: remaining_seconds_until_allowed) if cooldown_active?
+      user.with_lock do
+        if cooldown_active?
+          raise CooldownError.new(remaining_seconds: remaining_seconds_until_allowed)
+        end
+
+        # 先に試行時刻を記録してコミットする（API成否に関わらずクールダウンを適用するため）
+        user.update!(manual_rechecked_at: Time.current)
+      end
 
       current_ids = fetch_current_follower_ids
       synchronize_cache!(current_ids)
 
       resolved_plan = follower_gate.resolve_plan(user.x_user_id)
-      user.update!(
-        manual_rechecked_at: Time.current,
-        plan: resolved_plan
-      )
+      user.update!(plan: resolved_plan)
 
       user.reload
     end

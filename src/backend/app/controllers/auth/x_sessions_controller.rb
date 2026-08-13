@@ -23,7 +23,7 @@ module Auth
         id: user.id,
         xUserId: user.x_user_id,
         displayName: user.display_name,
-        planCode: user.plan.code
+        planCode: user.plan&.code
       }
     end
   end
