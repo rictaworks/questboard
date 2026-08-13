@@ -37,6 +37,7 @@ erDiagram
         bigint id PK
         string x_user_id UK
         string display_name
+        datetime manual_rechecked_at
         datetime created_at
     }
     ROLES {

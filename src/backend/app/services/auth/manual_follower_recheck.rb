@@ -20,7 +20,12 @@ module Auth
 
     def initialize(
       user:,
-      client: XFollowersClient.new,
+      # 再判定は利用者のHTTPリクエストを処理しているスレッド上で同期実行される。
+      # 既定の再試行（最大3回）は 429 のたびに x-rate-limit-reset まで sleep するため、
+      # X のレート制限窓（最大15分）ぶんワーカースレッドを占有する。クールダウンは
+      # 利用者ごとの制限であり、別々の利用者による同時押下は抑止できないので、
+      # この経路では再試行せず失敗として返し、502（api.errors.x_followers_unavailable）に倒す。
+      client: XFollowersClient.new(max_retries: 0),
       follower_cache: FollowerCache,
       follower_gate: FollowerGate.new,
       target_account_id: Rails.configuration.x.follower_gate_target_account_id,

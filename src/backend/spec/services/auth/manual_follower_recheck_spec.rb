@@ -28,6 +28,21 @@ RSpec.describe Auth::ManualFollowerRecheck do
     end
   end
 
+  # この再判定は SessionController#recheck から同期的に呼ばれる（＝利用者のHTTPリクエストを
+  # 処理している Puma のワーカースレッド上で動く）。定期バッチと同じ既定の再試行設定のままだと、
+  # X が 429 を返したときに x-rate-limit-reset（最大15分先）まで sleep してスレッドを塞ぐ。
+  # クールダウンは利用者ごとなので、別々の利用者が同時に押す状況は抑止できない。
+  it "builds its X API client without retry backoff because it runs on a user request thread" do
+    expect(Auth::XFollowersClient).to receive(:new).with(max_retries: 0).and_return(client)
+
+    described_class.new(
+      user:,
+      target_account_id: "123456789",
+      cooldown_minutes: 15,
+      page_size: 100
+    )
+  end
+
   it "locks and commits the cooldown timestamp before calling the X API" do
     expect(client).to receive(:fetch_followers_page) do
       expect(user.reload.manual_rechecked_at).to be_present

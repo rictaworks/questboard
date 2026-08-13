@@ -11,6 +11,12 @@ module Auth
 
     Page = Struct.new(:ids, :next_token, keyword_init: true)
 
+    # 応答を返さない相手に当たったとき、呼び出し元のスレッドを無期限に占有させないための上限。
+    # Net::HTTP の既定はどちらも無制限で、利用者のリクエストを処理するスレッド上で呼ぶ経路
+    # （Auth::ManualFollowerRecheck）ではそのままだと Puma のワーカースレッドが張り付く。
+    OPEN_TIMEOUT_SECONDS = 5
+    READ_TIMEOUT_SECONDS = 10
+
     def initialize(
       bearer_token: Rails.configuration.x.follower_cache_sync_bearer_token,
       max_retries: 3
@@ -54,8 +60,21 @@ module Auth
       retries = 0
 
       loop do
-        response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https") do |http|
-          http.request(request)
+        response = begin
+          Net::HTTP.start(
+            uri.host,
+            uri.port,
+            use_ssl: uri.scheme == "https",
+            open_timeout: OPEN_TIMEOUT_SECONDS,
+            read_timeout: READ_TIMEOUT_SECONDS
+          ) do |http|
+            http.request(request)
+          end
+        rescue Net::OpenTimeout, Net::ReadTimeout => e
+          # 接続確立時のタイムアウトは Net::HTTP.start 自体が投げるため、ブロックの中では
+          # 捕まえられない。上限に達したことを X API 側の一時的な障害として扱い、502 に
+          # 変換される Auth::XFollowersClient::Error 系へ揃える（素の Net::* だと 500）。
+          raise RequestError, "X followers request to #{uri.host} timed out: #{e.class}"
         end
 
         if response.code == "429" && retries < max_retries

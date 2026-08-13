@@ -8,8 +8,8 @@ import {useTranslations} from 'next-intl';
 import AuthPanel from '@/components/auth-panel';
 import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
-import {isPlanGated, requestManualRecheck, SessionExpiredError} from '@/lib/session-api';
-import {readXAuthSettings} from '@/lib/x-auth';
+import {isPlanGated, MEMBER_PLAN_CODE, requestManualRecheck, SessionExpiredError} from '@/lib/session-api';
+import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
@@ -165,11 +165,21 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
-      ? {authenticated: true, displayName: authT('developmentDisplayName'), xUserId: 'development-x-user-id'}
+      // 開発環境は認証済みとして扱う。ゲート判定は「member 以外を塞ぐ」ので、
+      // プラン値も併せて与えないと開発環境が利用不可画面に落ちる。
+      ? {
+          authenticated: true,
+          displayName: authT('developmentDisplayName'),
+          planCode: MEMBER_PLAN_CODE,
+          xUserId: 'development-x-user-id'
+        }
       : null
   );
   const [loading, setLoading] = useState(process.env.NEXT_PUBLIC_ENV !== 'development');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // 利用不可画面のフォロー案内で使う。レンダー中に環境変数を読むと未設定時の例外を
+  // 捕まえられないため、セッション読み込みと同じ try/catch の中で解決する。
+  const [followTargetHandle, setFollowTargetHandle] = useState<string | null>(null);
   const [roleCode, setRoleCode] = useState<BoardInviteRoleCode>('viewer');
   const [joining, setJoining] = useState(false);
   const [boardData, setBoardData] = useState<BoardCanvasData | null>(null);
@@ -208,12 +218,17 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           user?: {displayName?: string; planCode?: string; xUserId?: string};
         };
 
-        setSessionState({
+        const nextSession = {
           authenticated: payload.authenticated,
           displayName: payload.user?.displayName,
           planCode: payload.user?.planCode,
           xUserId: payload.user?.xUserId
-        });
+        };
+
+        // フォロー案内は利用不可画面でしか使わない。無条件に読むと、この環境変数の
+        // 設定漏れが利用できる利用者まで巻き込む。必要になった時点でだけ解決する。
+        setFollowTargetHandle(isPlanGated(nextSession) ? readFollowTargetHandle() : null);
+        setSessionState(nextSession);
         setErrorMessage(null);
       } catch (error) {
         setSessionState({authenticated: false});
@@ -404,6 +419,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return (
       <PlanUnavailablePanel
         errorMessage={errorMessage}
+        followTargetHandle={followTargetHandle}
         headingId="board-invite-heading"
         headingLevel="h1"
         onManualRecheck={handleManualRecheck}

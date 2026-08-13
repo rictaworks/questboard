@@ -1,6 +1,8 @@
 import {readXAuthSettings} from "@/lib/x-auth";
 
-export const NONE_PLAN_CODE = "none";
+// 機能を利用できる唯一のプラン。サーバー側の
+// ApplicationController#require_feature_plan!（`code == "member"` 以外を 403）と対の値。
+export const MEMBER_PLAN_CODE = "member";
 
 export type SessionUser = {
   authenticated: boolean;
@@ -22,8 +24,13 @@ export class SessionExpiredError extends Error {}
 // 機能を利用できないプラン（フォロワー判定に載っていない状態）かどうか。
 // 判定材料はプラン値のみとし、フォロワーキャッシュやX APIを参照しない
 // （設計書 F9「機能側の可否判定はプラン値のみを参照する」）。
+//
+// 「none を塞ぐ」ではなく「member 以外を塞ぐ」と書くのは、サーバーの
+// require_feature_plan! と同じ向きに揃えるため。逆向きにすると、プランが増えたときに
+// UI だけが通し、押した先で 403 が並ぶ。プラン値が取れていない場合も、判定不能のまま
+// 機能を露出させないよう塞ぐ側に倒す。
 export function isPlanGated(session: {planCode?: string} | null | undefined): boolean {
-  return session?.planCode === NONE_PLAN_CODE;
+  return session?.planCode !== MEMBER_PLAN_CODE;
 }
 
 export function toSessionUser(payload: SessionPayload): SessionUser {
@@ -37,8 +44,10 @@ export function toSessionUser(payload: SessionPayload): SessionUser {
 
 export async function requestManualRecheck(fallbackErrorMessage: string): Promise<SessionUser> {
   const {backendUrl} = readXAuthSettings();
+  // ボディは送らない。SessionController#recheck は対象を常に current_user に固定しており、
+  // リクエストボディを参照しない（SPEC/api/rails-backend.md にもボディ仕様は無い）。
+  // Content-Type は RequestOriginGuard#verify_content_type! の検査対象なので残す。
   const response = await fetch(`${backendUrl}/session/recheck`, {
-    body: JSON.stringify({manualRecheck: true}),
     credentials: "include",
     headers: {
       "Content-Type": "application/json"
