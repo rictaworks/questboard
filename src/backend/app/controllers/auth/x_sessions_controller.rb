@@ -14,7 +14,7 @@ module Auth
         authenticated: true,
         user: serialize_user(user)
       }, status: :created
-      end
+    end
 
     private
 
@@ -22,7 +22,8 @@ module Auth
       {
         id: user.id,
         xUserId: user.x_user_id,
-        displayName: user.display_name
+        displayName: user.display_name,
+        planCode: user.plan.code
       }
     end
   end

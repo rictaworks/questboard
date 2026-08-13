@@ -33,6 +33,7 @@ ja:
       invalid_intensity: "表示強度が正しくありません"
       recaptcha_verification_failed: "reCAPTCHA の検証に失敗しました"
       x_oauth_failed: "Xログインに失敗しました"
+      manual_recheck_cooldown_active: "手動再判定はあと%{remainingMinutes}分%{remainingSeconds}秒後にできます"
       # I18n::MissingTranslationData を ApplicationController#render_missing_translation
       # が受けたときの応答文言。undefined なキー自体の説明を利用者に見せるわけにはいかない
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。

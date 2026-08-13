@@ -106,6 +106,7 @@ class ApplicationController < ActionController::API
   rescue_from "UserSettingsController::InvalidIntensityError", with: :render_invalid_intensity
   rescue_from "Auth::RecaptchaVerifier::Error", with: :render_recaptcha_verification_failed
   rescue_from "Auth::XOauthClient::Error", with: :render_x_oauth_failed
+  rescue_from "Auth::ManualFollowerRecheck::CooldownError", with: :render_manual_follower_recheck_cooldown
   rescue_from ActiveRecord::RecordNotFound, with: :render_record_not_found
   rescue_from LamportTsMustBeAnIntegerError, with: :render_api_error
   rescue_from ObjectLockedByAnotherUserError, with: :render_api_error
@@ -208,6 +209,21 @@ class ApplicationController < ActionController::API
     logger.error("[#{self.class.name}##{action_name}] #{error.message}")
 
     render json: { error: I18n.t("api.errors.x_oauth_failed") }, status: :bad_gateway
+  end
+
+  def render_manual_follower_recheck_cooldown(error)
+    remaining_minutes = error.remaining_seconds / 60
+    remaining_seconds = error.remaining_seconds % 60
+
+    render json: {
+      error: I18n.t(
+        "api.errors.manual_recheck_cooldown_active",
+        remainingMinutes: remaining_minutes,
+        remainingSeconds: remaining_seconds
+      ),
+      remainingMinutes: remaining_minutes,
+      remainingSeconds: remaining_seconds
+    }, status: :too_many_requests
   end
 
   # 「型不正（空とは別の事象）」を検出したときにログへ残す定型処理。

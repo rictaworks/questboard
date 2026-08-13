@@ -5,11 +5,13 @@ import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {FormEvent, useEffect, useMemo, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
+import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
 import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  planCode?: string;
 };
 
 type CreatedBoard = {
@@ -30,6 +32,7 @@ export default function BoardCreatePanel() {
   const [title, setTitle] = useState('');
   const [createdBoard, setCreatedBoard] = useState<CreatedBoard | null>(null);
   const [creating, setCreating] = useState(false);
+  const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -57,12 +60,13 @@ export default function BoardCreatePanel() {
 
         const payload = await response.json() as {
           authenticated: boolean;
-          user?: {displayName?: string};
+          user?: {displayName?: string; planCode?: string};
         };
 
         setSessionState({
           authenticated: payload.authenticated,
-          displayName: payload.user?.displayName
+          displayName: payload.user?.displayName,
+          planCode: payload.user?.planCode
         });
         setErrorMessage(null);
       } catch (error) {
@@ -79,6 +83,44 @@ export default function BoardCreatePanel() {
   }, [authT]);
 
   const shareUrl = useMemo(() => createdBoard?.shareUrl ?? null, [createdBoard]);
+
+  async function handleManualRecheck() {
+    setRechecking(true);
+
+    try {
+      const {backendUrl} = readXAuthSettings();
+      const response = await fetch(`${backendUrl}/session/recheck`, {
+        credentials: 'include',
+        method: 'POST'
+      });
+
+      if (response.status === 401) {
+        setSessionState({authenticated: false});
+        throw new Error(authT('loginHeading'));
+      }
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({})) as {error?: string};
+        throw new Error(payload.error ?? authT('manualRecheckError'));
+      }
+
+      const payload = await response.json() as {
+        authenticated: boolean;
+        user?: {displayName?: string; planCode?: string};
+      };
+
+      setSessionState({
+        authenticated: payload.authenticated,
+        displayName: payload.user?.displayName,
+        planCode: payload.user?.planCode
+      });
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : authT('manualRecheckError'));
+    } finally {
+      setRechecking(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -144,6 +186,16 @@ export default function BoardCreatePanel() {
         </a>
         {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
       </section>
+    );
+  }
+
+  if (sessionState.planCode === 'none') {
+    return (
+      <PlanUnavailablePanel
+        errorMessage={errorMessage}
+        onManualRecheck={handleManualRecheck}
+        rechecking={rechecking}
+      />
     );
   }
 

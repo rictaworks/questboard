@@ -86,6 +86,10 @@ test('the japanese message catalog covers every namespace and has no placeholder
   assert.ok(json.BoardInvite, 'board invite namespace missing');
   assert.ok(json.Home.title, 'home title missing');
   assert.ok(json.Home.authSectionTitle, 'auth section title missing');
+  assert.ok(json.Auth.unavailableHeading, 'auth unavailableHeading missing');
+  assert.ok(json.Auth.unavailableDescription, 'auth unavailableDescription missing');
+  assert.ok(json.Auth.unavailableFollowGuide, 'auth unavailableFollowGuide missing');
+  assert.ok(json.Auth.manualRecheckButton, 'auth manualRecheckButton missing');
   assert.ok(json.BoardInvite.notFoundHeading, 'board invite notFoundHeading missing');
   assert.ok(json.BoardInvite.notFoundDescription, 'board invite notFoundDescription missing');
   assert.ok(json.BoardCanvas, 'board canvas namespace missing');
