@@ -197,5 +197,45 @@ RSpec.describe PermissionService do
       # action は常にアプリ内部のコードが渡す値でありユーザー入力ではないため、これは意図した挙動。
       expect(service.authorize(:owner, :some_future_action_not_yet_defined, unlocked_state)).to be(true)
     end
+
+    it "does not reference follower cache or X API details in feature authorization code" do
+      helper_file, helper_line = ApplicationController.instance_method(:require_feature_plan!).source_location
+      helper_source = File.readlines(helper_file)[(helper_line - 1), 4].join
+
+      expect(helper_source).to include('current_user&.plan&.code == "member"')
+      expect(helper_source).not_to match(/FollowerCache|follower_cache|FollowerGate|XFollowersClient|XOauthClient|resolve_plan/)
+
+      source_paths = %w[
+        app/controllers/boards_controller.rb
+        app/controllers/comments_controller.rb
+        app/controllers/objects_controller.rb
+        app/controllers/quests_controller.rb
+        app/services/permission_service.rb
+      ].map { |relative_path| Rails.root.join(relative_path) }
+      forbidden_patterns = [
+        /FollowerCache/,
+        /follower_cache/,
+        /FollowerGate/,
+        /XFollowersClient/,
+        /XOauthClient/,
+        /resolve_plan/
+      ]
+
+      offenders = source_paths.flat_map do |path|
+        source = File.read(path)
+        forbidden_patterns.filter_map do |pattern|
+          next unless source.match?(pattern)
+
+          "#{path}: #{pattern.source}"
+        end
+      end
+
+      expect(offenders).to be_empty, <<~MESSAGE
+        Feature authorization code must not reach into follower cache or X API details.
+        It should only inspect the stored plan value.
+
+        #{offenders.join("\n")}
+      MESSAGE
+    end
   end
 end

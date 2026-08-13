@@ -227,4 +227,8 @@ class ApplicationController < ActionController::API
   def current_user
     @current_user ||= User.find_by(id: session[:user_id]) if session[:user_id].present?
   end
+
+  def require_feature_plan!
+    head :forbidden unless current_user&.plan&.code == "member"
+  end
 end

@@ -105,6 +105,7 @@ ja:
       user:
         x_user_id: "XユーザーID"
         display_name: "X表示名"
+        plan: "プラン"
       user_quest:
         quest: "クエスト"
         state: "状態"

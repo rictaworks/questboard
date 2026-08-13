@@ -2,7 +2,10 @@ require "rails_helper"
 
 RSpec.describe "Quests API", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
-  let(:user) { User.create!(x_user_id: "x-sub-quests", display_name: "Quests User") }
+  let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
+  let(:user) { User.create!(x_user_id: "x-sub-quests", display_name: "Quests User", plan: member_plan) }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-quest", display_name: "Blocked Quest User", plan: none_plan) }
   let(:board) { Board.create!(title: "Test Board") }
 
   before do
@@ -18,8 +21,8 @@ RSpec.describe "Quests API", type: :request do
     BoardMember.create!(board: board, user: user, role: role)
   end
 
-  def sign_in
-    allow(session_creator).to receive(:call).and_return(user)
+  def sign_in(sign_in_user = user)
+    allow(session_creator).to receive(:call).and_return(sign_in_user)
 
     post "/auth/x_sessions", params: {
       code: "authorization-code",
@@ -34,6 +37,14 @@ RSpec.describe "Quests API", type: :request do
     it "requires authentication" do
       get "/quests"
       expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "rejects users on the none plan before loading quests" do
+      sign_in(blocked_user)
+
+      get "/quests"
+
+      expect(response).to have_http_status(:forbidden)
     end
 
     it "returns quests with state" do
