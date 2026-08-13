@@ -45,6 +45,14 @@ a {
   grid-template-rows: minmax(0, 1fr);
 }
 
+.home-shell:has(.board-canvas-shell) .board-canvas-body {
+  min-height: 0;
+}
+
+.home-shell:has(.board-canvas-shell) .board-stage {
+  min-height: 0;
+}
+
 .home-shell:has(.board-canvas-shell):has(.board-join-success) {
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -355,7 +363,7 @@ a {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18rem;
   gap: var(--space-4);
-  min-height: 0;
+  min-height: 36rem;
 }
 
 .board-stage,
@@ -375,7 +383,7 @@ a {
 .board-stage {
   position: relative;
   overflow: hidden;
-  min-height: 0;
+  min-height: 36rem;
   touch-action: none;
 }
 
