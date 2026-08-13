@@ -270,6 +270,35 @@ RSpec.describe "Object ops", type: :request do
     expect(ObjectOp.where(object_id:, property: "text_crdt").count).to eq(2)
   end
 
+  it "does not rewrite string-valued text_crdt retain/delete counts as a lamport_ts validation error" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, object_type_code: "text", geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+
+    apply_op(share_token:, object_id:, property: "text_crdt", value: { ops: [ { insert: "Hello" } ] }, lamport_ts: 10, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    base_revision = JSON.parse(response.body).fetch("value").fetch("revision")
+
+    [
+      { value: { ops: [ { retain: "5" }, { insert: " world" } ] }, expected_error: /retain must be an integer/, client_id: "client-b", lamport_ts: 11 },
+      { value: { ops: [ { delete: "1" } ] }, expected_error: /delete must be an integer/, client_id: "client-c", lamport_ts: 12 }
+    ].each do |payload|
+      apply_op(
+        share_token:, object_id:, property: "text_crdt",
+        value: payload.fetch(:value).merge(ref_revision: base_revision),
+        lamport_ts: payload.fetch(:lamport_ts), client_id: payload.fetch(:client_id)
+      )
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to match(payload.fetch(:expected_error))
+      expect(response.body).not_to include("lamport_ts must be an integer")
+    end
+  end
+
   it "rejects a text_crdt op with no ref_revision once history already exists for the object" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
