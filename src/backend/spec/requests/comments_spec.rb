@@ -2,10 +2,12 @@ require "rails_helper"
 
 RSpec.describe "Comments", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
   let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
   let(:editor) { User.create!(x_user_id: "x-sub-editor", display_name: "Editor User") }
   let(:commenter) { User.create!(x_user_id: "x-sub-commenter", display_name: "Commenter User") }
   let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User") }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-comment", display_name: "Blocked Comment User", plan: none_plan) }
 
   before do
     allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
@@ -161,6 +163,26 @@ RSpec.describe "Comments", type: :request do
       event_def: EventDef.find_by!(code: "comment_created")
     )
     expect(kpi_event.props).to include("comment_id" => comment_payload.fetch("id"), "object_id" => object_id)
+  end
+
+  it "rejects comment access for users on the none plan before comment permissions" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    sign_in(owner)
+    object_payload = create_object(
+      share_token:,
+      object_type_code: "sticky",
+      geometry: { x: 10, y: 20, w: 30, h: 40, rotation: 0 }
+    )
+    object_id = object_payload.fetch("id")
+
+    BoardMember.create!(board: Board.find_by!(share_token:), user: blocked_user, role: Role.find_by!(code: "commenter"))
+    sign_in(blocked_user)
+
+    get "/boards/#{share_token}/objects/#{object_id}/comments", as: :json
+
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "allows commenters to mutate only their own comments while editors can manage all comments" do

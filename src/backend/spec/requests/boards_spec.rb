@@ -2,9 +2,11 @@ require "rails_helper"
 
 RSpec.describe "Boards", type: :request do
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
+  let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
   let(:owner) { User.create!(x_user_id: "x-sub-owner", display_name: "Owner User") }
   let(:member) { User.create!(x_user_id: "x-sub-member", display_name: "Member User") }
   let(:viewer) { User.create!(x_user_id: "x-sub-viewer", display_name: "Viewer User") }
+  let(:blocked_user) { User.create!(x_user_id: "x-sub-blocked-board", display_name: "Blocked Board User", plan: none_plan) }
 
   before do
     allow(Auth::XSessionCreator).to receive(:new).and_return(session_creator)
@@ -61,6 +63,14 @@ RSpec.describe "Boards", type: :request do
     expect(board.title).to eq("Launch Plan")
     expect(board.share_token).to match(/\A[1-9A-HJ-NP-Za-km-z]{24}\z/)
     expect(membership.role.code).to eq("owner")
+  end
+
+  it "rejects board creation for users on the none plan" do
+    sign_in(blocked_user)
+
+    post "/boards", params: { title: "Blocked Board" }, as: :json
+
+    expect(response).to have_http_status(:forbidden)
   end
 
   it "returns a Japanese validation message when the board title is blank" do

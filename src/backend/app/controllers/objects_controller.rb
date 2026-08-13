@@ -54,6 +54,7 @@ class ObjectsController < ApplicationController
   LEGACY_OP_CLIENT_ID = "legacy"
 
   before_action :require_current_user!
+  before_action :require_feature_plan!
 
   def create
     board = find_authorized_board!(:create_object)
