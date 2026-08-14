@@ -19,3 +19,4 @@
 .vercel
 /.playwright-mcp/
 /measure_tmp.mjs
+next-env.d.ts
