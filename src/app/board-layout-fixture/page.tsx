@@ -1,10 +1,20 @@
+import {notFound} from 'next/navigation';
 import {getTranslations} from 'next-intl/server';
+import {isDevelopmentEnvironment} from '@/lib/environment';
 
 const QUEST_ITEMS = Array.from({length: 10}, (_, index) => index + 1);
 const COMMENT_ITEMS = Array.from({length: 12}, (_, index) => index + 1);
 const MINIMAP_DOTS = Array.from({length: 18}, (_, index) => index + 1);
 
+function isLayoutFixtureEnabled(): boolean {
+  return isDevelopmentEnvironment() || process.env.NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE === 'true';
+}
+
 export default async function BoardLayoutFixturePage() {
+  if (!isLayoutFixtureEnabled()) {
+    notFound();
+  }
+
   const boardInviteT = await getTranslations('BoardInvite');
   const boardCanvasT = await getTranslations('BoardCanvas');
   const fixtureT = await getTranslations('BoardLayoutFixture');
