@@ -39,3 +39,15 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#74](https://github.com/rictaworks/questboard/pull/74) | board-create-panel の未使用コード（AnalyticsTracker 参照ほか）を削除 | [pr074.md](./pr074.md) |
 | [#139](https://github.com/rictaworks/questboard/pull/139) | usersテーブルをXユーザーID化し、plans/follower_cacheマスタを新設 | [pr139.md](./pr139.md) |
 | [#140](https://github.com/rictaworks/questboard/pull/140) | 製品版 F1: ペンをポインタ同等に扱い、描画分岐を除去 | [pr140.md](./pr140.md) |
+| [#141](https://github.com/rictaworks/questboard/pull/141) | ピンチズームの基準点とリリース時速度を @use-gesture の値に統一 | [pr141.md](./pr141.md) |
+| [#142](https://github.com/rictaworks/questboard/pull/142) | 設計書を製品版仕様（Xログイン＋フォロワー判定）へ整合させる | [pr142.md](./pr142.md) |
+| [#143](https://github.com/rictaworks/questboard/pull/143) | GoogleログインをXログイン（OAuth 2.0 + PKCE）に置き換え | [pr143.md](./pr143.md) |
+| [#144](https://github.com/rictaworks/questboard/pull/144) | F9: フォロワーキャッシュ照合でプランを付与する | [pr144.md](./pr144.md) |
+| [#145](https://github.com/rictaworks/questboard/pull/145) | F9: フォロワーキャッシュの定期同期とアンフォロー検出を追加 | [pr145.md](./pr145.md) |
+| [#146](https://github.com/rictaworks/questboard/pull/146) | プラン値ベースの機能ゲートを追加し、フォロー判定依存を排除 | [pr146.md](./pr146.md) |
+| [#147](https://github.com/rictaworks/questboard/pull/147) | 手動フォロー再判定（15分クールダウン）とmember以外のプラン向け利用不可画面を追加 | [pr147.md](./pr147.md) |
+| [#148](https://github.com/rictaworks/questboard/pull/148) | apply_op のrescue範囲不具合(#121)に対する回帰テストを追加 | [pr148.md](./pr148.md) |
+| [#149](https://github.com/rictaworks/questboard/pull/149) | `:has()` 非対応環境でも board stage が潰れないように最小高さを既定化 | [pr149.md](./pr149.md) |
+| [#150](https://github.com/rictaworks/questboard/pull/150) | ボードキャンバスのレイアウトにPlaywrightでの回帰テストを追加 | [pr150.md](./pr150.md) |
+| [#151](https://github.com/rictaworks/questboard/pull/151) | fix: 既存メンバーの共有URLアクセス時にロールを表示する (#97) | [pr151.md](./pr151.md) |
+| [#152](https://github.com/rictaworks/questboard/pull/152) | サイドバーの入れ子スクロール発生をミニマップの可変高さ化で軽減 | [pr152.md](./pr152.md) |
