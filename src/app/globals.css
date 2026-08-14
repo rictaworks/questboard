@@ -505,7 +505,6 @@ a {
    overscroll-behavior は指定しない：.board-stage はパネルの祖先ではなく兄弟なので
    キャンバスへは元々連鎖せず、contain を付けるとパネル末端から .board-sidebar への
    ホイール伝播まで止めてしまう。 */
-.board-minimap,
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
@@ -514,10 +513,11 @@ a {
 }
 
 .board-minimap {
+  padding: var(--space-4);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  min-height: 15rem; /* 通常表示の時だけ上書きして15remにし、中身の 10rem 固定高盤面がクリップされないようにする */
+  min-height: 15rem; /* 通常表示の時だけ 15rem を指定し、中身の 10rem 固定高盤面がクリップされないようにする */
 }
 
 .board-minimap-header {
@@ -685,7 +685,10 @@ a {
 }
 
 @media (max-height: 820px) {
-  .board-minimap,
+  .board-minimap {
+    min-height: 5.5rem;
+  }
+
   .board-details,
   .board-quest-panel {
     min-height: 5.5rem;

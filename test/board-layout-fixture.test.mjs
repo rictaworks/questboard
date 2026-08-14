@@ -139,6 +139,18 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
       );
     }
 
+    // 通常表示の時（1440x900）に、親パネル .board-minimap が 240px (15rem) 前後の高さを確保し、
+    // 盤面がクリップされないようにすることを確認する（ソース順依存による 8rem への意図しない縮小の防止）。
+    await resizeAndMeasure(page, { width: 1440, height: 900 });
+    const minimapRect = await page.locator('.board-minimap').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    assert.ok(
+      Math.abs(minimapRect.height - 240) < 5,
+      `desktop minimap should maintain ~240px (15rem) height (actual height: ${minimapRect.height}px)`
+    );
+
     const questMetrics = await panelMetrics(page, '.board-quest-panel');
     const detailsMetrics = await panelMetrics(page, '.board-details');
 

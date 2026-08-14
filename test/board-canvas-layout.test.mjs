@@ -18,7 +18,7 @@ const SELECTOR = {
   stage: '.board-stage',
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
-  sidebarPanels: '.board-minimap, .board-details, .board-quest-panel',
+  sidebarPanels: '.board-details, .board-quest-panel',
   minimapSurface: '.board-minimap-surface'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
@@ -230,6 +230,7 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
   const lowHeightRules = indexRules(lowHeight);
   assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
+  assertDeclaration(lowHeightRules, '.board-minimap', 'min-height', '5.5rem');
 
   // 低いビューポートでは、固定下限がサイドバー全体の入れ子スクロールを
   // 引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
