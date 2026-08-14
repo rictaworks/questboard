@@ -23,6 +23,15 @@ jobs:
   frontend-test:
     name: Frontend / build & test (node --test)
     runs-on: ubuntu-latest
+    env:
+      NEXT_PUBLIC_BACKEND_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_ENV: production
+      NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE: "true"
+      NEXT_PUBLIC_RECAPTCHA_SITE_KEY: test-site-key
+      NEXT_PUBLIC_SYNC_SERVER_URL: ws://127.0.0.1:8080
+      NEXT_PUBLIC_X_CLIENT_ID: test-client-id
+      NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE: rictaworks
+      NEXT_PUBLIC_X_REDIRECT_URI: http://127.0.0.1:3000/auth/x/callback
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -35,8 +44,30 @@ jobs:
           cache-dependency-path: src/sync-server/go.sum
       - run: npm install -g npm@11
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: node --test test/*.test.mjs
+      - name: Start frontend and run Playwright layout tests
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+        run: |
+          set -euo pipefail
+          npm start -- -p 3000 > /tmp/questboard-next.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" >/dev/null 2>&1 || true' EXIT
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$PLAYWRIGHT_BASE_URL" >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo "Next.js server failed to start"
+              cat /tmp/questboard-next.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          node --test test/*.test.mjs
 
   go-test:
     name: Go / go test
