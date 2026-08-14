@@ -10,6 +10,7 @@ const FIXTURE_PATH = '/board-layout-fixture';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? null;
 const DESKTOP_VIEWPORTS = [
   {width: 1440, height: 900},
+  {width: 1366, height: 701},
   {width: 1280, height: 560},
   {width: 1280, height: 360}
 ];
@@ -169,6 +170,16 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
 
     const stageHeight = await page.locator('.board-stage').evaluate((element) => element.getBoundingClientRect().height);
     assert.ok(stageHeight >= 576, `mobile stage should stay at least 36rem (${stageHeight})`);
+
+    const minimapSurfaceRect = await page.locator('.board-minimap-surface').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    const ratio = minimapSurfaceRect.width / minimapSurfaceRect.height;
+    assert.ok(
+      Math.abs(ratio - 5) < 0.1,
+      `mobile minimap surface should maintain 5:1 aspect ratio (actual ratio: ${ratio})`
+    );
   } finally {
     await context.close();
   }

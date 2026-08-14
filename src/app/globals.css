@@ -517,6 +517,7 @@ a {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+  min-height: 15rem; /* 通常表示の時だけ上書きして15remにし、中身の 10rem 固定高盤面がクリップされないようにする */
 }
 
 .board-minimap-header {
@@ -575,11 +576,15 @@ a {
   gap: var(--space-2);
 }
 
+/* 十分な縦幅がある通常表示では、俯瞰性を優先して固定下限の盤面を保つ。
+   aspect-ratio による可変化は、入れ子スクロールが実際に問題になる
+   低いビューポート（下の @media (max-height: 820px)）だけに限定する。
+   issue #111 の要求は「狭いビューポートでの発生ラインを下げる」ことであり、
+   広いビューポートの見た目を変えるのは要求範囲外（development-principles: 最小変更）。 */
 .board-minimap-surface {
   position: relative;
   width: 100%;
-  height: auto;
-  aspect-ratio: 5 / 1;
+  height: 10rem;
   padding: 0;
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-md);
@@ -679,10 +684,22 @@ a {
   outline-offset: 2px;
 }
 
-@media (max-height: 700px) {
+@media (max-height: 820px) {
+  .board-minimap,
   .board-details,
   .board-quest-panel {
     min-height: 5.5rem;
+  }
+
+  /* 低いビューポートでは固定下限 10rem がサイドバー全体の入れ子スクロールを
+     引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
+     .board-minimap は overflow: hidden かつ grid-template-rows の第2行が
+     minmax(0, 1fr) なので、盤面が利用可能な高さを超える場合はパネル内で
+     クリップされ、サイドバー側の二重スクロールへは連鎖しない。 */
+  .board-minimap-surface {
+    min-height: 0;
+    height: auto;
+    aspect-ratio: 5 / 1;
   }
 }
 
@@ -747,10 +764,20 @@ a {
     overflow: visible;
   }
 
+  .board-minimap {
+    min-height: auto;
+  }
+
   .board-minimap,
   .board-details,
   .board-quest-panel {
     overflow: visible;
+  }
+
+  .board-minimap-surface {
+    min-height: 0;
+    height: auto;
+    aspect-ratio: 5 / 1;
   }
 
   .board-canvas-body {

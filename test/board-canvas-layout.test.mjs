@@ -27,11 +27,13 @@ const MOBILE_MEDIA = '(max-width: 960px)';
 // サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
 // できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
 const PANEL_MIN_HEIGHT = '8rem';
-// ミニマップ盤面は幅に追従する。固定 min-height が残ると、狭いサイドバーで
-// 余計な下限が積み上がってしまう。
+// ミニマップ盤面は、縦幅が十分にある通常表示では俯瞰性を優先して固定下限を
+// 保つ。幅に追従する可変化（aspect-ratio）は、入れ子スクロールが実際に問題
+// になる低いビューポート（LOW_HEIGHT_MEDIA）だけに限定する。
+const MINIMAP_SURFACE_MIN_HEIGHT = '10rem';
 const MINIMAP_ASPECT_RATIO = '5 / 1';
 // 縦が窮屈なときだけ、クエストと詳細パネルの下限を少し緩める。
-const LOW_HEIGHT_MEDIA = '(max-height: 700px)';
+const LOW_HEIGHT_MEDIA = '(max-height: 820px)';
 // 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
 const STAGE_MIN_HEIGHT = '36rem';
 
@@ -207,18 +209,32 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   // 下限の合計がサイドバーを超えたときの受け皿。
   assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
 
-  // ミニマップは盤面の可変高に任せ、手計算の min-height を持たない。
+  // 通常表示（縦幅が十分にある）では、ミニマップ盤面は俯瞰性を優先して高さを
+  // 固定し、幅に追従する aspect-ratio はまだ効かせない。
+  assertDeclaration(rules, SELECTOR.minimapSurface, 'height', MINIMAP_SURFACE_MIN_HEIGHT);
   assert.equal(
     declarationsOf(rules, SELECTOR.minimapSurface).has('min-height'),
     false,
-    'ミニマップ盤面の固定 min-height は不要です'
+    '通常表示では高さ固定とするため、min-height は指定しません'
   );
-  assertDeclaration(rules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimapSurface).has('aspect-ratio'),
+    false,
+    '通常表示では固定高さを使うため、aspect-ratio はまだ指定しません'
+  );
+  // 親パネル .board-minimap も、通常表示の固定高盤面をクリップせずに収められる
+  // 最小高さを確保する。
+  assertDeclaration(rules, '.board-minimap', 'min-height', '15rem');
 
   const lowHeight = mediaBlocks.get(LOW_HEIGHT_MEDIA);
   assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
   const lowHeightRules = indexRules(lowHeight);
-  assertDeclaration(lowHeightRules, '.board-details, .board-quest-panel', 'min-height', '5.5rem');
+  assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
+
+  // 低いビューポートでは、固定下限がサイドバー全体の入れ子スクロールを
+  // 引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
+  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'min-height', '0');
+  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は
@@ -285,4 +301,9 @@ test('高さ制約の解除はモバイル幅の分岐だけに限定され、�
   assertDeclaration(mobileRules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto');
 
   assertDeclaration(mobileRules, SELECTOR.constrainedStage, 'min-height', STAGE_MIN_HEIGHT);
+
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'min-height', '0');
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'height', 'auto');
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
+  assertDeclaration(mobileRules, '.board-minimap', 'min-height', 'auto');
 });
