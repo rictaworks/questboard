@@ -1873,10 +1873,10 @@ function resolveMinimapBounds(viewport: {width: number; height: number}) {
 function resolveViewportRect(camera: CameraState, viewport: {width: number; height: number}, contentBounds: CameraBounds | null, minimap: CameraBounds) {
   if (!contentBounds) {
     return {
-      left: '8px',
-      top: '8px',
-      width: '32px',
-      height: '24px',
+      left: '3.125%',
+      top: '5%',
+      width: '12.5%',
+      height: '15%',
     };
   }
 
@@ -1886,14 +1886,17 @@ function resolveViewportRect(camera: CameraState, viewport: {width: number; heig
   const worldTop = camera.y - viewport.height / (2 * Math.max(camera.zoom, 0.01));
   const worldRight = camera.x + viewport.width / (2 * Math.max(camera.zoom, 0.01));
   const worldBottom = camera.y + viewport.height / (2 * Math.max(camera.zoom, 0.01));
-  const scaleX = (minimap.right - minimap.left) / contentWidth;
-  const scaleY = (minimap.bottom - minimap.top) / contentHeight;
+
+  const leftPercent = ((worldLeft - contentBounds.left) / contentWidth) * 100;
+  const topPercent = ((worldTop - contentBounds.top) / contentHeight) * 100;
+  const widthPercent = ((worldRight - worldLeft) / contentWidth) * 100;
+  const heightPercent = ((worldBottom - worldTop) / contentHeight) * 100;
 
   return {
-    left: `${(worldLeft - contentBounds.left) * scaleX}px`,
-    top: `${(worldTop - contentBounds.top) * scaleY}px`,
-    width: `${Math.max((worldRight - worldLeft) * scaleX, 12)}px`,
-    height: `${Math.max((worldBottom - worldTop) * scaleY, 12)}px`,
+    left: `${leftPercent}%`,
+    top: `${topPercent}%`,
+    width: `max(${widthPercent}%, 12px)`,
+    height: `max(${heightPercent}%, 12px)`,
   };
 }
 
@@ -1903,19 +1906,22 @@ function minimapDotStyle(
   minimap: CameraBounds
 ) {
   if (!contentBounds) {
-    return {left: '0px', top: '0px', width: '4px', height: '4px'};
+    return {left: '0%', top: '0%', width: '4px', height: '4px'} as const;
   }
 
   const contentWidth = Math.max(contentBounds.right - contentBounds.left, 1);
   const contentHeight = Math.max(contentBounds.bottom - contentBounds.top, 1);
-  const scaleX = (minimap.right - minimap.left) / contentWidth;
-  const scaleY = (minimap.bottom - minimap.top) / contentHeight;
+
+  const leftPercent = ((geometry.x - contentBounds.left) / contentWidth) * 100;
+  const topPercent = ((geometry.y - contentBounds.top) / contentHeight) * 100;
+  const widthPercent = (geometry.w / contentWidth) * 100;
+  const heightPercent = (geometry.h / contentHeight) * 100;
 
   return {
-    left: `${(geometry.x - contentBounds.left) * scaleX}px`,
-    top: `${(geometry.y - contentBounds.top) * scaleY}px`,
-    width: `${Math.max(geometry.w * scaleX, 4)}px`,
-    height: `${Math.max(geometry.h * scaleY, 4)}px`,
+    left: `${leftPercent}%`,
+    top: `${topPercent}%`,
+    width: `max(${widthPercent}%, 4px)`,
+    height: `max(${heightPercent}%, 4px)`,
   } as const;
 }
 

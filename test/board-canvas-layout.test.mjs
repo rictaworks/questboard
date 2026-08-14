@@ -218,7 +218,7 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   const lowHeight = mediaBlocks.get(LOW_HEIGHT_MEDIA);
   assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
   const lowHeightRules = indexRules(lowHeight);
-  assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
+  assertDeclaration(lowHeightRules, '.board-details, .board-quest-panel', 'min-height', '5.5rem');
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は

@@ -513,6 +513,12 @@ a {
   overflow: auto;
 }
 
+.board-minimap {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .board-minimap-header {
   display: flex;
   justify-content: space-between;
@@ -572,6 +578,7 @@ a {
 .board-minimap-surface {
   position: relative;
   width: 100%;
+  height: auto;
   aspect-ratio: 5 / 1;
   padding: 0;
   border: var(--border-width) solid var(--border-default);
@@ -673,7 +680,6 @@ a {
 }
 
 @media (max-height: 700px) {
-  .board-minimap,
   .board-details,
   .board-quest-panel {
     min-height: 5.5rem;
