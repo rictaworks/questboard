@@ -18,3 +18,4 @@
 *.tsbuildinfo
 .vercel
 /.playwright-mcp/
+/measure_tmp.mjs
