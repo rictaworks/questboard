@@ -64,11 +64,18 @@ async function loadModule() {
   return moduleShim.exports;
 }
 
-const {BoardInviteContent, BoardJoinSuccessBanner, isBoardNotFoundStatus, resolveRoleLabelKey} = await loadModule();
+const {
+  BoardInviteContent,
+  BoardJoinSuccessBanner,
+  createMembershipBannerContent,
+  createExistingMembershipNotice,
+  isBoardNotFoundStatus,
+  resolveRoleLabelKey
+} = await loadModule();
 const {renderToStaticMarkup} = await import('react-dom/server');
 const React = await import('react');
 
-const t = (key) => ({
+const t = (key, values = {}) => ({
   heading: 'Join a board',
   description: 'Open the share URL and choose the role you want to join with.',
   roleLabel: 'Invite role',
@@ -80,10 +87,41 @@ const t = (key) => ({
   notFoundHeading: 'Board not found',
   notFoundDescription: 'The share URL is invalid or this board no longer exists.',
   ownerRole: 'Owner',
+  existingMembershipHeading: 'You are already a board member',
+  existingMembershipDescription: `You already belong to "${values.title}" as ${values.role}.`,
   successHeading: 'You joined the board',
+  successDescription: `You joined "${values.title}" as ${values.role}.`,
   successDismiss: 'Dismiss this message',
   errorMessage: 'Unable to join the board'
 })[key];
+
+test('existing owner membership renders a distinct confirmation from first-time join success', () => {
+  const notice = createExistingMembershipNotice({
+    board: {title: 'Sprint board'},
+    membership: {role: {code: 'owner'}}
+  });
+  const content = createMembershipBannerContent(notice, t);
+  const markup = renderToStaticMarkup(React.createElement(BoardJoinSuccessBanner, {
+    ...content,
+    onDismiss: () => {}
+  }));
+
+  assert.deepEqual(notice, {kind: 'existing', roleCode: 'owner', title: 'Sprint board'});
+  assert.match(markup, /You are already a board member/);
+  assert.match(markup, /already belong to &quot;Sprint board&quot; as Owner/);
+  assert.equal(markup.includes('You joined the board'), false);
+});
+
+test('first-time join keeps the join-success message', () => {
+  const content = createMembershipBannerContent({
+    kind: 'joined',
+    roleCode: 'commenter',
+    title: 'Sprint board'
+  }, t);
+
+  assert.equal(content.heading, 'You joined the board');
+  assert.equal(content.description, 'You joined "Sprint board" as Commenter.');
+});
 
 test('board invite status helper distinguishes 404 from 403', () => {
   assert.equal(isBoardNotFoundStatus(404), true);

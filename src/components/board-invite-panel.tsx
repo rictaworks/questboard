@@ -38,13 +38,16 @@ type BoardInviteTranslations = {
   notFoundHeading: string;
   notFoundDescription: string;
   ownerRole: string;
+  existingMembershipHeading: string;
+  existingMembershipDescription: string;
   successHeading: string;
   successDescription: string;
   successDismiss: string;
   errorMessage: string;
 };
 
-type BoardJoinSuccess = {
+type BoardMembershipNotice = {
+  kind: 'existing' | 'joined';
   title: string;
   roleCode: string;
 };
@@ -109,6 +112,36 @@ export function BoardJoinSuccessBanner({
       </button>
     </div>
   );
+}
+
+export function createExistingMembershipNotice(
+  boardData: Pick<BoardCanvasData, 'board' | 'membership'>
+): BoardMembershipNotice {
+  return {
+    kind: 'existing',
+    roleCode: boardData.membership.role.code,
+    title: boardData.board.title
+  };
+}
+
+export function createMembershipBannerContent(
+  notice: BoardMembershipNotice,
+  t: (key: keyof BoardInviteTranslations, values?: {role: string; title: string}) => string
+) {
+  const roleLabelKey = resolveRoleLabelKey(notice.roleCode);
+  const values = {
+    role: roleLabelKey ? t(roleLabelKey) : notice.roleCode,
+    title: notice.title
+  };
+
+  return {
+    description: t(
+      notice.kind === 'existing' ? 'existingMembershipDescription' : 'successDescription',
+      values
+    ),
+    dismissLabel: t('successDismiss'),
+    heading: t(notice.kind === 'existing' ? 'existingMembershipHeading' : 'successHeading')
+  };
 }
 
 export function BoardInviteContent({
@@ -192,7 +225,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const [boardNotFound, setBoardNotFound] = useState(false);
   // 参加直後に表示する成功メッセージ。ロールはサーバーが確定したものを使う
   // （既存メンバーは再参加してもロールが変わらないため、選択値とは一致しない）。
-  const [joinSuccess, setJoinSuccess] = useState<BoardJoinSuccess | null>(null);
+  const [membershipNotice, setMembershipNotice] = useState<BoardMembershipNotice | null>(null);
   const [rechecking, setRechecking] = useState(false);
 
   useEffect(() => {
@@ -314,6 +347,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         if (response.status === 403) {
           setBoardNotFound(false);
           setBoardData(null);
+          setMembershipNotice(null);
           setErrorMessage(null);
           return;
         }
@@ -321,6 +355,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
         if (isBoardNotFoundStatus(response.status)) {
           setBoardNotFound(true);
           setBoardData(null);
+          setMembershipNotice(null);
           setErrorMessage(null);
           return;
         }
@@ -329,13 +364,16 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           throw new Error(t('errorMessage'));
         }
 
+        const nextBoardData = await response.json() as BoardCanvasData;
         setBoardNotFound(false);
-        setBoardData(await response.json() as BoardCanvasData);
+        setBoardData(nextBoardData);
+        setMembershipNotice(createExistingMembershipNotice(nextBoardData));
         setErrorMessage(null);
       } catch (error) {
         if (!abortController.signal.aborted) {
           setBoardNotFound(false);
           setBoardData(null);
+          setMembershipNotice(null);
           setErrorMessage(error instanceof Error ? error.message : t('errorMessage'));
         }
       }
@@ -386,7 +424,11 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       setBoardData(null);
       setErrorMessage(null);
       setBoardNotFound(false);
-      setJoinSuccess({title: payload.board.title, roleCode: payload.membership.role.code});
+      setMembershipNotice({
+        kind: 'joined',
+        roleCode: payload.membership.role.code,
+        title: payload.board.title
+      });
       const boardResponse = await fetch(`${backendUrl}/boards/${encodeURIComponent(payload.board.shareToken)}`, {
         credentials: 'include'
       });
@@ -439,19 +481,16 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   }
 
   if (boardData) {
-    const roleLabelKey = joinSuccess ? resolveRoleLabelKey(joinSuccess.roleCode) : null;
+    const bannerContent = membershipNotice ? createMembershipBannerContent(membershipNotice, t) : null;
 
     return (
       <>
-        {joinSuccess ? (
+        {bannerContent ? (
           <BoardJoinSuccessBanner
-            description={t('successDescription', {
-              role: roleLabelKey ? t(roleLabelKey) : joinSuccess.roleCode,
-              title: joinSuccess.title
-            })}
-            dismissLabel={t('successDismiss')}
-            heading={t('successHeading')}
-            onDismiss={() => setJoinSuccess(null)}
+            description={bannerContent.description}
+            dismissLabel={bannerContent.dismissLabel}
+            heading={bannerContent.heading}
+            onDismiss={() => setMembershipNotice(null)}
           />
         ) : null}
         <BoardCanvasPanel

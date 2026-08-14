@@ -68,6 +68,8 @@
     "joiningButton": "参加しています",
     "notFoundHeading": "ボードが見つかりません",
     "notFoundDescription": "共有URLが無効か、このボードは削除されています。",
+    "existingMembershipHeading": "このボードに参加済みです",
+    "existingMembershipDescription": "あなたは既に「{title}」の {role} です。",
     "successHeading": "ボードに参加しました",
     "successDescription": "「{title}」に {role} として参加済みです。",
     "successDismiss": "メッセージを閉じる",
