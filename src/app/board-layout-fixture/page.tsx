@@ -106,14 +106,22 @@ export default async function BoardLayoutFixturePage() {
                     className={`board-minimap-dot${dotIndex === 1 ? ' is-selected' : ''}`}
                     key={dotIndex}
                     style={{
-                      left: `${(dotIndex % 6) * 14 + 4}px`,
-                      top: `${Math.floor(dotIndex / 6) * 14 + 4}px`,
-                      width: '10px',
-                      height: '10px'
+                      left: `${((dotIndex % 6) * 14 + 4) / 2.8}%`,
+                      top: `${(Math.floor(dotIndex / 6) * 14 + 4) / 0.56}%`,
+                      width: `${10 / 2.8}%`,
+                      height: `${10 / 0.56}%`
                     }}
                   />
                 ))}
-                <div className="board-minimap-viewport" style={{left: '12px', top: '12px', width: '42px', height: '28px'}} />
+                <div
+                  className="board-minimap-viewport"
+                  style={{
+                    left: `${12 / 2.8}%`,
+                    top: `${12 / 0.56}%`,
+                    width: `${42 / 2.8}%`,
+                    height: `${28 / 0.56}%`
+                  }}
+                />
               </button>
             </section>
 

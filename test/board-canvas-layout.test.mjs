@@ -18,8 +18,7 @@ const SELECTOR = {
   stage: '.board-stage',
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
-  sidebarPanels: '.board-minimap, .board-details, .board-quest-panel',
-  minimap: '.board-minimap',
+  sidebarPanels: '.board-details, .board-quest-panel',
   minimapSurface: '.board-minimap-surface'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
@@ -28,9 +27,13 @@ const MOBILE_MEDIA = '(max-width: 960px)';
 // サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
 // できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
 const PANEL_MIN_HEIGHT = '8rem';
-// ミニマップは俯瞰が目的なので、内部スクロールが出ると意味を失う。
-// 盤面（.board-minimap-surface）+ ヘッダ + padding が収まる下限を別に持たせる。
-const MINIMAP_MIN_HEIGHT = '15rem';
+// ミニマップ盤面は、縦幅が十分にある通常表示では俯瞰性を優先して固定下限を
+// 保つ。幅に追従する可変化（aspect-ratio）は、入れ子スクロールが実際に問題
+// になる低いビューポート（LOW_HEIGHT_MEDIA）だけに限定する。
+const MINIMAP_SURFACE_MIN_HEIGHT = '10rem';
+const MINIMAP_ASPECT_RATIO = '5 / 1';
+// 縦が窮屈なときだけ、クエストと詳細パネルの下限を少し緩める。
+const LOW_HEIGHT_MEDIA = '(max-height: 820px)';
 // 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
 const STAGE_MIN_HEIGHT = '36rem';
 
@@ -160,7 +163,7 @@ function assertDeclaration(index, selector, property, expected) {
 }
 
 test('ボードキャンバスはビューポートに収まり、サイドバーの各パネルが個別にスクロールする', async () => {
-  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.boardShell, 'height', '100dvh');
@@ -197,7 +200,7 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
 });
 
 test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {
-  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   // 下限が無いと、低いビューポートで各パネルが 1 行分（約 50px）まで潰れ、
@@ -206,13 +209,33 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   // 下限の合計がサイドバーを超えたときの受け皿。
   assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
 
-  // ミニマップは共通の下限では盤面が入りきらず、常に内部スクロールしてしまう。
-  assertDeclaration(rules, SELECTOR.minimap, 'min-height', MINIMAP_MIN_HEIGHT);
-  const surfaceMinHeight = declarationsOf(rules, SELECTOR.minimapSurface).get('min-height');
-  assert.ok(
-    Number.parseFloat(MINIMAP_MIN_HEIGHT) > Number.parseFloat(surfaceMinHeight),
-    `ミニマップの下限 ${MINIMAP_MIN_HEIGHT} は盤面 ${surfaceMinHeight} にヘッダと padding を足した高さを上回る必要があります`
+  // 通常表示（縦幅が十分にある）では、ミニマップ盤面は俯瞰性を優先して高さを
+  // 固定し、幅に追従する aspect-ratio はまだ効かせない。
+  assertDeclaration(rules, SELECTOR.minimapSurface, 'height', MINIMAP_SURFACE_MIN_HEIGHT);
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimapSurface).has('min-height'),
+    false,
+    '通常表示では高さ固定とするため、min-height は指定しません'
   );
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimapSurface).has('aspect-ratio'),
+    false,
+    '通常表示では固定高さを使うため、aspect-ratio はまだ指定しません'
+  );
+  // 親パネル .board-minimap も、通常表示の固定高盤面をクリップせずに収められる
+  // 最小高さを確保する。
+  assertDeclaration(rules, '.board-minimap', 'min-height', '15rem');
+
+  const lowHeight = mediaBlocks.get(LOW_HEIGHT_MEDIA);
+  assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
+  const lowHeightRules = indexRules(lowHeight);
+  assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
+  assertDeclaration(lowHeightRules, '.board-minimap', 'min-height', '5.5rem');
+
+  // 低いビューポートでは、固定下限がサイドバー全体の入れ子スクロールを
+  // 引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
+  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'min-height', '0');
+  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は
@@ -279,4 +302,9 @@ test('高さ制約の解除はモバイル幅の分岐だけに限定され、�
   assertDeclaration(mobileRules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto');
 
   assertDeclaration(mobileRules, SELECTOR.constrainedStage, 'min-height', STAGE_MIN_HEIGHT);
+
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'min-height', '0');
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'height', 'auto');
+  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
+  assertDeclaration(mobileRules, '.board-minimap', 'min-height', 'auto');
 });

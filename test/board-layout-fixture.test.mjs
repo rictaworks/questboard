@@ -10,9 +10,11 @@ const FIXTURE_PATH = '/board-layout-fixture';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? null;
 const DESKTOP_VIEWPORTS = [
   {width: 1440, height: 900},
+  {width: 1366, height: 701},
   {width: 1280, height: 560},
   {width: 1280, height: 360}
 ];
+const NESTED_SCROLL_CHECK_VIEWPORT = {width: 1366, height: 640};
 const MOBILE_VIEWPORT = {width: 390, height: 844};
 
 let browser = null;
@@ -58,7 +60,7 @@ async function startLocalDevServer() {
 
   server = spawn(process.execPath, [nextBin, 'dev', '-p', String(port)], {
     cwd: root,
-    env: {...process.env},
+    env: {...process.env, NEXT_PUBLIC_ENV: 'development'},
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -137,9 +139,20 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
       );
     }
 
+    // 通常表示の時（1440x900）に、親パネル .board-minimap が 240px (15rem) 前後の高さを確保し、
+    // 盤面がクリップされないようにすることを確認する（ソース順依存による 8rem への意図しない縮小の防止）。
+    await resizeAndMeasure(page, { width: 1440, height: 900 });
+    const minimapRect = await page.locator('.board-minimap').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    assert.ok(
+      Math.abs(minimapRect.height - 240) < 5,
+      `desktop minimap should maintain ~240px (15rem) height (actual height: ${minimapRect.height}px)`
+    );
+
     const questMetrics = await panelMetrics(page, '.board-quest-panel');
     const detailsMetrics = await panelMetrics(page, '.board-details');
-    const minimapMetrics = await panelMetrics(page, '.board-minimap');
 
     assert.ok(
       questMetrics.scrollHeight > questMetrics.clientHeight,
@@ -149,9 +162,16 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
       detailsMetrics.scrollHeight > detailsMetrics.clientHeight,
       `details panel should scroll (${JSON.stringify(detailsMetrics)})`
     );
+    await resizeAndMeasure(page, NESTED_SCROLL_CHECK_VIEWPORT);
+    const minimapMetrics = await panelMetrics(page, '.board-minimap');
+    const sidebarMetrics = await panelMetrics(page, '.board-sidebar');
     assert.ok(
       minimapMetrics.scrollHeight <= minimapMetrics.clientHeight,
       `minimap should not scroll (${JSON.stringify(minimapMetrics)})`
+    );
+    assert.ok(
+      sidebarMetrics.scrollHeight <= sidebarMetrics.clientHeight,
+      `sidebar should not scroll at ${NESTED_SCROLL_CHECK_VIEWPORT.width}×${NESTED_SCROLL_CHECK_VIEWPORT.height} (${JSON.stringify(sidebarMetrics)})`
     );
 
     const {innerHeight: mobileInnerHeight, scrollHeight: mobileScrollHeight} = await resizeAndMeasure(page, MOBILE_VIEWPORT);
@@ -162,6 +182,16 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
 
     const stageHeight = await page.locator('.board-stage').evaluate((element) => element.getBoundingClientRect().height);
     assert.ok(stageHeight >= 576, `mobile stage should stay at least 36rem (${stageHeight})`);
+
+    const minimapSurfaceRect = await page.locator('.board-minimap-surface').evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    const ratio = minimapSurfaceRect.width / minimapSurfaceRect.height;
+    assert.ok(
+      Math.abs(ratio - 5) < 0.1,
+      `mobile minimap surface should maintain 5:1 aspect ratio (actual ratio: ${ratio})`
+    );
   } finally {
     await context.close();
   }
