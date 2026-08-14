@@ -19,7 +19,6 @@ const SELECTOR = {
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
   sidebarPanels: '.board-minimap, .board-details, .board-quest-panel',
-  minimap: '.board-minimap',
   minimapSurface: '.board-minimap-surface'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
@@ -28,9 +27,11 @@ const MOBILE_MEDIA = '(max-width: 960px)';
 // サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
 // できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
 const PANEL_MIN_HEIGHT = '8rem';
-// ミニマップは俯瞰が目的なので、内部スクロールが出ると意味を失う。
-// 盤面（.board-minimap-surface）+ ヘッダ + padding が収まる下限を別に持たせる。
-const MINIMAP_MIN_HEIGHT = '15rem';
+// ミニマップ盤面は幅に追従する。固定 min-height が残ると、狭いサイドバーで
+// 余計な下限が積み上がってしまう。
+const MINIMAP_ASPECT_RATIO = '5 / 1';
+// 縦が窮屈なときだけ、クエストと詳細パネルの下限を少し緩める。
+const LOW_HEIGHT_MEDIA = '(max-height: 700px)';
 // 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
 const STAGE_MIN_HEIGHT = '36rem';
 
@@ -160,7 +161,7 @@ function assertDeclaration(index, selector, property, expected) {
 }
 
 test('ボードキャンバスはビューポートに収まり、サイドバーの各パネルが個別にスクロールする', async () => {
-  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.boardShell, 'height', '100dvh');
@@ -197,7 +198,7 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
 });
 
 test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {
-  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   // 下限が無いと、低いビューポートで各パネルが 1 行分（約 50px）まで潰れ、
@@ -206,13 +207,18 @@ test('パネルは下限高さを持ち、収まらない場合はサイドバ�
   // 下限の合計がサイドバーを超えたときの受け皿。
   assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
 
-  // ミニマップは共通の下限では盤面が入りきらず、常に内部スクロールしてしまう。
-  assertDeclaration(rules, SELECTOR.minimap, 'min-height', MINIMAP_MIN_HEIGHT);
-  const surfaceMinHeight = declarationsOf(rules, SELECTOR.minimapSurface).get('min-height');
-  assert.ok(
-    Number.parseFloat(MINIMAP_MIN_HEIGHT) > Number.parseFloat(surfaceMinHeight),
-    `ミニマップの下限 ${MINIMAP_MIN_HEIGHT} は盤面 ${surfaceMinHeight} にヘッダと padding を足した高さを上回る必要があります`
+  // ミニマップは盤面の可変高に任せ、手計算の min-height を持たない。
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimapSurface).has('min-height'),
+    false,
+    'ミニマップ盤面の固定 min-height は不要です'
   );
+  assertDeclaration(rules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
+
+  const lowHeight = mediaBlocks.get(LOW_HEIGHT_MEDIA);
+  assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
+  const lowHeightRules = indexRules(lowHeight);
+  assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は

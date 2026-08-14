@@ -513,13 +513,6 @@ a {
   overflow: auto;
 }
 
-/* ミニマップは俯瞰が目的で、内部スクロールが出ると役目を果たさない。
-   盤面（.board-minimap-surface の 10rem）にヘッダと padding を足した高さを
-   共通の下限では賄えないため、ここだけ下限を上げる。 */
-.board-minimap {
-  min-height: 15rem;
-}
-
 .board-minimap-header {
   display: flex;
   justify-content: space-between;
@@ -579,7 +572,7 @@ a {
 .board-minimap-surface {
   position: relative;
   width: 100%;
-  min-height: 10rem;
+  aspect-ratio: 5 / 1;
   padding: 0;
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-md);
@@ -677,6 +670,14 @@ a {
 .board-color-swatch.is-active {
   outline: 2px solid white;
   outline-offset: 2px;
+}
+
+@media (max-height: 700px) {
+  .board-minimap,
+  .board-details,
+  .board-quest-panel {
+    min-height: 5.5rem;
+  }
 }
 
 .board-toasts {

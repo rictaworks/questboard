@@ -13,6 +13,7 @@ const DESKTOP_VIEWPORTS = [
   {width: 1280, height: 560},
   {width: 1280, height: 360}
 ];
+const NESTED_SCROLL_CHECK_VIEWPORT = {width: 1366, height: 640};
 const MOBILE_VIEWPORT = {width: 390, height: 844};
 
 let browser = null;
@@ -58,7 +59,7 @@ async function startLocalDevServer() {
 
   server = spawn(process.execPath, [nextBin, 'dev', '-p', String(port)], {
     cwd: root,
-    env: {...process.env},
+    env: {...process.env, NEXT_PUBLIC_ENV: 'development'},
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -139,7 +140,6 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
 
     const questMetrics = await panelMetrics(page, '.board-quest-panel');
     const detailsMetrics = await panelMetrics(page, '.board-details');
-    const minimapMetrics = await panelMetrics(page, '.board-minimap');
 
     assert.ok(
       questMetrics.scrollHeight > questMetrics.clientHeight,
@@ -149,9 +149,16 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
       detailsMetrics.scrollHeight > detailsMetrics.clientHeight,
       `details panel should scroll (${JSON.stringify(detailsMetrics)})`
     );
+    await resizeAndMeasure(page, NESTED_SCROLL_CHECK_VIEWPORT);
+    const minimapMetrics = await panelMetrics(page, '.board-minimap');
+    const sidebarMetrics = await panelMetrics(page, '.board-sidebar');
     assert.ok(
       minimapMetrics.scrollHeight <= minimapMetrics.clientHeight,
       `minimap should not scroll (${JSON.stringify(minimapMetrics)})`
+    );
+    assert.ok(
+      sidebarMetrics.scrollHeight <= sidebarMetrics.clientHeight,
+      `sidebar should not scroll at ${NESTED_SCROLL_CHECK_VIEWPORT.width}×${NESTED_SCROLL_CHECK_VIEWPORT.height} (${JSON.stringify(sidebarMetrics)})`
     );
 
     const {innerHeight: mobileInnerHeight, scrollHeight: mobileScrollHeight} = await resizeAndMeasure(page, MOBILE_VIEWPORT);
