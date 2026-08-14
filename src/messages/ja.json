@@ -128,5 +128,18 @@
     "title": "ページが見つかりません",
     "description": "お探しのページは存在しないか、移動した可能性があります。",
     "homeButton": "ホームに戻る"
+  },
+  "BoardLayoutFixture": {
+    "title": "レイアウト回帰テスト用ボード",
+    "sticky": "sticky",
+    "shape": "shape",
+    "text": "text",
+    "questTitle": "レイアウト確認クエスト {questIndex}",
+    "commenter": "テスター {commentIndex}",
+    "commentBody": "レイアウト確認コメント {commentIndex}。低いビューポートでも詳細ペインが内部スクロールするかを検証するためのダミーテキストです。",
+    "dismiss": "×",
+    "commentTime": "2026/08/13 12:{minute}",
+    "badgeCount": "12",
+    "minimapCount": "1"
   }
 }

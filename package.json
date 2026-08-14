@@ -18,7 +18,8 @@
   },
   "license": "ISC",
   "overrides": {
-    "postcss": "^8.5.10"
+    "postcss": "^8.5.10",
+    "@swc/helpers": "^0.5.23"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.1",
