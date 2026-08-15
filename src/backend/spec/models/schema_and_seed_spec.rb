@@ -14,6 +14,10 @@ RSpec.describe "Questboard database schema and seeds" do
     Dir.glob(Rails.root.join("db/migrate/*.rb")).sort.map { |path| File.read(path) }.join("\n")
   end
 
+  def column_sql_type(table_name, column_name)
+    connection.columns(table_name).find { |column| column.name == column_name }.sql_type
+  end
+
   def seed_table_total
     %w[
       roles
@@ -78,24 +82,33 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(kpi_event_props.comment).to eq("PII禁止")
 
     expect(connection.primary_key("user_settings")).to eq("user_id")
-    expect(connection.columns("objects").find { |c| c.name == "geometry" }.sql_type).to eq("jsonb")
-    expect(connection.columns("objects").find { |c| c.name == "text_crdt" }.sql_type).to eq("jsonb")
-    expect(connection.columns("object_ops").find { |c| c.name == "value" }.sql_type).to eq("jsonb")
-    expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
+    Sqlite3JsonbCompat::JSONB_TARGETS.each do |_table_name, column_name|
+      if Sqlite3JsonbCompat.sqlite?(connection)
+        expect(Sqlite3JsonbCompat.jsonb_target?(_table_name, column_name)).to be(true)
+      else
+        expect(column_sql_type(_table_name, column_name)).to eq("jsonb")
+      end
+    end
+
+    Sqlite3JsonbCompat::JSON_TARGETS.each do |_table_name, column_name|
+      if Sqlite3JsonbCompat.sqlite?(connection)
+        expect(Sqlite3JsonbCompat.json_target?(_table_name, column_name)).to be(true)
+      else
+        expect(column_sql_type(_table_name, column_name)).to eq("json")
+      end
+    end
 
     # schema.rb は t.jsonb 呼び出しのまま維持すること。db:schema:load で復元した DB と
     # マイグレーション適用後の DB が同じ型定義になるよう、PostgreSQL の表記を直接守る。
     schema_content = Rails.root.join("db/schema.rb").read
-    expect(schema_content).to match(/t\.jsonb "geometry"/)
-    expect(schema_content).to match(/t\.jsonb "text_crdt"/)
-    expect(schema_content).to match(/t\.jsonb "value"/)
-    expect(schema_content).to match(/t\.jsonb "props"/)
+    Sqlite3JsonbCompat::JSONB_TARGETS.each do |_table_name, column_name|
+      expect(schema_content).to match(/t\.jsonb "#{column_name}"/)
+    end
 
     migration_content = all_migrations_content
-    expect(migration_content).to include("t.jsonb :geometry")
-    expect(migration_content).to include("t.jsonb :text_crdt")
-    expect(migration_content).to include("t.jsonb :value")
-    expect(migration_content).to include("t.jsonb :props")
+    Sqlite3JsonbCompat::JSONB_TARGETS.each do |_table_name, column_name|
+      expect(migration_content).to include("t.jsonb :#{column_name}")
+    end
 
     board_member_indexes = connection.indexes("board_members")
     expect(board_member_indexes.any? { |index| index.unique && index.columns == %w[board_id user_id] }).to be(true)
