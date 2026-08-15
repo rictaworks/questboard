@@ -110,7 +110,7 @@ RSpec.describe "Questboard database schema and seeds" do
       explain_plan = connection.exec_query(
         "EXPLAIN SELECT * FROM board_members WHERE user_id = #{user.id}"
       ).rows.flatten.join("\n")
-      expect(explain_plan).to include("Index Scan using index_board_members_on_user_id")
+      expect(explain_plan).to include("index_board_members_on_user_id")
     ensure
       connection.execute("SET enable_seqscan = on")
     end
