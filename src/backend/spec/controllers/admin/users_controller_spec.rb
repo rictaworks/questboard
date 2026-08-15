@@ -153,7 +153,7 @@ RSpec.describe Admin::UsersController, type: :controller do
       User.delete_all
       dummy_plan = Plan.create!(code: "dummy")
       user = User.create!(x_user_id: "x-2", display_name: "Test User", plan: dummy_plan, is_manual_member: false)
-      
+
       Plan.where(code: %w[member none]).delete_all
 
       patch :toggle_bypass, params: { id: user.id }

@@ -58,7 +58,7 @@ RSpec.describe Plan, type: :model do
 
         allow(described_class).to receive(:find_by).with(code: "member").and_return(nil)
         allow(described_class).to receive(:find_or_create_by!).and_raise(ActiveRecord::RecordInvalid.new(described_class.new(code: "member")))
-        
+
         real_plan = described_class.create!(code: "member")
         allow(described_class).to receive(:find_by!).with(code: "member").and_return(real_plan)
 
@@ -71,7 +71,7 @@ RSpec.describe Plan, type: :model do
 
         allow(described_class).to receive(:find_by).with(code: "member").and_return(nil)
         allow(described_class).to receive(:find_or_create_by!).and_raise(ActiveRecord::RecordNotUnique.new("Duplicate key value violates unique constraint"))
-        
+
         real_plan = described_class.create!(code: "member")
         allow(described_class).to receive(:find_by!).with(code: "member").and_return(real_plan)
 
