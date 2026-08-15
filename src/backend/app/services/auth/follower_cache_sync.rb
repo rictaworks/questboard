@@ -93,8 +93,8 @@ module Auth
       current_ids_set = current_ids.to_set
 
       now = Time.current
-      member_plan_id = Plan.find_by!(code: member_plan_code).id
-      none_plan_id = Plan.find_by!(code: none_plan_code).id
+      member_plan_id = Plan.find_or_create_by_code!(member_plan_code).id
+      none_plan_id = Plan.find_or_create_by_code!(none_plan_code).id
 
       added_count = 0
       removed_count = 0
