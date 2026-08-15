@@ -13,6 +13,7 @@ export default async function LegalPage() {
         <section className="legal-section" id="privacy-policy">
           <h2>{t('privacyHeading')}</h2>
           <p>{t('privacyCollected')}</p>
+          <p>{t('privacyCookies')}</p>
           <p>{t('privacyUse')}</p>
           <p>{t('privacySharing')}</p>
           <p>{t('privacyRetention')}</p>

@@ -159,6 +159,7 @@
     "authoritativeLanguage": "本ページの正文は日本語です。",
     "privacyHeading": "プライバシーポリシー",
     "privacyCollected": "取得する情報は、X OAuth で連携されたXユーザーID・表示名、ボードやコメントなどの作成内容、reCAPTCHA 検証に必要な通信情報、アクセスログです。",
+    "privacyCookies": "ログイン状態の維持のため、必須のセッションCookieを使用します。広告目的のトラッキングCookieは使用していません。",
     "privacyUse": "利用目的は、本人確認、ログイン、ボードの作成・参加・同期、スパム対策、障害対応、問い合わせ対応、法令対応です。",
     "privacySharing": "第三者提供は法令に基づく場合を除き行いません。ただし X OAuth の利用に伴い X に、reCAPTCHA の利用に伴い Google に必要な範囲の情報が送信されます。",
     "privacyRetention": "保存期間は、サービス提供に必要な期間と法令で求められる期間です。",
