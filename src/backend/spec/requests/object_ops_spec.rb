@@ -225,6 +225,27 @@ RSpec.describe "Object ops", type: :request do
     expect(BoardObject.find(object_id).deleted_at).to be_nil
   end
 
+  it "routes deleted_at restore ops through restore_object authorization" do
+    board_payload = create_board
+    share_token = board_payload.fetch("board").fetch("shareToken")
+
+    join_board(share_token:, user: editor, role_code: "editor")
+
+    sign_in(editor)
+    object_id = create_object(share_token:, geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }).fetch("id")
+    permission_service = instance_double(PermissionService)
+    allow(PermissionService).to receive(:new).and_return(permission_service)
+
+    expect(permission_service).to receive(:authorize).with("editor", :delete_object, hash_including(object_id: object_id)).and_return(true)
+    apply_op(share_token:, object_id:, property: "deleted_at", value: true, lamport_ts: 1, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+
+    expect(permission_service).to receive(:authorize).with("editor", :restore_object, hash_including(object_id: object_id)).and_return(true)
+    apply_op(share_token:, object_id:, property: "deleted_at", value: { restore: true }, lamport_ts: 2, client_id: "client-a")
+    expect(response).to have_http_status(:ok)
+    expect(BoardObject.find(object_id).deleted_at).to be_nil
+  end
+
   it "merges text_crdt ops instead of rejecting stale lamport timestamps" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")

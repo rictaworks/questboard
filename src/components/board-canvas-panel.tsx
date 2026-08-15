@@ -9,7 +9,13 @@ import {useTranslations} from 'next-intl';
 import {AnalyticsTracker, type KpiEventDefinitionCode} from '@/lib/analytics-tracker';
 import {CameraController, createCameraState, type CameraBounds, type CameraState, resolveNewObjectGeometry, DEFAULT_OBJECT_SIZE} from '@/lib/camera-controller';
 import {objectColorStyle} from '@/lib/board-object-color';
-import {canPerformBoardAction, type BoardObjectLockState, type BoardRoleCode} from '@/lib/board-permissions';
+import {
+  canPerformBoardAction,
+  resolveBoardActionForObjectMutation,
+  type BoardObjectLockState,
+  type BoardRealtimeObjectProperty,
+  type BoardRoleCode
+} from '@/lib/board-permissions';
 import {
   applyRealtimeOp,
   buildSyncWebSocketUrl,
@@ -310,7 +316,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   const canViewComments = roleCode !== 'viewer';
   const canCreateComments = roleCode !== 'viewer';
   const canCreateObject = canPerformBoardAction(roleCode, 'create', null, currentUserId);
-  const canRestoreDeletedObject = roleCode === 'owner' || roleCode === 'editor';
 
   useEffect(() => {
     cameraStateRef.current = cameraState;
@@ -767,7 +772,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
 
   const sendObjectRealtimeOp = useCallback((
     objectId: number,
-    property: 'geometry' | 'color' | 'deleted_at',
+    property: BoardRealtimeObjectProperty,
     value: Record<string, unknown>
   ) => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
@@ -775,7 +780,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
      return;
    }
 
-   if (!canPerformBoardAction(roleCode, actionToPermission(property), objectToLockState(object), currentUserId)) {
+   if (!canPerformBoardAction(roleCode, resolveBoardActionForObjectMutation(property, value), objectToLockState(object), currentUserId)) {
      enqueueToast(t('permissionDenied'));
      return;
    }
@@ -910,9 +915,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
          if ('restoreSuggested' in message) {
            const restoreMessage = message as BoardRestoreSuggestion;
            prunePendingOps((pending) => pending.objectId === restoreMessage.objectId);
+           const restoreObject = boardStateRef.current.objects.find((entry) => entry.id === Number(restoreMessage.objectId));
            enqueueToast(restoreMessage.error, {
              actionLabel: t('restoreAction'),
-             actionDisabled: !canRestoreDeletedObject,
+             actionDisabled: restoreObject == null || !canPerformBoardAction(
+               roleCode,
+               'restore',
+               objectToLockState(restoreObject),
+               currentUserId
+             ),
              requiresRestoreGate: true,
              onAction: () => restoreDeletedObject(Number(restoreMessage.objectId))
            });
@@ -1022,7 +1033,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
      window.removeEventListener('offline', handleOffline);
    };
   // queryClient は useQueryClient() 由来で参照が安定しているため、依存に加えても再購読は起きない。
-  }, [canRestoreDeletedObject, currentUserId, enqueueToast, onReloadBoard, prunePendingOps, queryClient, recordRealtimeOp, restoreDeletedObject, sendPresence, t, updateSyncStatus, reloadBoardWithBackoff]);
+  }, [currentUserId, enqueueToast, onReloadBoard, prunePendingOps, queryClient, recordRealtimeOp, restoreDeletedObject, roleCode, sendPresence, t, updateSyncStatus, reloadBoardWithBackoff]);
 
   useEffect(() => {
     if (!interaction) {
@@ -1254,7 +1265,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
       return;
     }
 
-    if (!canPerformBoardAction(roleCode, actionToPermission(action), objectToLockState(object), currentUserId)) {
+    if (!canPerformBoardAction(roleCode, action, objectToLockState(object), currentUserId)) {
       enqueueToast(t('permissionDenied'));
       return;
     }
@@ -1707,27 +1718,10 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   );
 }
 
-function actionToPermission(action: string): 'move' | 'resize' | 'rotate' | 'duplicate' | 'recolor' | 'delete' | 'lock' | 'unlock' {
-  switch (action) {
-    case 'geometry':
-      return 'move';
-    case 'color':
-      return 'recolor';
-    case 'deleted_at':
-      return 'delete';
-    case 'duplicate':
-      return 'duplicate';
-    case 'delete':
-      return 'delete';
-    default:
-      return action as 'move' | 'resize' | 'rotate' | 'duplicate' | 'recolor' | 'delete' | 'lock' | 'unlock';
-  }
-}
-
-function objectToLockState(object: BoardCanvasObject): BoardObjectLockState {
+function objectToLockState(object: BoardCanvasObject | null): BoardObjectLockState {
   return {
-    locked: object.locked,
-    lockedByUserId: object.lockedByUserId ?? null,
+    locked: object?.locked ?? false,
+    lockedByUserId: object?.lockedByUserId ?? null,
   };
 }
 

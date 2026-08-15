@@ -19,7 +19,7 @@ async function loadModule() {
   return moduleShim.exports;
 }
 
-const {canPerformBoardAction} = await loadModule();
+const {canPerformBoardAction, resolveBoardActionForObjectMutation} = await loadModule();
 
 test('board permissions respect lock ownership and role boundaries', () => {
   assert.equal(canPerformBoardAction('viewer', 'view'), true);
@@ -29,4 +29,12 @@ test('board permissions respect lock ownership and role boundaries', () => {
   assert.equal(canPerformBoardAction('editor', 'move', {locked: true, lockedByUserId: 2}, 2), true);
   assert.equal(canPerformBoardAction('editor', 'unlock', {locked: true, lockedByUserId: 2}, 2), true);
   assert.equal(canPerformBoardAction('commenter', 'delete'), false);
+  assert.equal(canPerformBoardAction('editor', 'restore', {locked: false}), true);
+});
+
+test('deleted_at realtime ops map restore payloads to restore permission separately from delete', () => {
+  assert.equal(resolveBoardActionForObjectMutation('geometry', {}), 'move');
+  assert.equal(resolveBoardActionForObjectMutation('color', {}), 'recolor');
+  assert.equal(resolveBoardActionForObjectMutation('deleted_at', {}), 'delete');
+  assert.equal(resolveBoardActionForObjectMutation('deleted_at', {restore: true}), 'restore');
 });

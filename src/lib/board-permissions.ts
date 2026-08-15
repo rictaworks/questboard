@@ -6,6 +6,7 @@ export type BoardAction =
   | 'resize'
   | 'rotate'
   | 'delete'
+  | 'restore'
   | 'duplicate'
   | 'recolor'
   | 'lock'
@@ -14,6 +15,19 @@ export type BoardAction =
 export interface BoardObjectLockState {
   locked: boolean;
   lockedByUserId?: number | null;
+}
+
+export type BoardRealtimeObjectProperty = 'geometry' | 'color' | 'deleted_at';
+
+export function resolveBoardActionForObjectMutation(
+  property: BoardRealtimeObjectProperty,
+  value: Record<string, unknown> = {}
+): Exclude<BoardAction, 'view' | 'create' | 'duplicate' | 'lock' | 'unlock'> {
+  if (property === 'deleted_at') {
+    return value.restore === true ? 'restore' : 'delete';
+  }
+
+  return property === 'geometry' ? 'move' : 'recolor';
 }
 
 export function canPerformBoardAction(

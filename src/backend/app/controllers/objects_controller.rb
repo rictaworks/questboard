@@ -184,10 +184,6 @@ class ObjectsController < ApplicationController
   # the exact same op idempotent.
   def apply_op
     property = params.require(:property)
-    action = op_action_for(property)
-    object = find_authorized_op_object!(action:, property:)
-    return if performed?
-
     begin
       lamport_ts = Integer(params.require(:lamport_ts))
     rescue ArgumentError, TypeError
@@ -202,6 +198,9 @@ class ObjectsController < ApplicationController
     raise ReservedClientIdError, "client_id #{LEGACY_OP_CLIENT_ID.inspect} is reserved" if client_id == LEGACY_OP_CLIENT_ID
 
     incoming_value = op_value_for_storage(property)
+    action = op_action_for(property, incoming_value)
+    object = find_authorized_op_object!(action:, property:)
+    return if performed?
 
     confirmed_op = nil
     duplicate = false
@@ -486,7 +485,9 @@ class ObjectsController < ApplicationController
     create_params.require(:object_type_code)
   end
 
-  def op_action_for(property)
+  def op_action_for(property, value = nil)
+    return :restore_object if property == "deleted_at" && value&.fetch("restore", false) == true
+
     OP_PROPERTY_ACTIONS.fetch(property) { raise UnsupportedOpPropertyError, "unsupported op property #{property}" }
   end
 
