@@ -24,6 +24,18 @@ RSpec.describe Admin::UsersController, type: :controller do
       expect(controller.instance_variable_get(:@follower_caches)).to include(cache)
     end
 
+    it "self-heals missing member and none plans" do
+      UserQuest.delete_all
+      User.delete_all
+      Plan.where(code: %w[member none]).delete_all
+
+      get :index
+
+      expect(response).to have_http_status(:success)
+      expect(Plan.find_by(code: "member")).to be_present
+      expect(Plan.find_by(code: "none")).to be_present
+    end
+
     it "limits users and follower caches lists to 50 records" do
       55.times do |i|
         User.create!(x_user_id: "x-limit-#{i}", display_name: "User #{i}", plan: none_plan)
@@ -82,6 +94,19 @@ RSpec.describe Admin::UsersController, type: :controller do
       expect(flash[:alert]).to eq(I18n.t("admin.users.create.params_missing"))
       expect(response).to redirect_to(admin_users_path)
     end
+
+    it "self-heals missing member plan and succeeds" do
+      UserQuest.delete_all
+      User.delete_all
+      Plan.where(code: %w[member none]).delete_all
+
+      expect {
+        post :create, params: { x_user_id: "12345", display_name: "Manual User" }
+      }.to change(User, :count).by(1)
+
+      expect(response).to redirect_to(admin_users_path)
+      expect(Plan.find_by(code: "member")).to be_present
+    end
   end
 
   describe "PATCH #toggle_bypass" do
@@ -121,6 +146,31 @@ RSpec.describe Admin::UsersController, type: :controller do
       user.reload
       expect(user.is_manual_member).to be(false)
       expect(user.plan).to eq(member_plan)
+    end
+
+    it "self-heals missing member and none plans during bypass toggle" do
+      UserQuest.delete_all
+      User.delete_all
+      dummy_plan = Plan.create!(code: "dummy")
+      user = User.create!(x_user_id: "x-2", display_name: "Test User", plan: dummy_plan, is_manual_member: false)
+
+      Plan.where(code: %w[member none]).delete_all
+
+      patch :toggle_bypass, params: { id: user.id }
+
+      user.reload
+      expect(user.is_manual_member).to be(true)
+      expect(Plan.find_by(code: "member")).to be_present
+
+      # もう一度トグルして解除する（この時 follower_gate.rb が none プランを自己修復することを確認）
+      user.update!(plan: dummy_plan)
+      Plan.where(code: %w[member none]).delete_all
+
+      patch :toggle_bypass, params: { id: user.id }
+
+      user.reload
+      expect(user.is_manual_member).to be(false)
+      expect(Plan.find_by(code: "none")).to be_present
     end
   end
 

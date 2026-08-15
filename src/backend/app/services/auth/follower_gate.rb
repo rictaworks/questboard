@@ -33,7 +33,7 @@ module Auth
       else
                     none_plan_code
       end
-      Plan.find_by!(code: plan_code)
+      Plan.find_or_create_by_code!(plan_code)
     end
 
     private

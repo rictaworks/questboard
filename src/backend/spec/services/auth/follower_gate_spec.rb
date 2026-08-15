@@ -24,4 +24,22 @@ RSpec.describe Auth::FollowerGate do
 
     expect(plan).to eq(member_plan)
   end
+
+  it "self-heals missing plans when resolving plan" do
+    UserQuest.delete_all
+    User.delete_all
+    Plan.where(code: %w[member none]).delete_all
+
+    # member プランが自己修復されること
+    FollowerCache.create!(x_user_id: "x-1", fetched_at: Time.current)
+    plan = described_class.new.resolve_plan("x-1")
+    expect(plan.code).to eq("member")
+    expect(Plan.find_by(code: "member")).to be_present
+
+    # none プランが自己修復されること
+    Plan.where(code: %w[member none]).delete_all
+    plan = described_class.new.resolve_plan("x-2")
+    expect(plan.code).to eq("none")
+    expect(Plan.find_by(code: "none")).to be_present
+  end
 end
