@@ -13,16 +13,6 @@ RSpec.describe "User settings", type: :request do
     )
   end
 
-  def sign_in(user)
-    allow(session_creator).to receive(:call).and_return(user)
-
-    post "/auth/x_sessions", params: {
-      code: "authorization-code",
-      code_verifier: "pkce-verifier",
-      recaptcha_token: "recaptcha-token"
-    }, as: :json
-  end
-
   it "returns 401 when unauthenticated" do
     get "/user_settings"
 

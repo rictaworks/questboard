@@ -11,18 +11,6 @@ RSpec.describe "KPI events", type: :request do
     seed_kpi_masters
   end
 
-  def seed_roles
-    Role.upsert_all(
-      [
-        { code: "owner" },
-        { code: "editor" },
-        { code: "commenter" },
-        { code: "viewer" }
-      ],
-      unique_by: :index_roles_on_code
-    )
-  end
-
   def seed_kpi_masters
     EffectMaster.upsert_all(
       [
@@ -47,18 +35,6 @@ RSpec.describe "KPI events", type: :request do
       ],
       unique_by: :index_event_defs_on_code
     )
-  end
-
-  def sign_in
-    allow(session_creator).to receive(:call).and_return(user)
-
-    post "/auth/x_sessions", params: {
-      code: "authorization-code",
-      code_verifier: "pkce-verifier",
-      recaptcha_token: "recaptcha-token"
-    }, as: :json
-
-    expect(response).to have_http_status(:created)
   end
 
   def create_board

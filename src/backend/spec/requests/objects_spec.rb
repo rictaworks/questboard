@@ -16,18 +16,6 @@ RSpec.describe "Objects", type: :request do
     seed_object_support
   end
 
-  def seed_roles
-    Role.upsert_all(
-      [
-        { code: "owner" },
-        { code: "editor" },
-        { code: "commenter" },
-        { code: "viewer" }
-      ],
-      unique_by: :index_roles_on_code
-    )
-  end
-
   def seed_object_support
     ObjectType.upsert_all(
       [
@@ -56,18 +44,6 @@ RSpec.describe "Objects", type: :request do
       ],
       unique_by: :index_color_palettes_on_hex
     )
-  end
-
-  def sign_in(user)
-    allow(session_creator).to receive(:call).and_return(user)
-
-    post "/auth/x_sessions", params: {
-      code: "authorization-code",
-      code_verifier: "pkce-verifier",
-      recaptcha_token: "recaptcha-token"
-    }, as: :json
-
-    expect(response).to have_http_status(:created)
   end
 
   def create_board(title: "Strategy Board")

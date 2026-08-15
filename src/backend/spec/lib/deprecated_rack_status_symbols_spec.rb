@@ -1,7 +1,5 @@
 require "spec_helper"
 require "rack"
-require_relative "../support/backend_source_tree"
-require_relative "../support/deprecated_status_symbol_scanner"
 
 # Rack 3.1 以降、一部の HTTP ステータスシンボルは IANA の名称変更にあわせて非推奨になった
 # （422 は Unprocessable Entity → Unprocessable Content）。

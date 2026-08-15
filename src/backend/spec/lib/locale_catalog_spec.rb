@@ -1,7 +1,4 @@
 require "rails_helper"
-require_relative "../support/backend_source_tree"
-require_relative "../support/japanese_text"
-require_relative "../support/ruby_token_scanner"
 
 # 表示言語は日本語のみ（CLAUDE.md）。default_locale は :ja で、production の
 # config.i18n.fallbacks は I18n.default_locale へ落とす設定なので、:ja のフォールバック先は
