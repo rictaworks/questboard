@@ -26,9 +26,17 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 
 表示言語は日本語のみ。URL にロケール接頭辞は付かない。
 
+### フロントエンド（Next.js）
+
 - `/` — Xサインイン付きのランディングページ
 - `/auth/x/callback` — X OAuthコールバック・reCAPTCHA検証
 - `/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
+- `/board-layout-fixture` — ボードレイアウト回帰確認用の開発フィクスチャ（開発環境、または`NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE=true`時のみ有効。それ以外は404）
+
+### バックエンド管理画面（Rails、Basic認証）
+
+- `/admin` — KPI開発者ダッシュボード（D1/D7継続率・同時編集人数・クエスト完了率等）
+- `/admin/users` — ユーザー検索・手動許可（`is_manual_member`）管理
 
 ## API一覧
 
@@ -37,14 +45,17 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 - Rails バックエンド: [`SPEC/api/rails-backend.md`](SPEC/api/rails-backend.md)
 - Go sync-server（WebSocket）: [`SPEC/api/sync-server.md`](SPEC/api/sync-server.md)
 - フロントエンド（Next.js Route Handler）: [`SPEC/api/frontend.md`](SPEC/api/frontend.md)
-  - `GET /api/instance` — 送った識別子が稼働中の Next プロセスのものと一致するかを答える（テスト用。本番では未設定のため常に 404）
+  - `GET /api/instance` — 送った識別子が稼働中の Next プロセスのものと一致するかを答える（テスト用。本番では未設定のため常に 404。`QUESTBOARD_INSTANCE_ID`環境変数で識別子を設定）
 
 ## Authentication
 
-- Frontend env: `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_SYNC_SERVER_URL`, `NEXT_PUBLIC_X_CLIENT_ID`, `NEXT_PUBLIC_X_REDIRECT_URI`, `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `NEXT_PUBLIC_ENV`, `NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE`, `NEXT_PUBLIC_SENTRY_DSN`
+- Frontend env: `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_SYNC_SERVER_URL`, `NEXT_PUBLIC_X_CLIENT_ID`, `NEXT_PUBLIC_X_REDIRECT_URI`, `NEXT_PUBLIC_RECAPTCHA_SITE_KEY`, `NEXT_PUBLIC_ENV`, `NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE`
   - `NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE` は利用不可画面のフォロー案内に出す対象アカウントのハンドル（先頭の `@` は任意）。未設定だと案内が成立しないため既定値へは倒さず例外にする
-- Backend env: `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`, `X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES`
+  - `NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE` は `/board-layout-fixture` を本番ビルドでも有効化するフラグ（既定は開発環境のみ有効）
+- Backend env: `X_OAUTH_CLIENT_ID`, `X_OAUTH_REDIRECT_URI`, `RECAPTCHA_SECRET_KEY`, `X_FOLLOWER_GATE_TARGET_ACCOUNT_ID`, `X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN`, `X_FOLLOWER_CACHE_SYNC_PAGE_SIZE`, `X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES`, `X_FOLLOWER_GATE_BYPASS_USER_IDS`, `X_FOLLOWER_CACHE_FULL_SYNC_INTERVAL_HOURS`, `ADMIN_BASIC_AUTH_USERNAME`, `ADMIN_BASIC_AUTH_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `SYNC_SERVER_REDIS_URL`, `SYNC_SERVER_REDIS_CHANNEL_PREFIX`, `SYNC_SERVER_REDIS_POOL_SIZE`, `SENTRY_DSN`
   - `X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES` は手動再判定のクールダウン（分。既定15）。正の整数以外を設定すると起動時に例外になる
+  - `ADMIN_BASIC_AUTH_USERNAME`/`ADMIN_BASIC_AUTH_PASSWORD` は `/admin` 配下のBasic認証情報。テスト環境のみ既定値`admin`/`secret`が自動設定される（`config/initializers/admin_auth.rb`）。development/production では未設定のまま起動すると例外になるため、`.env`で必ず設定すること（リポジトリにはコミットしない）
+  - `SYNC_SERVER_REDIS_URL`/`SYNC_SERVER_REDIS_CHANNEL_PREFIX`/`SYNC_SERVER_REDIS_POOL_SIZE` はRailsからGo sync-serverへ同期opをRedis経由でリレーする設定
 - Development mode treats the app as already authenticated; this branch is not present in production builds
 
 ## Localization

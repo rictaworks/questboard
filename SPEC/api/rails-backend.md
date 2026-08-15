@@ -24,6 +24,7 @@
 |---|---|---|
 | POST | `/boards` | ボードを新規作成し、作成者をownerとして登録 |
 | GET | `/boards/:share_token` | ボードとその全オブジェクトを取得（キャンバス初期ロード用）。各オブジェクトの `textCrdt`（後述のDelta形式）と `textCrdtRevision`（次の`text_crdt` opで`ref_revision`として送るべき値）を含む |
+| DELETE | `/boards/:share_token` | ボードを削除（owner権限のみ） |
 | POST | `/boards/:share_token/join` | 共有トークン経由でボードに参加（招待ロールを指定） |
 | PATCH | `/boards/:share_token/members/:user_id` | メンバーのロールを変更（owner権限、最後のownerの降格は禁止） |
 
@@ -76,16 +77,40 @@
 | PATCH | `/boards/:share_token/objects/:object_id/comments/:id` | コメント編集 |
 | DELETE | `/boards/:share_token/objects/:object_id/comments/:id` | コメント削除 |
 
-## 管理画面（開発者向け）
+## ユーザー設定
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| GET | `/admin` | 管理ダッシュボード。`ADMIN_BASIC_AUTH_USERNAME`/`ADMIN_BASIC_AUTH_PASSWORD` によるBasic認証。現状はステータス確認用のJSONスタブ |
+| GET | `/user_settings` | ログインユーザーの演出強度設定（`full`/`subtle`/`off`）を取得。無ければ既定値`full`で作成して返す |
+| PATCH | `/user_settings` | 演出強度設定を更新（`intensity`必須。許可値以外は422） |
 
-Basic認証情報は環境変数で渡し、リポジトリにはコミットしないこと（`CLAUDE.md` シークレット管理参照）。
+## KPI計測イベント
 
-## 監視/アラート
+| メソッド | パス | 説明 |
+|---|---|---|
+| POST | `/kpi_events` | クライアント計測イベント（`radial_opened`/`camera_panned`/`camera_zoomed`/`intensity_changed`）をバッチ登録。イベント種別ごとに許可属性をホワイトリスト検証し、PIIらしき値（氏名・メール・電話番号等）を含む場合は拒否する。1分あたり100リクエスト、1リクエスト20件・64KBまで |
 
-- `/healthz` は外形監視で定期ポーリングする。
-- 失敗が3回連続、または5分継続したら PagerDuty か同等の通知チャネルへ送る。
-- フロント/バックエンドの例外は Sentry を第一経路として集約し、Sentry 未設定時のみ `POST /client_errors` と Rails のエラーログへフォールバックする。
+## クエスト（F5 オンボーディング）
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| GET | `/quests` | ログインユーザーの全クエスト進行状況を取得（未作成分は初回アクセス時に生成） |
+| POST | `/quests/:id/skip` | クエストをスキップ |
+| POST | `/quests/:id/reopen` | スキップ済みクエストを再開 |
+| POST | `/quests/:id/claim` | 達成済みクエストの報酬を受け取る |
+
+## 管理画面（開発者向け、Basic認証）
+
+`ADMIN_BASIC_AUTH_USERNAME`/`ADMIN_BASIC_AUTH_PASSWORD` によるBasic認証（`admin/base_controller.rb`）。Basic認証情報は環境変数で渡し、リポジトリにはコミットしないこと（`CLAUDE.md` シークレット管理参照）。
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| GET | `/admin` | KPIダッシュボード（HTML）。D1/D7継続率・同時編集人数・ラジアルメニュー到達率・クエスト完了率・演出強度分布等を表示 |
+| GET | `/admin/users` | ユーザー検索・一覧、フォロワーキャッシュ検索・一覧を表示 |
+| POST | `/admin/users` | `x_user_id`/`display_name`を指定してユーザーを手動作成し、`member`プラン・`is_manual_member: true`を付与 |
+| PATCH | `/admin/users/:id/toggle_bypass` | ユーザーの手動許可（`is_manual_member`）を切り替える。解除時はフォロワーゲートのロジックからプランを再計算する |
+
+## 監視/エラートラッキング
+
+- フロント/バックエンドの例外は Sentry を第一経路として集約し（`SENTRY_DSN` 設定時）、Sentry 未設定時のみ `POST /client_errors` と Rails のエラーログへフォールバックする。
+- `/healthz` の外形監視ポーリング・アラート通知は未実施（詳細は [`SPEC/ops-maintenance.md`](../ops-maintenance.md) 参照）。

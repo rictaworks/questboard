@@ -1,6 +1,6 @@
 # ER図（実装済みスキーマ）
 
-`src/backend/db/schema.rb`（version 2026_07_24_160000）からのリバースエンジニアリング。
+`src/backend/db/schema.rb`（version 2026_08_13_090000）からのリバースエンジニアリング。
 
 ```mermaid
 erDiagram
@@ -26,6 +26,7 @@ erDiagram
     QUESTS ||--o{ USER_QUESTS : tracked_by
     USERS ||--o| USER_SETTINGS : configures
     INTENSITY_MASTERS ||--o{ USER_SETTINGS : level
+    PLANS ||--o{ USERS : grants
 
     BOARDS {
         bigint id PK
@@ -37,8 +38,18 @@ erDiagram
         bigint id PK
         string x_user_id UK
         string display_name
+        boolean is_manual_member "管理画面での手動許可（フォロワーゲート回避）"
+        bigint plan_id FK
         datetime manual_rechecked_at
         datetime created_at
+    }
+    PLANS {
+        bigint id PK
+        string code UK "member / none"
+    }
+    FOLLOWER_CACHE {
+        string x_user_id PK "USERS.x_user_idと対応（FK制約は無い）"
+        datetime fetched_at
     }
     ROLES {
         bigint id PK
@@ -140,7 +151,7 @@ erDiagram
     }
 ```
 
-`RADIAL_MENU_ITEMS` は他テーブルとの外部キー関係を持たない独立したマスタテーブル（UI用ラジアルメニュー項目）。
+`RADIAL_MENU_ITEMS` は他テーブルとの外部キー関係を持たない独立したマスタテーブル（UI用ラジアルメニュー項目）。`FOLLOWER_CACHE` も同様にFK制約を持たない独立テーブルで、`x_user_id`（文字列）を主キーとして `USERS.x_user_id` に対応するフォロワー判定結果をキャッシュする。
 
 
 `object_ops` の `(object_id, client_id, lamport_ts)` 一意インデックスが、同一opの再送を冪等にする仕組みの核。`(object_id, property, id)` インデックスは `text_crdt` のOT履歴検索（`id > ref_revision`）を支える。`text_crdt` はクライアント生成の `lamport_ts` ではなく、サーバー採番で単調増加する `id`（＝`objects.text_crdt_revision` の値）を履歴位置の基準にする点が他プロパティと異なる。詳細は [`SPEC/api/rails-backend.md`](../api/rails-backend.md) の「オブジェクト」節を参照。
