@@ -29,7 +29,6 @@ export default async function LegalPage() {
         <section className="legal-section" id="operator">
           <h2>{t('operatorHeading')}</h2>
           <p>{t('operatorName')}</p>
-          <p>{t('operatorPerson')}</p>
         </section>
 
         <section className="legal-section" id="contact">

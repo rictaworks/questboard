@@ -169,10 +169,9 @@
     "termsIP": "投稿・作成物の権利は原則として利用者に帰属し、運営はサービス運営に必要な範囲で利用できます。",
     "operatorHeading": "運営者情報",
     "operatorName": "運営者: Ricta Works",
-    "operatorPerson": "代表者: 瀧澤秀樹",
     "contactHeading": "お問い合わせ",
     "contactBody": "削除請求、利用条件、表示内容に関する問い合わせは次の宛先へどうぞ。",
-    "contactEmail": "takizawa@rictaworks.jp",
+    "contactEmail": "info@rictaworks.jp",
     "billingHeading": "特定商取引法に基づく表示",
     "billingBody": "現時点で課金機能はありません。将来の有料化時には、特定商取引法に基づく表示要否を再確認します。"
   }
