@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_15_155900) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -28,6 +28,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.datetime "deleted_at"
     t.string "share_token", null: false
     t.string "title", null: false
+    t.datetime "updated_at", null: false
     t.index ["deleted_at"], name: "index_boards_on_deleted_at"
     t.index ["share_token"], name: "index_boards_on_share_token", unique: true
   end

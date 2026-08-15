@@ -17,7 +17,7 @@ Rails.application.routes.draw do
 
   resource :user_settings, only: %i[show update]
   resources :kpi_events, only: :create
-  resources :boards, only: :create
+  resources :boards, only: %i[index create]
   get "/boards/:share_token", to: "boards#show"
   delete "/boards/:share_token", to: "boards#destroy"
   post "/boards/:share_token/join", to: "boards#join"

@@ -1,5 +1,5 @@
 class BoardMember < ApplicationRecord
-  belongs_to :board
+  belongs_to :board, touch: true
   belongs_to :user
   belongs_to :role
 

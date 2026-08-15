@@ -87,6 +87,9 @@ test('the japanese message catalog covers every namespace and has no placeholder
   assert.ok(json.BoardInvite, 'board invite namespace missing');
   assert.ok(json.Home.title, 'home title missing');
   assert.ok(json.Home.authSectionTitle, 'auth section title missing');
+  assert.ok(json.BoardList, 'board list namespace missing');
+  assert.ok(json.BoardList.heading, 'board list heading missing');
+  assert.ok(json.BoardList.boardTitleHeader, 'board list boardTitleHeader missing');
   assert.ok(json.Auth.unavailableHeading, 'auth unavailableHeading missing');
   assert.ok(json.Auth.unavailableDescription, 'auth unavailableDescription missing');
   assert.ok(json.Auth.unavailableFollowGuide, 'auth unavailableFollowGuide missing');
@@ -134,6 +137,7 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
   const page = await read('src/app/page.tsx');
   assert.equal(page.includes('design-tokens'), false);
   assert.equal(page.includes('#locales'), false);
+  assert.match(page, /BoardListPanel/);
 });
 
 test('the shared footer is mounted from the root layout', async () => {

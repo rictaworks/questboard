@@ -1,5 +1,5 @@
 class Comment < ApplicationRecord
-  belongs_to :board_object, class_name: "BoardObject", foreign_key: :object_id, inverse_of: :comments
+  belongs_to :board_object, class_name: "BoardObject", foreign_key: :object_id, inverse_of: :comments, touch: true
   belongs_to :user
 
   validates :body, presence: true
