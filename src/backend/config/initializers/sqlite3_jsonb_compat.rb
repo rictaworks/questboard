@@ -2,19 +2,19 @@ module Sqlite3JsonbCompat
   module_function
 
   JSONB_TARGETS = [
-    ["kpi_events", "props"].freeze,
-    ["object_ops", "value"].freeze,
-    ["objects", "geometry"].freeze,
-    ["objects", "text_crdt"].freeze
+    [ "kpi_events", "props" ].freeze,
+    [ "object_ops", "value" ].freeze,
+    [ "objects", "geometry" ].freeze,
+    [ "objects", "text_crdt" ].freeze
   ].freeze
 
   JSON_TARGETS = [].freeze
 
   def target_type(table_name, column_name)
-    pair = [table_name.to_s, column_name.to_s]
+    pair = [ table_name.to_s, column_name.to_s ]
 
     return :jsonb if JSONB_TARGETS.include?(pair)
-    return :json if JSON_TARGETS.include?(pair)
+    :json if JSON_TARGETS.include?(pair)
   end
 
   def sqlite_schema_type(connection, table_name, column_name)

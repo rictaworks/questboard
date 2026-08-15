@@ -82,6 +82,16 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(kpi_event_props.comment).to eq("PII禁止")
 
     expect(connection.primary_key("user_settings")).to eq("user_id")
+
+    actual_json_columns = connection.tables.flat_map do |table_name|
+      connection.columns(table_name).filter_map do |column|
+        if column.type == :json || column.type == :jsonb
+          [ table_name, column.name ]
+        end
+      end
+    end
+    expect(actual_json_columns).to match_array(Sqlite3JsonbCompat::JSONB_TARGETS + Sqlite3JsonbCompat::JSON_TARGETS)
+
     Sqlite3JsonbCompat::JSONB_TARGETS.each do |_table_name, column_name|
       if Sqlite3JsonbCompat.sqlite?(connection)
         expect(Sqlite3JsonbCompat.jsonb_target?(_table_name, column_name)).to be(true)
