@@ -25,6 +25,6 @@ class User < ApplicationRecord
   private
 
   def set_default_plan
-    self.plan ||= Plan.find_or_create_by!(code: "none")
+    self.plan ||= Plan.find_or_create_by_code!("none")
   end
 end

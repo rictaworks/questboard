@@ -18,8 +18,8 @@ module Admin
 
       # 画面表示用にインデックス化（表示する範囲のみに限定してメモリ展開）
       @users_by_x_id = @users.index_by(&:x_user_id)
-      @member_plan = Plan.find_or_create_by!(code: "member")
-      @none_plan = Plan.find_or_create_by!(code: "none")
+      @member_plan = Plan.find_or_create_by_code!("member")
+      @none_plan = Plan.find_or_create_by_code!("none")
     end
 
     def create
@@ -31,7 +31,7 @@ module Admin
         redirect_to admin_users_path and return
       end
 
-      member_plan = Plan.find_or_create_by!(code: "member")
+      member_plan = Plan.find_or_create_by_code!("member")
       user = User.find_or_initialize_by(x_user_id: x_user_id)
       user.display_name = display_name
       user.plan = member_plan
@@ -48,7 +48,7 @@ module Admin
 
     def toggle_bypass
       user = User.find(params[:id])
-      member_plan = Plan.find_or_create_by!(code: "member")
+      member_plan = Plan.find_or_create_by_code!("member")
 
       user.is_manual_member = !user.is_manual_member
       user.plan = if user.is_manual_member
