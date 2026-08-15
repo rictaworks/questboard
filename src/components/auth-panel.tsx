@@ -119,6 +119,7 @@ export default function AuthPanel() {
       queryClient.removeQueries({queryKey: QUEST_QUERY_ROOT_KEY});
       setSessionState({authenticated: false});
       setErrorMessage(null);
+      window.location.reload();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t("signOutError"));
     }
