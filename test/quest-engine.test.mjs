@@ -55,7 +55,7 @@ function questWithState(id, state) {
 
 test('quest definitions stay aligned with the seeded quest rows', async () => {
   const seeds = await readFile(path.join(root, 'src/backend/db/seeds.rb'), 'utf8');
-  const questBlock = seeds.match(/"quests",\s*\[([\s\S]*?)\],\s*unique_by: :index_quests_on_title/);
+  const questBlock = seeds.match(/"quests",\s*\[([\s\S]*?)\],\s*unique_by:/);
   assert.ok(questBlock, 'expected to parse quests from db/seeds.rb');
 
   const seededQuests = [...questBlock[1].matchAll(/title:\s*"([^"]+)",\s*condition_event:\s*"([^"]+)",\s*condition_count:\s*(\d+)/g)].map(

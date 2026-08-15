@@ -1,3 +1,5 @@
+require_relative "../index_names"
+
 class AddXUserIdPlansAndFollowerCache < ActiveRecord::Migration[8.0]
   def up
     # 1. x_user_id を一時的に NULL 許容で追加
@@ -22,7 +24,7 @@ class AddXUserIdPlansAndFollowerCache < ActiveRecord::Migration[8.0]
     create_table :plans, id: :bigint do |t|
       t.string :code, null: false
     end
-    add_index :plans, :code, unique: true
+    add_index :plans, :code, unique: true, name: DbIndexNames::Plans::CODE
 
     # 7. users に plan_id を追加し、外部キーを設定
     add_column :users, :plan_id, :bigint
