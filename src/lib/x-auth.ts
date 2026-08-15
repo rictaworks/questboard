@@ -44,7 +44,13 @@ export function readFollowTargetHandle(): string {
     throw new Error("NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required");
   }
 
-  return handle.replace(/^@/, "");
+  const normalizedHandle = handle.trim().replace(/^@/, "");
+
+  if (!normalizedHandle) {
+    throw new Error("NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required");
+  }
+
+  return normalizedHandle;
 }
 
 export function buildXProfileUrl(handle: string): string {

@@ -18,7 +18,7 @@ async function loadModule(relativePath) {
   return moduleShim.exports;
 }
 
-const {buildXAuthorizationUrl} = await loadModule('src/lib/x-auth.ts');
+const {buildXAuthorizationUrl, readFollowTargetHandle} = await loadModule('src/lib/x-auth.ts');
 
 test('buildXAuthorizationUrl generates a valid X OAuth2 authorization URL', () => {
   const params = {
@@ -47,4 +47,34 @@ test('buildXAuthorizationUrl generates a valid X OAuth2 authorization URL', () =
   const scope = url.searchParams.get('scope');
   assert.ok(scope.includes('tweet.read'), 'should require tweet.read scope');
   assert.ok(scope.includes('users.read'), 'should require users.read scope');
+});
+
+test('readFollowTargetHandle trims BOM and surrounding whitespace', () => {
+  const original = process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE;
+  process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE = '\ufeff @rictaworks \n';
+
+  try {
+    assert.equal(readFollowTargetHandle(), 'rictaworks');
+  } finally {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE;
+    } else {
+      process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE = original;
+    }
+  }
+});
+
+test('readFollowTargetHandle rejects values that become empty after normalization', () => {
+  const original = process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE;
+  process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE = '\ufeff   ';
+
+  try {
+    assert.throws(() => readFollowTargetHandle(), /NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE is required/);
+  } finally {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE;
+    } else {
+      process.env.NEXT_PUBLIC_X_FOLLOW_TARGET_HANDLE = original;
+    }
+  }
 });
