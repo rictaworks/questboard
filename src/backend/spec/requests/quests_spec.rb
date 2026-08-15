@@ -21,18 +21,6 @@ RSpec.describe "Quests API", type: :request do
     BoardMember.create!(board: board, user: user, role: role)
   end
 
-  def sign_in(sign_in_user = user)
-    allow(session_creator).to receive(:call).and_return(sign_in_user)
-
-    post "/auth/x_sessions", params: {
-      code: "authorization-code",
-      code_verifier: "pkce-verifier",
-      recaptcha_token: "recaptcha-token"
-    }, as: :json
-
-    expect(response).to have_http_status(:created)
-  end
-
   describe "GET /quests" do
     it "requires authentication" do
       get "/quests"
