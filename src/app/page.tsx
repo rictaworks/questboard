@@ -3,6 +3,7 @@ import {getTranslations} from 'next-intl/server';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCreatePanel from '@/components/board-create-panel';
+import BoardListPanel from '@/components/board-list-panel';
 import {clientMessages} from '@/i18n/client-messages';
 
 // このページは製品紹介の LP ではなく、アプリの入口（ログインし、ボードを作る場所）である。
@@ -10,8 +11,8 @@ import {clientMessages} from '@/i18n/client-messages';
 // （Issue #99）。h1 は製品名のみとし、見出し階層の最上位を画面の機能に譲る。
 export default async function HomePage() {
   const t = await getTranslations('Home');
-  // AuthPanel は Auth、BoardCreatePanel は BoardCreate と Auth を使う。
-  const messages = await clientMessages(['Auth', 'BoardCreate']);
+  // AuthPanel は Auth、BoardListPanel は BoardList、BoardCreatePanel は BoardCreate と Auth を使う。
+  const messages = await clientMessages(['Auth', 'BoardCreate', 'BoardList']);
 
   return (
     <main className="home-shell">
@@ -23,9 +24,10 @@ export default async function HomePage() {
           <AuthPanel />
         </section>
 
-        <section className="board-section" aria-labelledby="board-create-heading">
+        <div className="board-section">
+          <BoardListPanel />
           <BoardCreatePanel />
-        </section>
+        </div>
       </NextIntlClientProvider>
     </main>
   );

@@ -56,6 +56,25 @@
     "shareUrlLabel": "共有URL",
     "createError": "ボードの作成に失敗しました"
   },
+  "BoardList": {
+    "heading": "あなたのボード",
+    "description": "作成したボードと参加したボードを、更新が新しい順で表示します。",
+    "loadingSession": "セッションを確認しています",
+    "loadingBoards": "ボード一覧を読み込んでいます",
+    "boardLoadError": "ボード一覧の読み込みに失敗しました",
+    "emptyHeading": "まだボードがありません",
+    "emptyDescription": "作成したボードや参加したボードはここに表示されます。",
+    "boardTitleHeader": "ボード名",
+    "roleHeader": "自分のロール",
+    "updatedAtHeader": "最終更新日時",
+    "pageSummary": "{page}/{totalPages} ページ",
+    "previousPage": "前のページ",
+    "nextPage": "次のページ",
+    "ownerRole": "オーナー",
+    "editorRole": "編集者",
+    "commenterRole": "コメント可",
+    "viewerRole": "閲覧者"
+  },
   "BoardInvite": {
     "heading": "ボードに参加",
     "description": "共有URLから参加し、ロールを選択できます。",

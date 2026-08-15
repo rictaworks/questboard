@@ -2,7 +2,7 @@ class BoardsController < ApplicationController
   class InvalidBoardTitleError < StandardError; end
 
   before_action :require_current_user!
-  before_action :require_feature_plan!
+  before_action :require_feature_plan!, except: :index
 
   class BoardDeletionRelayOp
     attr_reader :relay_object_id, :property, :value, :lamport_ts, :client_id
@@ -22,6 +22,33 @@ class BoardsController < ApplicationController
     return unless authorize_board_view!(board:, membership:)
 
     render json: serialize_canvas_board(board, membership)
+  end
+
+  def index
+    memberships_scope = current_user.board_members
+      .joins(:board)
+      .where(boards: { deleted_at: nil })
+
+    page, per_page = pagination_params
+    total_count = memberships_scope.count
+    total_pages = total_count.zero? ? 0 : (total_count.to_f / per_page).ceil
+    memberships = memberships_scope
+      .includes(:board, :role)
+      .order("boards.updated_at DESC", "boards.id DESC")
+      .limit(per_page)
+      .offset((page - 1) * per_page)
+
+    render json: {
+      boards: memberships.map { |membership| serialize_board_list_item(membership) },
+      pagination: {
+        page:,
+        perPage: per_page,
+        totalCount: total_count,
+        totalPages: total_pages,
+        previousPage: page > 1 ? page - 1 : nil,
+        nextPage: page < total_pages ? page + 1 : nil
+      }
+    }
   end
 
   def create
@@ -233,6 +260,18 @@ class BoardsController < ApplicationController
     }
   end
 
+  def serialize_board_list_item(membership)
+    board = membership.board
+
+    {
+      id: board.id,
+      title: board.title,
+      shareToken: board.share_token,
+      updatedAt: board.updated_at.iso8601,
+      roleCode: membership.role.code
+    }
+  end
+
   def serialize_membership(membership)
     {
       userId: membership.user_id,
@@ -245,6 +284,17 @@ class BoardsController < ApplicationController
 
   def board_membership_for(board)
     board.board_members.includes(:role).find_by(user: current_user)
+  end
+
+  def pagination_params
+    page = params.fetch(:page, 1).to_i
+    page = 1 if page < 1
+
+    per_page = params.fetch(:per_page, 20).to_i
+    per_page = 20 if per_page < 1
+    per_page = 100 if per_page > 100
+
+    [ page, per_page ]
   end
 
   def authorize_board_view!(board:, membership:)

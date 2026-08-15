@@ -276,6 +276,50 @@ a {
   word-break: break-all;
 }
 
+.board-list-empty {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.board-list-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.board-list-table th,
+.board-list-table td {
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  text-align: left;
+  vertical-align: top;
+}
+
+.board-list-table thead th {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.board-list-table tbody th {
+  font-weight: 700;
+}
+
+.board-list-link {
+  color: var(--color-purple-light);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.board-list-pagination {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.board-list-pagination-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
 .auth-callback-card {
   min-height: 16rem;
   align-content: center;

@@ -2,7 +2,7 @@ class BoardObject < ApplicationRecord
   self.table_name = "objects"
   TOMBSTONE_RETENTION = 30.days
 
-  belongs_to :board
+  belongs_to :board, touch: true
   belongs_to :object_type
   belongs_to :color_palette, foreign_key: :color_id
   belongs_to :parent_frame, class_name: "BoardObject", optional: true
