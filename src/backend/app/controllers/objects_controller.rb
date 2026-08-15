@@ -197,10 +197,17 @@ class ObjectsController < ApplicationController
     # a ConflictingOpError (see PR #53 review).
     raise ReservedClientIdError, "client_id #{LEGACY_OP_CLIENT_ID.inspect} is reserved" if client_id == LEGACY_OP_CLIENT_ID
 
-    incoming_value = op_value_for_storage(property)
-    action = op_action_for(property, incoming_value)
+    # Authorization must be resolved before any property-specific validation runs, so an
+    # unauthorized request never learns field-level details (types, allowed keys) about a
+    # property it isn't allowed to touch. The only value we need before authorization is
+    # decided is whether this is a restore (deleted_at's own "restore" flag decides which
+    # action to check), which deleted_at_op_value already validates cheaply on its own —
+    # unlike geometry/text_crdt, it never needs to look at other properties' shapes.
+    action = op_action_for(property, property == "deleted_at" ? deleted_at_op_value : nil)
     object = find_authorized_op_object!(action:, property:)
     return if performed?
+
+    incoming_value = op_value_for_storage(property)
 
     confirmed_op = nil
     duplicate = false
