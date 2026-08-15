@@ -24,6 +24,16 @@ RSpec.describe Admin::UsersController, type: :controller do
       expect(controller.instance_variable_get(:@follower_caches)).to include(cache)
     end
 
+    it "self-heals missing member and none plans" do
+      Plan.where(code: %w[member none]).delete_all
+
+      get :index
+
+      expect(response).to have_http_status(:success)
+      expect(Plan.find_by(code: "member")).to be_present
+      expect(Plan.find_by(code: "none")).to be_present
+    end
+
     it "limits users and follower caches lists to 50 records" do
       55.times do |i|
         User.create!(x_user_id: "x-limit-#{i}", display_name: "User #{i}", plan: none_plan)
