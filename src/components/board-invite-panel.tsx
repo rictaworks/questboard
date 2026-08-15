@@ -304,8 +304,10 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     setRechecking(true);
 
     try {
-      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
+      const nextSession = await requestManualRecheck(authT('manualRecheckError'));
+      setSessionState(nextSession);
       setErrorMessage(null);
+      window.dispatchEvent(new CustomEvent('user-plan-updated'));
     } catch (error) {
       if (error instanceof SessionExpiredError) {
         setSessionState({authenticated: false});

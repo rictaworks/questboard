@@ -7,6 +7,7 @@ class User < ApplicationRecord
   validates :display_name, presence: true
 
   has_many :user_quests, dependent: :destroy
+  has_many :board_members, dependent: :destroy
   has_one :user_setting, foreign_key: :user_id, dependent: :destroy, inverse_of: :user
 
   def self.upsert_from_x_identity!(x_user_id:, display_name:, plan:)
@@ -20,6 +21,14 @@ class User < ApplicationRecord
     )
 
     find_by!(x_user_id:)
+  end
+
+  def member_plan?
+    plan.code == "member"
+  end
+
+  def none_plan?
+    plan.code == "none"
   end
 
   private

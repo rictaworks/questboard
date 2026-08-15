@@ -109,8 +109,10 @@ export default function BoardCreatePanel() {
     setRechecking(true);
 
     try {
-      setSessionState(await requestManualRecheck(authT('manualRecheckError')));
+      const nextSession = await requestManualRecheck(authT('manualRecheckError'));
+      setSessionState(nextSession);
       setErrorMessage(null);
+      window.dispatchEvent(new CustomEvent('user-plan-updated'));
     } catch (error) {
       if (error instanceof SessionExpiredError) {
         setSessionState({authenticated: false});
@@ -159,6 +161,7 @@ export default function BoardCreatePanel() {
       });
       setTitle('');
       setErrorMessage(null);
+      window.dispatchEvent(new CustomEvent('board-created'));
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : t('createError'));
     } finally {

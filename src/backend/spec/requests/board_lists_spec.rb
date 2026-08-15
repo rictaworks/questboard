@@ -29,7 +29,7 @@ RSpec.describe "Board lists", type: :request do
   end
 
   def fetch_board_list(page:, per_page:)
-    get "/boards", params: { page:, per_page: }, as: :json
+    get "/boards", params: { page:, per_page: }, headers: { "ACCEPT" => "application/json" }
 
     expect(response).to have_http_status(:ok)
     JSON.parse(response.body)
@@ -74,7 +74,7 @@ RSpec.describe "Board lists", type: :request do
     first_page = fetch_board_list(page: 1, per_page: 1)
     second_page = fetch_board_list(page: 2, per_page: 1)
 
-    expect(first_page.fetch("boards")).to have_length(1)
+    expect(first_page.fetch("boards").length).to eq(1)
     expect(first_page.fetch("boards").first).to include(
       "title" => "Owned Board",
       "roleCode" => "owner",
@@ -90,7 +90,7 @@ RSpec.describe "Board lists", type: :request do
       "nextPage" => 2
     )
 
-    expect(second_page.fetch("boards")).to have_length(1)
+    expect(second_page.fetch("boards").length).to eq(1)
     expect(second_page.fetch("boards").first).to include(
       "title" => "Joined Board",
       "roleCode" => "editor",
@@ -135,7 +135,7 @@ RSpec.describe "Board lists", type: :request do
   end
 
   it "returns unauthorized when no session exists" do
-    get "/boards", params: { page: 1, per_page: 10 }, as: :json
+    get "/boards", params: { page: 1, per_page: 10 }, headers: { "ACCEPT" => "application/json" }
 
     expect(response).to have_http_status(:unauthorized)
   end
@@ -143,7 +143,7 @@ RSpec.describe "Board lists", type: :request do
   it "allows board list access for users on the none plan" do
     sign_in(blocked_user)
 
-    get "/boards", params: { page: 1, per_page: 10 }, as: :json
+    get "/boards", params: { page: 1, per_page: 10 }, headers: { "ACCEPT" => "application/json" }
 
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).fetch("boards")).to eq([])

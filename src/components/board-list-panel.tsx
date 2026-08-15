@@ -37,7 +37,7 @@ type BoardListTranslations = {
 type BoardListItem = {
   id: number;
   roleCode: BoardListRoleCode;
-  shareToken: string;
+  shareToken: string | null;
   title: string;
   updatedAt: string;
 };
@@ -88,6 +88,7 @@ export default function BoardListPanel() {
   const [loadingBoards, setLoadingBoards] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
@@ -172,7 +173,25 @@ export default function BoardListPanel() {
     return () => {
       abortController.abort();
     };
-  }, [page, sessionState?.authenticated, t]);
+  }, [page, sessionState?.authenticated, refreshCount, t]);
+
+  useEffect(() => {
+    function handleBoardCreated() {
+      setPage(1);
+      setRefreshCount((prev) => prev + 1);
+    }
+
+    function handlePlanUpdated() {
+      setRefreshCount((prev) => prev + 1);
+    }
+
+    window.addEventListener('board-created', handleBoardCreated);
+    window.addEventListener('user-plan-updated', handlePlanUpdated);
+    return () => {
+      window.removeEventListener('board-created', handleBoardCreated);
+      window.removeEventListener('user-plan-updated', handlePlanUpdated);
+    };
+  }, []);
 
   if (loadingSession) {
     return (
@@ -222,9 +241,15 @@ export default function BoardListPanel() {
             {boards.map((board) => (
               <tr key={board.id}>
                 <th scope="row">
-                  <Link className="board-list-link" href={`/b/${board.shareToken}`}>
-                    {board.title}
-                  </Link>
+                  {board.shareToken ? (
+                    <Link className="board-list-link" href={`/b/${board.shareToken}`}>
+                      {board.title}
+                    </Link>
+                  ) : (
+                    <span>
+                      {board.title}
+                    </span>
+                  )}
                 </th>
                 <td>{t(resolveRoleLabelKey(board.roleCode))}</td>
                 <td>{formatUpdatedAt(board.updatedAt)}</td>

@@ -262,11 +262,12 @@ class BoardsController < ApplicationController
 
   def serialize_board_list_item(membership)
     board = membership.board
+    share_token = current_user&.member_plan? ? board.share_token : nil
 
     {
       id: board.id,
       title: board.title,
-      shareToken: board.share_token,
+      shareToken: share_token,
       updatedAt: board.updated_at.iso8601,
       roleCode: membership.role.code
     }
