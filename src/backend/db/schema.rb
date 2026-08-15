@@ -32,7 +32,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["share_token"], name: "index_boards_on_share_token", unique: true
   end
 
-  create_table "color_palettes", force: :cascade do |t|
+  create_table "color_palettes", id: :serial, force: :cascade do |t|
     t.string "hex", null: false
     t.index ["hex"], name: "index_color_palettes_on_hex", unique: true
   end
@@ -46,13 +46,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
 
-  create_table "effect_masters", force: :cascade do |t|
+  create_table "effect_masters", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.integer "duration_ms", null: false
     t.index ["code"], name: "index_effect_masters_on_code", unique: true
   end
 
-  create_table "event_defs", force: :cascade do |t|
+  create_table "event_defs", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.integer "effect_id", null: false
     t.index ["code"], name: "index_event_defs_on_code", unique: true
@@ -71,7 +71,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["object_id"], name: "index_frame_locks_on_object_id", unique: true
   end
 
-  create_table "intensity_masters", force: :cascade do |t|
+  create_table "intensity_masters", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.index ["code"], name: "index_intensity_masters_on_code", unique: true
   end
@@ -104,7 +104,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["user_id"], name: "index_object_ops_on_user_id"
   end
 
-  create_table "object_types", force: :cascade do |t|
+  create_table "object_types", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.index ["code"], name: "index_object_types_on_code", unique: true
   end
@@ -130,14 +130,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["code"], name: "index_plans_on_code", unique: true
   end
 
-  create_table "quests", force: :cascade do |t|
+  create_table "quests", id: :serial, force: :cascade do |t|
     t.integer "condition_count", null: false
     t.string "condition_event", null: false
     t.string "title", null: false
     t.index ["title"], name: "index_quests_on_title", unique: true
   end
 
-  create_table "radial_menu_items", force: :cascade do |t|
+  create_table "radial_menu_items", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.string "label", null: false
     t.integer "sort_order", null: false
@@ -145,7 +145,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_070000) do
     t.index ["sort_order"], name: "index_radial_menu_items_on_sort_order", unique: true
   end
 
-  create_table "roles", force: :cascade do |t|
+  create_table "roles", id: :serial, force: :cascade do |t|
     t.string "code", null: false
     t.index ["code"], name: "index_roles_on_code", unique: true
   end

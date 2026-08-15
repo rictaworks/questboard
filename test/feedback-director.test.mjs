@@ -142,7 +142,7 @@ test('feedback source avoids direct burst/dissolve trigger strings outside the d
 test('effect durations and event-to-effect routing stay in sync with the seeded master data', async () => {
   const seedsSource = await readFile(path.join(root, 'src/backend/db/seeds.rb'), 'utf8');
 
-  const effectMastersBlock = seedsSource.match(/"effect_masters",\s*\[([\s\S]*?)\],\s*unique_by: :index_effect_masters_on_code/)[1];
+  const effectMastersBlock = seedsSource.match(/"effect_masters",\s*\[([\s\S]*?)\],\s*unique_by:/)[1];
   const seededEffects = [...effectMastersBlock.matchAll(/code:\s*"([^"]+)",\s*duration_ms:\s*(\d+)/g)].map(
     ([, code, durationMs]) => ({code, durationMs: Number(durationMs)})
   );
@@ -158,7 +158,7 @@ test('effect durations and event-to-effect routing stay in sync with the seeded 
     );
   }
 
-  const eventDefsBlock = seedsSource.match(/"event_defs",\s*\[([\s\S]*?)\],\s*unique_by: :index_event_defs_on_code/)[1];
+  const eventDefsBlock = seedsSource.match(/"event_defs",\s*\[([\s\S]*?)\],\s*unique_by:/)[1];
   const seededEventDefs = [...eventDefsBlock.matchAll(/code:\s*"([^"]+)",\s*effect_id:\s*effect_ids\.fetch\("([^"]+)"\)/g)].map(
     ([, code, effectCode]) => ({code, effectCode})
   );

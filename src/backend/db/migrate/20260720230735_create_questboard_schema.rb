@@ -1,3 +1,5 @@
+require_relative "../index_names"
+
 class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
   def change
     create_table :users, id: :bigint do |t|
@@ -12,7 +14,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.string :code, null: false
     end
 
-    add_index :roles, :code, unique: true
+    add_index :roles, :code, unique: true, name: DbIndexNames::Roles::CODE
 
     create_table :boards, id: :bigint do |t|
       t.string :title, null: false
@@ -38,13 +40,13 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.string :code, null: false
     end
 
-    add_index :object_types, :code, unique: true
+    add_index :object_types, :code, unique: true, name: DbIndexNames::ObjectTypes::CODE
 
     create_table :color_palettes, id: :integer do |t|
       t.string :hex, null: false
     end
 
-    add_index :color_palettes, :hex, unique: true
+    add_index :color_palettes, :hex, unique: true, name: DbIndexNames::ColorPalettes::HEX
 
     create_table :radial_menu_items, id: :integer do |t|
       t.string :code, null: false
@@ -52,7 +54,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.integer :sort_order, null: false
     end
 
-    add_index :radial_menu_items, :code, unique: true
+    add_index :radial_menu_items, :code, unique: true, name: DbIndexNames::RadialMenuItems::CODE
     add_index :radial_menu_items, :sort_order, unique: true
 
     create_table :objects, id: :bigint do |t|
@@ -122,7 +124,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.integer :condition_count, null: false
     end
 
-    add_index :quests, :title, unique: true
+    add_index :quests, :title, unique: true, name: DbIndexNames::Quests::TITLE
 
     create_table :user_quests, id: :bigint do |t|
       t.bigint :user_id, null: false
@@ -140,14 +142,14 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.integer :duration_ms, null: false
     end
 
-    add_index :effect_masters, :code, unique: true
+    add_index :effect_masters, :code, unique: true, name: DbIndexNames::EffectMasters::CODE
 
     create_table :event_defs, id: :integer do |t|
       t.string :code, null: false
       t.integer :effect_id, null: false
     end
 
-    add_index :event_defs, :code, unique: true
+    add_index :event_defs, :code, unique: true, name: DbIndexNames::EventDefs::CODE
     add_index :event_defs, :effect_id
     add_foreign_key :event_defs, :effect_masters, column: :effect_id
 
@@ -171,7 +173,7 @@ class CreateQuestboardSchema < ActiveRecord::Migration[8.0]
       t.string :code, null: false
     end
 
-    add_index :intensity_masters, :code, unique: true
+    add_index :intensity_masters, :code, unique: true, name: DbIndexNames::IntensityMasters::CODE
 
     create_table :user_settings, primary_key: :user_id, id: :bigint do |t|
       t.integer :intensity_id, null: false
