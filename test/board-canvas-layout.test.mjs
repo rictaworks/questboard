@@ -166,7 +166,7 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
-  assertDeclaration(rules, SELECTOR.boardShell, 'height', '100dvh');
+  assertDeclaration(rules, SELECTOR.boardShell, 'height', '100%');
   assertDeclaration(rules, SELECTOR.boardShell, 'overflow', 'hidden');
   assertDeclaration(rules, SELECTOR.boardShell, 'grid-template-rows', 'minmax(0, 1fr)');
   // `* { box-sizing: border-box }` が全体に効いているので再指定しない。
