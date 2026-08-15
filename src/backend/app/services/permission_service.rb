@@ -1,4 +1,7 @@
 class PermissionService
+  # Contract:
+  # - ObjectsController/BoardLockResolver passes current_user_id + locked_by_user_id
+  # - CommentsController passes actor_id + comment_author_id
   READ_ACTIONS = %i[
     view_board
   ].freeze
@@ -193,18 +196,14 @@ class PermissionService
   end
 
   def lock_holder?(state)
-    return true if truthy?(state[:locked_by_me]) || truthy?(state[:self_locked]) || truthy?(state[:lock_owner_matches_actor])
-
-    actor_id = state[:actor_id] || state[:user_id] || state[:current_user_id]
-    owner_id = state[:lock_owner_id] || state[:locked_by] || state[:locked_by_user_id] || state[:frame_lock_owner_id]
+    actor_id = state[:current_user_id]
+    owner_id = state[:locked_by_user_id]
     actor_id && owner_id && actor_id.to_s == owner_id.to_s
   end
 
   def self_comment?(state)
-    return true if truthy?(state[:self_comment]) || truthy?(state[:owned_by_actor])
-
-    actor_id = state[:actor_id] || state[:user_id] || state[:current_user_id]
-    author_id = state[:comment_author_id] || state[:author_id] || state[:comment_user_id]
+    actor_id = state[:actor_id]
+    author_id = state[:comment_author_id]
     actor_id && author_id && actor_id.to_s == author_id.to_s
   end
 
