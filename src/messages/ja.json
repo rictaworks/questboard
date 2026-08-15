@@ -7,6 +7,15 @@
     "title": "Questboard",
     "authSectionTitle": "ログイン"
   },
+  "Footer": {
+    "navLabel": "フッターのリンク",
+    "privacyPolicy": "プライバシーポリシー",
+    "termsOfUse": "利用規約",
+    "operatorInfo": "運営者情報",
+    "contact": "お問い合わせ",
+    "authoritativeLanguage": "正文は日本語です。",
+    "copyright": "© 2026 Ricta Works"
+  },
   "Auth": {
     "loadingSession": "セッションを確認しています",
     "loginHeading": "Xでログイン",
@@ -143,5 +152,28 @@
     "commentTime": "2026/08/13 12:{minute}",
     "badgeCount": "12",
     "minimapCount": "1"
+  },
+  "Legal": {
+    "title": "法的情報",
+    "intro": "Questboard の利用条件と個人情報の取扱いを示します。",
+    "authoritativeLanguage": "本ページの正文は日本語です。",
+    "privacyHeading": "プライバシーポリシー",
+    "privacyCollected": "取得する情報は、Google OAuth で連携されたメールアドレス・表示名・Google サブジェクト ID、ボードやコメントなどの作成内容、reCAPTCHA 検証に必要な通信情報、アクセスログです。",
+    "privacyUse": "利用目的は、本人確認、ログイン、ボードの作成・参加・同期、スパム対策、障害対応、問い合わせ対応、法令対応です。",
+    "privacySharing": "第三者提供は法令に基づく場合を除き行いません。ただし Google OAuth と reCAPTCHA の利用に伴い、Google に必要な範囲の情報が送信されます。",
+    "privacyRetention": "保存期間は、サービス提供に必要な期間と法令で求められる期間です。",
+    "privacyDeletion": "削除請求はお問い合わせ先へのメールで受け付けます。",
+    "termsHeading": "利用規約",
+    "termsUse": "Questboard は共同編集ボードです。法令違反、他者の権利侵害、過度な負荷を与える利用は禁止します。",
+    "termsAvailability": "運営は予告なく機能を変更、停止、終了でき、データの完全性を保証しません。",
+    "termsIP": "投稿・作成物の権利は原則として利用者に帰属し、運営はサービス運営に必要な範囲で利用できます。",
+    "operatorHeading": "運営者情報",
+    "operatorName": "運営者: Ricta Works",
+    "operatorPerson": "代表者: 瀧澤秀樹",
+    "contactHeading": "お問い合わせ",
+    "contactBody": "削除請求、利用条件、表示内容に関する問い合わせは次の宛先へどうぞ。",
+    "contactEmail": "takizawa@rictaworks.jp",
+    "billingHeading": "特定商取引法に基づく表示",
+    "billingBody": "現時点で課金機能はありません。将来の有料化時には、特定商取引法に基づく表示要否を再確認します。"
   }
 }

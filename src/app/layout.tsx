@@ -4,6 +4,7 @@ import type {ReactNode} from 'react';
 import {getTranslations} from 'next-intl/server';
 
 import ClientErrorBridge from '@/components/client-error-bridge';
+import SiteFooter from '@/components/site-footer';
 import QueryProvider from '@/components/query-provider';
 import {defaultLocale} from '@/i18n/routing';
 
@@ -37,7 +38,10 @@ export default function RootLayout({children}: {children: ReactNode}) {
   return (
     <html lang={defaultLocale}>
       <body>
-        <QueryProvider>{children}</QueryProvider>
+        <div className="app-shell">
+          <QueryProvider>{children}</QueryProvider>
+          <SiteFooter />
+        </div>
         <ClientErrorBridge />
       </body>
     </html>
