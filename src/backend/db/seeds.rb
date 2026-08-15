@@ -1,3 +1,5 @@
+require_relative "index_names"
+
 # This file should ensure the existence of records required to run the application in every environment (production,
 # development, test). The code here should be idempotent so that it can be executed at any point in every environment.
 # The data can then be loaded with the bin/rails db:seed command (or created alongside the database with db:setup).
@@ -19,7 +21,7 @@ seed_table(
     { code: "commenter" },
     { code: "viewer" }
   ],
-  unique_by: :index_roles_on_code
+  unique_by: DbIndexNames::Roles::CODE
 )
 
 seed_table(
@@ -28,7 +30,7 @@ seed_table(
     { code: "member" },
     { code: "none" }
   ],
-  unique_by: :index_plans_on_code
+  unique_by: DbIndexNames::Plans::CODE
 )
 
 seed_table(
@@ -41,7 +43,7 @@ seed_table(
     { code: "image" },
     { code: "frame" }
   ],
-  unique_by: :index_object_types_on_code
+  unique_by: DbIndexNames::ObjectTypes::CODE
 )
 
 seed_table(
@@ -63,7 +65,7 @@ seed_table(
     { code: "share", label: "共有", sort_order: 14 },
     { code: "cancel", label: "キャンセル", sort_order: 15 }
   ],
-  unique_by: :index_radial_menu_items_on_code
+  unique_by: DbIndexNames::RadialMenuItems::CODE
 )
 
 effect_model = seed_table(
@@ -82,7 +84,7 @@ effect_model = seed_table(
     { code: "camera_swish", duration_ms: 300 },
     { code: "zoom_wave", duration_ms: 240 }
   ],
-  unique_by: :index_effect_masters_on_code
+  unique_by: DbIndexNames::EffectMasters::CODE
 )
 
 seed_table(
@@ -92,7 +94,7 @@ seed_table(
     { code: "subtle" },
     { code: "off" }
   ],
-  unique_by: :index_intensity_masters_on_code
+  unique_by: DbIndexNames::IntensityMasters::CODE
 )
 
 seed_table(
@@ -109,7 +111,7 @@ seed_table(
     { hex: "#D1D5DB" },
     { hex: "#1F2937" }
   ],
-  unique_by: :index_color_palettes_on_hex
+  unique_by: DbIndexNames::ColorPalettes::HEX
 )
 
 seed_table(
@@ -124,7 +126,7 @@ seed_table(
     { title: "ボードを共有する", condition_event: "board_shared", condition_count: 1 },
     { title: "コメントする", condition_event: "comment_created", condition_count: 1 }
   ],
-  unique_by: :index_quests_on_title
+  unique_by: DbIndexNames::Quests::TITLE
 )
 
 effect_ids = effect_model.pluck(:code, :id).to_h
@@ -150,5 +152,5 @@ seed_table(
     { code: "quest_completed", effect_id: effect_ids.fetch("radial_bloom") },
     { code: "intensity_changed", effect_id: effect_ids.fetch("recolor_pulse") }
   ],
-  unique_by: :index_event_defs_on_code
+  unique_by: DbIndexNames::EventDefs::CODE
 )

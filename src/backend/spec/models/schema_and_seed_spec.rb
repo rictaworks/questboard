@@ -145,4 +145,13 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(table_count("event_defs")).to eq(17)
     expect(table_count("color_palettes")).to eq(10)
   end
+
+  it "raises when a shared seed index name drifts from the database" do
+    conn = ActiveRecord::Base.connection
+    conn.execute("DELETE FROM roles")
+
+    stub_const("DbIndexNames::Roles::CODE", :index_roles_on_code_drift)
+
+    expect { Rails.application.load_seed }.to raise_error(ArgumentError, /unique index/i)
+  end
 end
