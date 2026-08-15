@@ -120,7 +120,7 @@ RSpec.describe RadialMenuBuilder do
 
   it "switches between lock and unlock using target state" do
     unlocked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: { locked: false })
-    locked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: { locked: true, actor_id: 1, lock_owner_id: 1 })
+    locked = builder.build(target_kind: :frame, selection_count: 1, role: :editor, target_state: { locked: true, current_user_id: 1, locked_by_user_id: 1 })
 
     expect(unlocked[:items].map { |item| item[:code] }).to include(:lock)
     expect(unlocked[:items].map { |item| item[:code] }).not_to include(:unlock)

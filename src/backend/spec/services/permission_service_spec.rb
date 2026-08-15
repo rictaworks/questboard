@@ -10,14 +10,22 @@ RSpec.describe PermissionService do
       comment_author_id: actor_id
     }
   end
-  let(:unlocked_state) do
-    self_comment_state.merge(locked: false)
-  end
   let(:locked_by_self_state) do
-    self_comment_state.merge(locked: true, lock_owner_id: actor_id)
+    self_comment_state.merge(
+      locked: true,
+      current_user_id: actor_id,
+      locked_by_user_id: actor_id
+    )
   end
   let(:locked_by_other_state) do
-    self_comment_state.merge(locked: true, lock_owner_id: 99)
+    self_comment_state.merge(
+      locked: true,
+      current_user_id: actor_id,
+      locked_by_user_id: 99
+    )
+  end
+  let(:unlocked_state) do
+    self_comment_state.merge(locked: false)
   end
 
   describe "#authorize" do
@@ -159,6 +167,34 @@ RSpec.describe PermissionService do
       expect(service.authorize(:commenter, :delete_comment, unlocked_state)).to be(true)
       expect(service.authorize(:commenter, :edit_comment, other_comment_state)).to be(false)
       expect(service.authorize(:commenter, :delete_comment, other_comment_state)).to be(false)
+    end
+
+    it "accepts only the target_state keys used by the current callers" do
+      current_lock_state = {
+        locked: true,
+        direct_lock: true,
+        current_user_id: actor_id,
+        locked_by_user_id: actor_id
+      }
+      legacy_lock_state = {
+        locked: true,
+        direct_lock: true,
+        actor_id: actor_id,
+        lock_owner_id: actor_id
+      }
+      current_comment_state = {
+        actor_id: actor_id,
+        comment_author_id: actor_id
+      }
+      legacy_comment_state = {
+        current_user_id: actor_id,
+        locked_by_user_id: actor_id
+      }
+
+      expect(service.authorize(:editor, :unlock_frame, current_lock_state)).to be(true)
+      expect(service.authorize(:editor, :unlock_frame, legacy_lock_state)).to be(false)
+      expect(service.authorize(:commenter, :edit_comment, current_comment_state)).to be(true)
+      expect(service.authorize(:commenter, :edit_comment, legacy_comment_state)).to be(false)
     end
 
     it "supports all 14 seeded radial menu item action codes for editors" do
