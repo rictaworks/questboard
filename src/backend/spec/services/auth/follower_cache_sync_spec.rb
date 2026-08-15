@@ -37,6 +37,25 @@ RSpec.describe Auth::FollowerCacheSync do
       expect(User.find_by!(x_user_id: "x-3").plan).to eq(member_plan)
     end
 
+    it "self-heals missing member and none plans during synchronization" do
+      member_lookup = instance_double(Plan, id: 101)
+      none_lookup = instance_double(Plan, id: 202)
+
+      expect(Plan).to receive(:find_or_create_by_code!).with("member").and_return(member_lookup)
+      expect(Plan).to receive(:find_or_create_by_code!).with("none").and_return(none_lookup)
+      expect(Plan).not_to receive(:find_by!)
+
+      allow(client).to receive(:fetch_followers_page).and_return(
+        Auth::XFollowersClient::Page.new(ids: [], next_token: nil)
+      )
+
+      result = sync.call
+
+      expect(result.added_count).to eq(0)
+      expect(result.removed_count).to eq(0)
+      expect(result.confirmed_count).to eq(0)
+    end
+
     it "does not demote bypassed user IDs on full sync" do
       User.create!(x_user_id: "x-1", display_name: "Follower", plan: none_plan)
       User.create!(x_user_id: "x-2", display_name: "Unfollower", plan: member_plan)
