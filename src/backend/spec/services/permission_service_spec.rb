@@ -29,7 +29,7 @@ RSpec.describe PermissionService do
   end
 
   describe "#authorize" do
-    it "covers the 4-role × 10-action × 2-lock-state matrix" do
+    it "covers the 4-role × 11-action × 2-lock-state matrix" do
       matrix = {
         owner: {
           unlocked: %i[
@@ -38,6 +38,7 @@ RSpec.describe PermissionService do
             create_object
             edit_object
             delete_object
+            restore_object
             create_comment
             edit_comment
             delete_comment
@@ -50,6 +51,7 @@ RSpec.describe PermissionService do
             create_object
             edit_object
             delete_object
+            restore_object
             create_comment
             edit_comment
             delete_comment
@@ -64,6 +66,7 @@ RSpec.describe PermissionService do
             create_object
             edit_object
             delete_object
+            restore_object
             create_comment
             edit_comment
             delete_comment
@@ -75,6 +78,7 @@ RSpec.describe PermissionService do
             create_object
             edit_object
             delete_object
+            restore_object
             create_comment
             edit_comment
             delete_comment
@@ -117,6 +121,7 @@ RSpec.describe PermissionService do
         create_object
         edit_object
         delete_object
+        restore_object
         create_comment
         edit_comment
         delete_comment
@@ -138,7 +143,7 @@ RSpec.describe PermissionService do
         end
       end
 
-      expect(results.count(true)).to eq(50)
+      expect(results.count(true)).to eq(54)
     end
 
     it "allows board administration only for owner" do

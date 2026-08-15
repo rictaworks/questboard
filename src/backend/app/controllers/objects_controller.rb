@@ -184,10 +184,6 @@ class ObjectsController < ApplicationController
   # the exact same op idempotent.
   def apply_op
     property = params.require(:property)
-    action = op_action_for(property)
-    object = find_authorized_op_object!(action:, property:)
-    return if performed?
-
     begin
       lamport_ts = Integer(params.require(:lamport_ts))
     rescue ArgumentError, TypeError
@@ -200,6 +196,16 @@ class ObjectsController < ApplicationController
     # legacy write could consume the lamport_ts this op needs and turn a legitimate op into
     # a ConflictingOpError (see PR #53 review).
     raise ReservedClientIdError, "client_id #{LEGACY_OP_CLIENT_ID.inspect} is reserved" if client_id == LEGACY_OP_CLIENT_ID
+
+    # Authorization must be resolved before any property-specific validation runs, so an
+    # unauthorized request never learns field-level details (types, allowed keys) about a
+    # property it isn't allowed to touch. The only value we need before authorization is
+    # decided is whether this is a restore (deleted_at's own "restore" flag decides which
+    # action to check), which deleted_at_op_value already validates cheaply on its own —
+    # unlike geometry/text_crdt, it never needs to look at other properties' shapes.
+    action = op_action_for(property, property == "deleted_at" ? deleted_at_op_value : nil)
+    object = find_authorized_op_object!(action:, property:)
+    return if performed?
 
     incoming_value = op_value_for_storage(property)
 
@@ -486,7 +492,9 @@ class ObjectsController < ApplicationController
     create_params.require(:object_type_code)
   end
 
-  def op_action_for(property)
+  def op_action_for(property, value = nil)
+    return :restore_object if property == "deleted_at" && value&.fetch("restore", false) == true
+
     OP_PROPERTY_ACTIONS.fetch(property) { raise UnsupportedOpPropertyError, "unsupported op property #{property}" }
   end
 

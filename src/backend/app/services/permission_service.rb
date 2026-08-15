@@ -54,6 +54,8 @@ class PermissionService
     delete_object: :delete_object,
     delete: :delete_object,
     remove_object: :delete_object,
+    restore_object: :restore_object,
+    restore: :restore_object,
     create_comment: :create_comment,
     comment: :create_comment,
     edit_comment: :edit_comment,
@@ -155,6 +157,10 @@ class PermissionService
     OBJECT_MUTATION_ACTIONS.include?(action)
   end
 
+  def object_restore_action?(action)
+    action == :restore_object
+  end
+
   def commenter_allowed?(action, state)
     return true if read_action?(action)
     return true if comment_view_action?(action)
@@ -173,6 +179,7 @@ class PermissionService
     return true if lock_set_action?(action) && unlocked?(state)
     return true if lock_release_action?(action) && locked?(state) && lock_holder?(state) && direct_lock?(state)
     return true if object_mutation_action?(action) && object_editable?(state)
+    return true if object_restore_action?(action) && object_editable?(state)
 
     false
   end
