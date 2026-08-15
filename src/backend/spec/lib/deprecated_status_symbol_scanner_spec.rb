@@ -1,4 +1,5 @@
 require "spec_helper"
+require_relative "../support/deprecated_status_symbol_scanner"
 
 # スキャナ本体の検査。実ファイルではなく文字列を渡して、Ruby がシンボルとして解釈する
 # 表記をすべて拾えること、逆に散文中の同じ語は拾わないことを確かめる。

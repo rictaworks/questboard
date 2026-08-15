@@ -1,5 +1,8 @@
 require "spec_helper"
 require "digest"
+require_relative "../support/backend_source_tree"
+require_relative "../support/japanese_text"
+require_relative "../support/ruby_token_scanner"
 
 # コントローラが返すユーザー向け文言は config/locales のカタログに置き、コントローラ側には
 # 直書きしない（CLAUDE.md「文字列リテラルは設定ファイル（またはDB）に分離すること」）。
