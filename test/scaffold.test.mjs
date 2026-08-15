@@ -82,6 +82,7 @@ test('the japanese message catalog covers every namespace and has no placeholder
 
   assert.ok(json.Metadata, 'metadata namespace missing');
   assert.ok(json.Home, 'home namespace missing');
+  assert.ok(json.Footer, 'footer namespace missing');
   assert.ok(json.Auth, 'auth namespace missing');
   assert.ok(json.BoardInvite, 'board invite namespace missing');
   assert.ok(json.Home.title, 'home title missing');
@@ -94,6 +95,8 @@ test('the japanese message catalog covers every namespace and has no placeholder
   assert.ok(json.BoardInvite.notFoundDescription, 'board invite notFoundDescription missing');
   assert.ok(json.BoardCanvas, 'board canvas namespace missing');
   assert.ok(json.BoardCanvas.resetCamera, 'board canvas resetCamera missing');
+  assert.ok(json.Legal, 'legal namespace missing');
+  assert.ok(json.Legal.title, 'legal title missing');
 
   // 翻訳待ちのプレースホルダが1つも残っていないこと。多言語をやめた以上、
   // [TODO] translate が画面に出る状態は存在してはならない（Issue #103）。
@@ -131,6 +134,13 @@ test('the home page keeps no scaffold copy and no landing page catchphrase', asy
   const page = await read('src/app/page.tsx');
   assert.equal(page.includes('design-tokens'), false);
   assert.equal(page.includes('#locales'), false);
+});
+
+test('the shared footer is mounted from the root layout', async () => {
+  const layout = await read('src/app/layout.tsx');
+
+  assert.match(layout, /import SiteFooter from '@\/components\/site-footer';/);
+  assert.match(layout, /<SiteFooter \/>/);
 });
 
 // ルートレイアウトの NextIntlClientProvider を外し、ページごとに使う名前空間だけを

@@ -32,6 +32,7 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
 - `/auth/x/callback` — X OAuthコールバック・reCAPTCHA検証
 - `/b/{shareToken}` — ボードキャンバス画面（共有トークンでアクセス）
 - `/board-layout-fixture` — ボードレイアウト回帰確認用の開発フィクスチャ（開発環境、または`NEXT_PUBLIC_ENABLE_LAYOUT_FIXTURE=true`時のみ有効。それ以外は404）
+- `/legal` — 利用規約・プライバシーポリシー・運営者情報・問い合わせ・特定商取引法の案内
 
 ### バックエンド管理画面（Rails、Basic認証）
 
