@@ -100,6 +100,20 @@ RSpec.describe "Questboard database schema and seeds" do
     board_member_indexes = connection.indexes("board_members")
     expect(board_member_indexes.any? { |index| index.unique && index.columns == %w[board_id user_id] }).to be(true)
     expect(board_member_indexes.any? { |index| index.columns == %w[role_id] }).to be(true)
+    expect(board_member_indexes.any? { |index| index.columns == %w[user_id] }).to be(true)
+
+    board = Board.create!(title: "Index Check Board")
+    user = User.create!(x_user_id: "x-sub-index-check", display_name: "Index Check User")
+    BoardMember.create!(board:, user:, role: Role.find_or_create_by!(code: "viewer"))
+    begin
+      connection.execute("SET enable_seqscan = off")
+      explain_plan = connection.exec_query(
+        "EXPLAIN SELECT * FROM board_members WHERE user_id = #{user.id}"
+      ).rows.flatten.join("\n")
+      expect(explain_plan).to include("Index Scan using index_board_members_on_user_id")
+    ensure
+      connection.execute("SET enable_seqscan = on")
+    end
 
     frame_lock_indexes = connection.indexes("frame_locks")
     expect(frame_lock_indexes.any? { |index| index.unique && index.columns == %w[object_id] }).to be(true)
