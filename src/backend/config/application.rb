@@ -55,6 +55,7 @@ module Backend
 
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use ActionDispatch::Session::CookieStore, config.session_options
+    config.middleware.use ActionDispatch::Flash
     config.middleware.insert_before ActionDispatch::Cookies, RequestBodySizeLimiter
   end
 end
