@@ -205,6 +205,20 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
   const [pendingRestoreConfirmationToastId, setPendingRestoreConfirmationToastId] = useState<number | null>(null);
+  const restoreButtonRefs = useRef<Record<number, HTMLButtonElement | null>>({});
+  const prevPendingToastIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (pendingRestoreConfirmationToastId === null && prevPendingToastIdRef.current !== null) {
+      const prevId = prevPendingToastIdRef.current;
+      const btn = restoreButtonRefs.current[prevId];
+      if (btn && document.body.contains(btn)) {
+        btn.focus();
+      }
+    }
+    prevPendingToastIdRef.current = pendingRestoreConfirmationToastId;
+  }, [pendingRestoreConfirmationToastId]);
+
   const hasAppliedInitialCameraRef = useRef(false);
   const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
     () => readIntensityFromStorage(`feedback_intensity:${userXUserId}`) ?? 'full'
@@ -1653,45 +1667,34 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
             <p>{toast.message}</p>
             {toast.onAction && toast.actionLabel ? (
               <div className="board-toast-actions">
-                {toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId === toast.id ? (
-                  <>
-                    <button
-                      className="button button-primary"
-                      disabled={toast.actionDisabled}
-                      onClick={() => {
-                        toast.onAction?.();
-                        setPendingRestoreConfirmationToastId(null);
-                        setToasts((current) => current.filter((entry) => entry.id !== toast.id));
-                      }}
-                      type="button"
-                    >
-                      {t('restoreConfirmAction')}
-                    </button>
-                    <button
-                      className="button button-secondary"
-                      onClick={() => setPendingRestoreConfirmationToastId(null)}
-                      type="button"
-                    >
-                      {t('restoreCancelAction')}
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    aria-expanded={toast.requiresRestoreConfirmation ? pendingRestoreConfirmationToastId === toast.id : undefined}
-                    className="button button-secondary"
-                    disabled={toast.actionDisabled}
-                    onClick={() => {
-                      if (toast.requiresRestoreConfirmation) {
-                        setPendingRestoreConfirmationToastId(toast.id);
-                        return;
-                      }
+                <button
+                  ref={(el) => {
+                    restoreButtonRefs.current[toast.id] = el;
+                  }}
+                  aria-expanded={toast.requiresRestoreConfirmation ? pendingRestoreConfirmationToastId === toast.id : undefined}
+                  className={toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId === toast.id ? 'button button-primary' : 'button button-secondary'}
+                  disabled={toast.actionDisabled}
+                  onClick={() => {
+                    if (toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId !== toast.id) {
+                      setPendingRestoreConfirmationToastId(toast.id);
+                      return;
+                    }
 
-                      toast.onAction?.();
-                      setToasts((current) => current.filter((entry) => entry.id !== toast.id));
-                    }}
+                    toast.onAction?.();
+                    setPendingRestoreConfirmationToastId(null);
+                    setToasts((current) => current.filter((entry) => entry.id !== toast.id));
+                  }}
+                  type="button"
+                >
+                  {toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId === toast.id ? t('restoreConfirmAction') : toast.actionLabel}
+                </button>
+                {toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId === toast.id && (
+                  <button
+                    className="button button-secondary"
+                    onClick={() => setPendingRestoreConfirmationToastId(null)}
                     type="button"
                   >
-                    {toast.actionLabel}
+                    {t('restoreCancelAction')}
                   </button>
                 )}
               </div>

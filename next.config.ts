@@ -19,6 +19,7 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 const REMOVED_LOCALE_PREFIXES = ['ja', 'en', 'fr', 'zh', 'ru', 'es', 'ar'] as const;
 
 const nextConfig: NextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   typedRoutes: true,
   async redirects() {
     // permanent: false（307）にする。308 はブラウザが恒久的にキャッシュするため、

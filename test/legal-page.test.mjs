@@ -45,12 +45,12 @@ async function waitForServer(url) {
   throw new Error(`Playwright 対象サーバーが ${url} で応答しませんでした`);
 }
 
-async function startLocalDevServer() {
+async function startLocalProdServer() {
   const port = await reserveFreePort();
   resolvedBaseUrl = `http://127.0.0.1:${port}`;
   const nextBin = path.join(root, 'node_modules/next/dist/bin/next');
 
-  server = spawn(process.execPath, [nextBin, 'dev', '-p', String(port)], {
+  server = spawn(process.execPath, [nextBin, 'start', '-p', String(port)], {
     cwd: root,
     env: {...process.env, NEXT_PUBLIC_ENV: 'development'},
     stdio: ['ignore', 'pipe', 'pipe']
@@ -72,7 +72,7 @@ async function startLocalDevServer() {
 
 before(async () => {
   if (!resolvedBaseUrl) {
-    await startLocalDevServer();
+    await startLocalProdServer();
   }
 
   await waitForServer(resolvedBaseUrl);
