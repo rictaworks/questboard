@@ -164,3 +164,55 @@ test('resumeLamportTs resumes the client counter from the board-wide lamport_ts'
   // 小数は切り捨てる。lamport_ts は整数であることをサーバーが検証している。
   assert.equal(realtime.resumeLamportTs(0, 7.9), 7);
 });
+
+test('markResyncRequired preserves unrelated pending ops and settleResyncReload only clears covered objects', () => {
+  const pendingA = {
+    boardId: 'board-1',
+    objectId: 'object-a',
+    property: 'geometry',
+    value: {x: 1},
+    lamport_ts: 1,
+    clientId: 'client-a',
+  };
+  const pendingB = {
+    ...pendingA,
+    objectId: 'object-b',
+    lamport_ts: 2,
+  };
+
+  const afterResyncRequired = realtime.markResyncRequired(
+    {
+      pendingOps: [pendingA, pendingB],
+      resyncingObjects: new Set(['object-a']),
+    },
+    'object-b'
+  );
+
+  assert.equal(afterResyncRequired.pendingOps[0].resyncFailed, undefined);
+  assert.equal(afterResyncRequired.pendingOps[1].resyncFailed, true);
+  assert.deepEqual([...afterResyncRequired.resyncingObjects].sort(), ['object-a', 'object-b']);
+
+  const afterCoveredReload = realtime.settleResyncReload(
+    afterResyncRequired,
+    new Set(['object-a'])
+  );
+
+  assert.equal(afterCoveredReload.pendingOps.length, 2);
+  assert.equal(afterCoveredReload.pendingOps[0].objectId, 'object-a');
+  assert.equal(afterCoveredReload.pendingOps[0].resyncFailed, undefined);
+  assert.equal(afterCoveredReload.pendingOps[1].objectId, 'object-b');
+  assert.equal(afterCoveredReload.pendingOps[1].resyncFailed, true);
+  assert.deepEqual([...afterCoveredReload.resyncingObjects], ['object-b']);
+  assert.equal(afterCoveredReload.shouldReloadAgain, true);
+
+  const finalState = realtime.settleResyncReload(
+    afterCoveredReload,
+    new Set(['object-b'])
+  );
+
+  assert.equal(finalState.pendingOps.length, 1);
+  assert.equal(finalState.pendingOps[0].objectId, 'object-a');
+  assert.equal(finalState.pendingOps[0].resyncFailed, undefined);
+  assert.deepEqual([...finalState.resyncingObjects], []);
+  assert.equal(finalState.shouldReloadAgain, false);
+});
