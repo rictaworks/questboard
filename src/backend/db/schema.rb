@@ -17,7 +17,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.integer "role_id", null: false
-    t.bigint "user_id"
+    t.bigint "user_id", null: false
     t.index ["board_id", "user_id"], name: "index_board_members_on_board_id_and_user_id", unique: true
     t.index ["role_id"], name: "index_board_members_on_role_id"
     t.index ["user_id"], name: "index_board_members_on_user_id"
@@ -42,7 +42,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
     t.text "body", null: false
     t.datetime "created_at", null: false
     t.bigint "object_id", null: false
-    t.bigint "user_id"
+    t.bigint "user_id", null: false
     t.index ["object_id"], name: "index_comments_on_object_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
@@ -82,7 +82,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
     t.integer "event_def_id", null: false
     t.datetime "occurred_at", null: false
     t.jsonb "props", default: {}, null: false, comment: "PII禁止"
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.index ["board_id"], name: "index_kpi_events_on_board_id"
     t.index ["event_def_id"], name: "index_kpi_events_on_event_def_id"
     t.index ["occurred_at"], name: "index_kpi_events_on_occurred_at"
@@ -95,7 +95,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
     t.bigint "lamport_ts", null: false
     t.bigint "object_id", null: false
     t.string "property", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.jsonb "value", default: {}, null: false
     t.index ["board_id", "lamport_ts"], name: "index_object_ops_on_board_id_and_lamport_ts"
     t.index ["board_id"], name: "index_object_ops_on_board_id"
