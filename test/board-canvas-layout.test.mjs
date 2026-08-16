@@ -28,7 +28,7 @@ const SELECTOR = {
   boardFooter: 'body:has(.board-canvas-shell) .site-footer',
   footerDisclosure: '.site-footer-disclosure',
   footerTrigger: '.site-footer-trigger',
-  footerPanel: '.site-footer-panel'
+  footerPanel: '.site-footer-disclosure[open] > .site-footer-panel'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
 // デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。

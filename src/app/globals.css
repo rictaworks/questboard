@@ -180,9 +180,12 @@ a {
 }
 
 .site-footer-panel {
-  display: grid;
   gap: var(--space-2);
   padding: var(--space-2) 0 0;
+}
+
+.site-footer-disclosure[open] > .site-footer-panel {
+  display: grid;
 }
 
 .site-footer-links {
