@@ -866,11 +866,6 @@ a {
   align-items: center;
 }
 
-.board-toast-hint {
-  font-size: 0.78rem;
-  color: var(--color-text-muted);
-}
-
 @media (max-width: 960px) {
   body:has(.board-canvas-shell) {
     height: auto;

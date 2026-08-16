@@ -45,12 +45,17 @@ async function waitForServer(url) {
   throw new Error(`Playwright 対象サーバーが ${url} で応答しませんでした`);
 }
 
-async function startLocalDevServer() {
+async function startLocalProdServer() {
   const port = await reserveFreePort();
   resolvedBaseUrl = `http://127.0.0.1:${port}`;
   const nextBin = path.join(root, 'node_modules/next/dist/bin/next');
 
-  server = spawn(process.execPath, [nextBin, 'dev', '-p', String(port)], {
+  // `next dev` ではなく `next start` を使う。node --test はテストファイルを
+  // 並行実行するため、board-canvas-playwright.test.mjs も同じ `.next` を
+  // 対象に `next start` でサーバーを立てる。`next dev` は起動中も `.next` へ
+  // 継続的に書き込むため、並行実行する他方の `next start` が同じ `.next` を
+  // 読みに行くタイミングと衝突し、断続的な読み取り失敗を招く。
+  server = spawn(process.execPath, [nextBin, 'start', '-p', String(port)], {
     cwd: root,
     env: {...process.env, NEXT_PUBLIC_ENV: 'development'},
     stdio: ['ignore', 'pipe', 'pipe']
@@ -72,7 +77,7 @@ async function startLocalDevServer() {
 
 before(async () => {
   if (!resolvedBaseUrl) {
-    await startLocalDevServer();
+    await startLocalProdServer();
   }
 
   await waitForServer(resolvedBaseUrl);
