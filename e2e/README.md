@@ -67,3 +67,5 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#177](https://github.com/rictaworks/questboard/pull/177) | ユーザー削除時の外部キー挙動を明文化してFK制約を整理 | [pr177.md](./pr177.md) |
 | [#178](https://github.com/rictaworks/questboard/pull/178) | ボードのリアルタイム再同期（resync）状態管理の回帰テスト追加と不具合修正 | [pr178.md](./pr178.md) |
 | [#179](https://github.com/rictaworks/questboard/pull/179) | ボード画面にログイン中ユーザーの表示とロール付きメニューを追加 | [pr179.md](./pr179.md) |
+| [#184](https://github.com/rictaworks/questboard/pull/184) | 管理者ユーザー管理画面のHTTP 500エラーを修正（flashサポート復元） | [pr184.md](./pr184.md) |
+| [#186](https://github.com/rictaworks/questboard/pull/186) | 管理ユーザー画面のRack::MethodOverride欠落を修正（手動ログイン許可トグルが本番で機能しない不具合） | [pr186.md](./pr186.md) |
