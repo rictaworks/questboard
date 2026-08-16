@@ -291,3 +291,104 @@ function numberValue(value: unknown): number | null {
 function booleanValue(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Resync state machine – pure helpers extracted from board-canvas-panel.tsx
+// ---------------------------------------------------------------------------
+
+export interface ResyncState {
+  /** Object IDs that are waiting to be re-fetched from the server. */
+  pendingObjects: Set<string>;
+  /** True while an in-flight reload() promise is outstanding. */
+  inFlight: boolean;
+  /** Non-null while a backoff timer is scheduled. */
+  timerId: number | null;
+}
+
+export function createResyncState(): ResyncState {
+  return {pendingObjects: new Set(), inFlight: false, timerId: null};
+}
+
+/**
+ * Mark an object as needing resync.  Returns the next state.
+ * Marks any ops for that object as resyncFailed so they are not re-sent.
+ */
+export function addResyncObject(
+  state: ResyncState,
+  pendingOps: BoardRealtimeOp[],
+  objectId: string,
+): {state: ResyncState; ops: BoardRealtimeOp[]} {
+  const nextOps = pendingOps.map((op) =>
+    op.objectId === objectId ? {...op, resyncFailed: true} : op,
+  );
+  return {
+    state: {...state, pendingObjects: new Set([...state.pendingObjects, objectId])},
+    ops: nextOps,
+  };
+}
+
+/**
+ * Called when we are about to fire the reload() call.
+ * Returns the set of object IDs this attempt will cover (snapshot), plus
+ * the updated state with inFlight=true.
+ * Returns null when the attempt should be skipped (already in flight,
+ * timer pending, or nothing to reload).
+ */
+export function startResyncAttempt(state: ResyncState): {
+  coveredObjectIds: Set<string>;
+  state: ResyncState;
+} | null {
+  if (state.inFlight || state.timerId !== null || state.pendingObjects.size === 0) {
+    return null;
+  }
+  const coveredObjectIds = new Set(state.pendingObjects);
+  return {
+    coveredObjectIds,
+    state: {...state, inFlight: true},
+  };
+}
+
+/**
+ * Called after a successful reload().  Removes covered objects and
+ * clears the in-flight flag.
+ * Returns updated state and the ops that should be pruned (resyncFailed ops
+ * for covered objects).
+ */
+export function commitResyncSuccess(
+  state: ResyncState,
+  pendingOps: BoardRealtimeOp[],
+  coveredObjectIds: Set<string>,
+): {state: ResyncState; prunedOps: BoardRealtimeOp[]; remainingOps: BoardRealtimeOp[]} {
+  const nextPending = new Set(state.pendingObjects);
+  coveredObjectIds.forEach((id) => nextPending.delete(id));
+  const prunedOps = pendingOps.filter(
+    (op) => coveredObjectIds.has(op.objectId) && op.resyncFailed === true,
+  );
+  const remainingOps = pendingOps.filter(
+    (op) => !(coveredObjectIds.has(op.objectId) && op.resyncFailed === true),
+  );
+  return {
+    state: {...state, inFlight: false, pendingObjects: nextPending},
+    prunedOps,
+    remainingOps,
+  };
+}
+
+/**
+ * Called when a reload() attempt fails.  Clears inFlight and records the
+ * timer ID so callers know a backoff is active.
+ */
+export function recordResyncFailure(
+  state: ResyncState,
+  timerId: number | null,
+): ResyncState {
+  return {...state, inFlight: false, timerId};
+}
+
+/**
+ * Called when the backoff timer fires.  Clears the timerId so the next
+ * startResyncAttempt is allowed to proceed.
+ */
+export function clearResyncTimer(state: ResyncState): ResyncState {
+  return {...state, timerId: null};
+}

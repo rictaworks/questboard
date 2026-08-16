@@ -20,6 +20,12 @@ import {
   applyRealtimeOp,
   buildSyncWebSocketUrl,
   createPresenceValue,
+  createResyncState,
+  addResyncObject,
+  startResyncAttempt,
+  commitResyncSuccess,
+  recordResyncFailure,
+  clearResyncTimer,
   isNewerRealtimeOp,
   parseRealtimeMessage,
   readRealtimeSettings,
@@ -28,7 +34,8 @@ import {
   type BoardPresenceMessage,
   type BoardRealtimeOp,
   type BoardRestoreSuggestion,
-  type BoardResyncRequired
+  type BoardResyncRequired,
+  type ResyncState
 } from '@/lib/board-realtime';
 import {readXAuthSettings} from '@/lib/x-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
@@ -790,47 +797,42 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
    sendObjectRealtimeOp(objectId, 'deleted_at', {restore: true});
   }, [sendObjectRealtimeOp]);
 
-  const resyncTimerRef = useRef<number | null>(null);
-  const resyncingObjectsRef = useRef<Set<string>>(new Set());
-  const inFlightReloadRef = useRef<boolean>(false);
+  const resyncStateRef = useRef<ResyncState>(createResyncState());
   const reloadBoardRef = useRef<(delay?: number) => void>(() => {});
   const reloadBoardWithBackoff = useCallback((delay = 1000) => {
     if (disposedRef.current) return;
 
-    if (inFlightReloadRef.current || resyncTimerRef.current != null || resyncingObjectsRef.current.size === 0) {
-      return;
-    }
+    const attempt = startResyncAttempt(resyncStateRef.current);
+    if (!attempt) return;
 
-    inFlightReloadRef.current = true;
-
-    // Snapshot the objects this reload attempt covers. Objects added to
-    // resyncingObjectsRef after this point are not guaranteed to be reflected
-    // in the fetched snapshot, so they must not be cleared when this attempt
-    // succeeds.
-    const coveredObjectIds = new Set(resyncingObjectsRef.current);
+    resyncStateRef.current = attempt.state;
+    const {coveredObjectIds} = attempt;
 
     onReloadBoard()
       .then(() => {
         if (disposedRef.current) return;
-        inFlightReloadRef.current = false;
-        coveredObjectIds.forEach((objectId) => {
-          resyncingObjectsRef.current.delete(objectId);
-          prunePendingOps((pending) => pending.objectId === objectId && pending.resyncFailed === true);
-        });
-        if (resyncingObjectsRef.current.size > 0) {
+        const {state, remainingOps} = commitResyncSuccess(
+          resyncStateRef.current,
+          pendingOpsRef.current,
+          coveredObjectIds,
+        );
+        resyncStateRef.current = state;
+        pendingOpsRef.current = remainingOps;
+        setPendingSyncCount(pendingOpsRef.current.length);
+        if (resyncStateRef.current.pendingObjects.size > 0) {
           reloadBoardRef.current();
         }
       })
       .catch(() => {
         if (disposedRef.current) return;
-        inFlightReloadRef.current = false;
-        resyncTimerRef.current = window.setTimeout(() => {
+        const timerId = window.setTimeout(() => {
           if (disposedRef.current) return;
-          resyncTimerRef.current = null;
+          resyncStateRef.current = clearResyncTimer(resyncStateRef.current);
           reloadBoardRef.current(Math.min(delay * 2, 30000));
         }, delay);
+        resyncStateRef.current = recordResyncFailure(resyncStateRef.current, timerId);
       });
-  }, [onReloadBoard, prunePendingOps]);
+  }, [onReloadBoard]);
 
   useEffect(() => {
     reloadBoardRef.current = reloadBoardWithBackoff;
@@ -923,15 +925,15 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
            const resyncMessage = message as BoardResyncRequired;
            enqueueToast(resyncMessage.error);
 
-           // Mark all pending ops for this object as resyncFailed to prevent them from being resent
-           pendingOpsRef.current.forEach((pending) => {
-             if (pending.objectId === resyncMessage.objectId) {
-               pending.resyncFailed = true;
-             }
-           });
+           // Mark all pending ops for this object as resyncFailed and track the object
+           const {state, ops} = addResyncObject(
+             resyncStateRef.current,
+             pendingOpsRef.current,
+             resyncMessage.objectId,
+           );
+           resyncStateRef.current = state;
+           pendingOpsRef.current = ops;
 
-           // Track the object and kick off the reload
-           resyncingObjectsRef.current.add(resyncMessage.objectId);
            reloadBoardWithBackoff();
            return;
          }
@@ -1008,9 +1010,9 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
      if (reconnectTimerRef.current != null) {
        window.clearTimeout(reconnectTimerRef.current);
      }
-     if (resyncTimerRef.current != null) {
-       window.clearTimeout(resyncTimerRef.current);
-       resyncTimerRef.current = null;
+     if (resyncStateRef.current.timerId != null) {
+       window.clearTimeout(resyncStateRef.current.timerId);
+       resyncStateRef.current = clearResyncTimer(resyncStateRef.current);
      }
      if (presenceThrottleRef.current != null) {
        window.clearTimeout(presenceThrottleRef.current);

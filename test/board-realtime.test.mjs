@@ -164,3 +164,109 @@ test('resumeLamportTs resumes the client counter from the board-wide lamport_ts'
   // 小数は切り捨てる。lamport_ts は整数であることをサーバーが検証している。
   assert.equal(realtime.resumeLamportTs(0, 7.9), 7);
 });
+
+// ---------------------------------------------------------------------------
+// Resync state machine tests (Issue #59)
+// ---------------------------------------------------------------------------
+
+test('addResyncObject marks ops for that object as resyncFailed and does not touch other objects', () => {
+  const state = realtime.createResyncState();
+  const ops = [
+    {boardId: 'b1', objectId: 'obj-1', property: 'geometry', value: {}, lamport_ts: 1, clientId: 'c1'},
+    {boardId: 'b1', objectId: 'obj-2', property: 'geometry', value: {}, lamport_ts: 2, clientId: 'c1'},
+  ];
+  const result = realtime.addResyncObject(state, ops, 'obj-1');
+  assert.equal(result.ops[0].resyncFailed, true);
+  assert.equal(result.ops[1].resyncFailed, undefined);
+  assert.ok(result.state.pendingObjects.has('obj-1'));
+  assert.equal(result.state.pendingObjects.has('obj-2'), false);
+});
+
+test('startResyncAttempt snapshots covered objects and sets inFlight', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+
+  const attempt = realtime.startResyncAttempt(state);
+  assert.notEqual(attempt, null);
+  assert.ok(attempt.coveredObjectIds.has('obj-1'));
+  assert.equal(attempt.state.inFlight, true);
+});
+
+test('startResyncAttempt returns null when inFlight', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+  ({state} = realtime.startResyncAttempt(state));
+  // second call while inFlight
+  assert.equal(realtime.startResyncAttempt(state), null);
+});
+
+test('startResyncAttempt returns null when timer is pending', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+  state = realtime.recordResyncFailure(state, 42 /* fake timerId */);
+  assert.equal(realtime.startResyncAttempt(state), null);
+});
+
+test('startResyncAttempt returns null when pendingObjects is empty', () => {
+  const state = realtime.createResyncState();
+  assert.equal(realtime.startResyncAttempt(state), null);
+});
+
+// Scenario 1: reload対象外のオブジェクトのpending opが失われないこと
+test('commitResyncSuccess removes only covered object ops that are resyncFailed', () => {
+  let state = realtime.createResyncState();
+  const ops = [
+    {boardId: 'b1', objectId: 'obj-1', property: 'geometry', value: {}, lamport_ts: 1, clientId: 'c1', resyncFailed: true},
+    {boardId: 'b1', objectId: 'obj-2', property: 'geometry', value: {}, lamport_ts: 2, clientId: 'c1'},
+  ];
+  ({state} = realtime.addResyncObject(state, ops, 'obj-1'));
+  const attempt = realtime.startResyncAttempt(state);
+  state = attempt.state;
+
+  const {state: nextState, remainingOps} = realtime.commitResyncSuccess(state, ops, attempt.coveredObjectIds);
+  // obj-1's resyncFailed op should be pruned
+  assert.equal(remainingOps.some((op) => op.objectId === 'obj-1' && op.resyncFailed), false);
+  // obj-2's op should survive
+  assert.ok(remainingOps.some((op) => op.objectId === 'obj-2'));
+  assert.equal(nextState.inFlight, false);
+  assert.equal(nextState.pendingObjects.has('obj-1'), false);
+});
+
+// Scenario 2: 後発オブジェクトのpending opが誤って握り潰されないこと
+test('commitResyncSuccess leaves late-arriving objects in pendingObjects for the next reload', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+  const attempt = realtime.startResyncAttempt(state);
+  state = attempt.state;
+
+  // obj-2 arrives while reload is in flight
+  ({state} = realtime.addResyncObject(state, [], 'obj-2'));
+
+  const {state: nextState} = realtime.commitResyncSuccess(state, [], attempt.coveredObjectIds);
+  // obj-1 was covered, so it should be removed
+  assert.equal(nextState.pendingObjects.has('obj-1'), false);
+  // obj-2 was NOT covered by this attempt, so it must remain
+  assert.ok(nextState.pendingObjects.has('obj-2'));
+});
+
+// Scenario 3: board切り替え時に状態がリセットされること
+test('createResyncState always returns a clean empty state', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+  const freshState = realtime.createResyncState();
+  assert.equal(freshState.pendingObjects.size, 0);
+  assert.equal(freshState.inFlight, false);
+  assert.equal(freshState.timerId, null);
+});
+
+// Scenario 4: retry timerのcleanup後に再同期処理がブロックされないこと
+test('clearResyncTimer resets timerId so subsequent startResyncAttempt can proceed', () => {
+  let state = realtime.createResyncState();
+  ({state} = realtime.addResyncObject(state, [], 'obj-1'));
+  state = realtime.recordResyncFailure(state, 99);
+  assert.equal(realtime.startResyncAttempt(state), null, 'blocked while timer pending');
+
+  state = realtime.clearResyncTimer(state);
+  assert.equal(state.timerId, null);
+  assert.notEqual(realtime.startResyncAttempt(state), null, 'allowed after timer cleared');
+});
