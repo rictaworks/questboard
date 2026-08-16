@@ -32,6 +32,17 @@ async function loadModule() {
       return {__esModule: true, default: () => null};
     }
 
+    if (specifier === '@/lib/board-role-label') {
+      return {
+        resolveRoleLabelKey: (roleCode) => ({
+          owner: 'ownerRole',
+          editor: 'editorRole',
+          commenter: 'commenterRole',
+          viewer: 'viewerRole'
+        })[roleCode] ?? null
+      };
+    }
+
     if (specifier === '@/lib/session-api') {
       return {
         isPlanGated: (session) => session?.planCode !== 'member',

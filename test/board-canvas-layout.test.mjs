@@ -19,7 +19,11 @@ const SELECTOR = {
   constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
   sidebar: '.board-sidebar',
   sidebarPanels: '.board-details, .board-quest-panel',
-  minimapSurface: '.board-minimap-surface'
+  minimapSurface: '.board-minimap-surface',
+  userMenu: '.board-user-menu',
+  userMenuTrigger: '.board-user-menu-trigger',
+  userMenuName: '.board-user-menu-name',
+  userMenuPanel: '.board-user-menu-panel'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
 // デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。
@@ -197,6 +201,16 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
     false,
     'overscroll-behavior はサイドバーへのスクロール伝播を止めるため指定しない'
   );
+
+  assertDeclaration(rules, SELECTOR.userMenu, 'position', 'relative');
+  assertDeclaration(rules, SELECTOR.userMenu, 'margin-left', 'auto');
+  assertDeclaration(rules, SELECTOR.userMenuTrigger, 'display', 'inline-flex');
+  assertDeclaration(rules, SELECTOR.userMenuTrigger, 'align-items', 'center');
+  assertDeclaration(rules, SELECTOR.userMenuName, 'max-width', '12rem');
+  assertDeclaration(rules, SELECTOR.userMenuName, 'overflow', 'hidden');
+  assertDeclaration(rules, SELECTOR.userMenuName, 'text-overflow', 'ellipsis');
+  assertDeclaration(rules, SELECTOR.userMenuPanel, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.userMenuPanel, 'top', 'calc(100% + var(--space-2))');
 });
 
 test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {

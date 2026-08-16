@@ -434,6 +434,101 @@ a {
   align-items: center;
 }
 
+.board-user-menu {
+  position: relative;
+  margin-left: auto;
+}
+
+.board-user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0.45rem 0.7rem;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  list-style: none;
+}
+
+.board-user-menu-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.board-user-menu-trigger::marker {
+  content: '';
+}
+
+.board-user-menu-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(123, 47, 255, 0.95), rgba(56, 189, 248, 0.92));
+  color: white;
+  font-weight: 800;
+}
+
+.board-user-menu-copy {
+  display: grid;
+  min-width: 0;
+  text-align: left;
+}
+
+.board-user-menu-name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-user-menu-role {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-user-menu-chevron {
+  color: var(--color-text-muted);
+}
+
+.board-user-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--space-2));
+  z-index: 5;
+  display: grid;
+  gap: var(--space-3);
+  min-width: 18rem;
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: rgba(18, 19, 45, 0.96);
+  box-shadow: var(--shadow-glow-md);
+}
+
+.board-user-menu-panel-name,
+.board-user-menu-panel-role {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.board-user-menu-sign-out {
+  justify-self: start;
+}
+
+.board-user-menu[open] .board-user-menu-trigger {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .board-sync-status {
   display: inline-grid;
   gap: 0.1rem;
