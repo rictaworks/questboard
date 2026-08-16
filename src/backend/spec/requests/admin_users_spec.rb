@@ -46,6 +46,22 @@ RSpec.describe "Admin users", type: :request do
     expect(response.body).to include(I18n.t("admin.users.toggle_bypass.success"))
   end
 
+  it "toggles manual bypass when submitted the way the actual browser button_to form does" do
+    # app/views/admin/users/index.html.erb の「ログインを許可」ボタンは
+    # button_to ..., method: :patch で描画される。実ブラウザはこれを
+    # method="post" のHTMLフォーム + 隠しフィールド _method=patch として送信し、
+    # Rack::MethodOverride がそれを読んで PATCH にリライトして初めてルーティングされる。
+    # 上のテストのように patch ヘルパーで直接PATCHを発行するとこの経路を検証できない
+    # （issue #181で報告された、request specはgreenなのに実ブラウザでは反映されない
+    # 乖離の原因）。
+    user = User.create!(x_user_id: "x-toggle-target-browser", display_name: "Toggle Target Browser")
+
+    post toggle_bypass_admin_user_path(user), params: { _method: "patch" }, headers: admin_headers
+
+    expect(response).to redirect_to(admin_users_path)
+    expect(user.reload.is_manual_member).to be(true)
+  end
+
   private
 
   def admin_headers
