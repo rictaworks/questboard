@@ -44,6 +44,16 @@ export default async function BoardLayoutFixturePage() {
             <div className="board-sync-status board-sync-status-connected" role="status">
               <span>{boardCanvasT('connectionConnected')}</span>
             </div>
+            <div className="board-user-avatar-container">
+              <button
+                aria-haspopup="menu"
+                aria-label={boardCanvasT('userMenuLabel')}
+                className="board-user-avatar-button"
+                type="button"
+              >
+                <span aria-hidden="true" className="board-user-avatar-initials">{fixtureT('userInitials')}</span>
+              </button>
+            </div>
           </div>
         </header>
 

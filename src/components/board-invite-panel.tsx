@@ -499,6 +499,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           boardData={boardData}
           key={boardData.board.shareToken}
           onReloadBoard={reloadBoard}
+          userDisplayName={sessionState.displayName ?? authT('unknownUser')}
           userXUserId={sessionState.xUserId ?? 'development-x-user-id'}
         />
       </>

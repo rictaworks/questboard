@@ -153,7 +153,14 @@
     "intensityLabel": "演出強度",
     "intensityFull": "フル",
     "intensitySubtle": "控えめ",
-    "intensityOff": "オフ"
+    "intensityOff": "オフ",
+    "userMenuLabel": "ユーザーメニュー",
+    "signOut": "ログアウト",
+    "unknownUser": "不明なユーザー",
+    "ownerRole": "オーナー",
+    "editorRole": "編集者",
+    "commenterRole": "コメント可",
+    "viewerRole": "閲覧者"
   },
   "NotFound": {
     "title": "ページが見つかりません",
@@ -171,7 +178,8 @@
     "dismiss": "×",
     "commentTime": "2026/08/13 12:{minute}",
     "badgeCount": "12",
-    "minimapCount": "1"
+    "minimapCount": "1",
+    "userInitials": "TU"
   },
   "Legal": {
     "title": "法的情報",

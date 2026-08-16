@@ -196,3 +196,20 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
     await context.close();
   }
 });
+
+test('ユーザーアバターがボードヘッダーのツールバーに表示される', async () => {
+  const {context, page} = await openFixturePage({width: 1280, height: 800});
+
+  try {
+    const avatarButton = page.locator('.board-user-avatar-button');
+    assert.equal(await avatarButton.isVisible(), true, 'ユーザーアバターボタンが表示されていません');
+
+    const initials = page.locator('.board-user-avatar-initials');
+    assert.equal(await initials.isVisible(), true, 'ユーザーイニシャルが表示されていません');
+
+    const initialsText = await initials.textContent();
+    assert.ok(initialsText && initialsText.trim().length > 0, 'イニシャルが空です');
+  } finally {
+    await context.close();
+  }
+});

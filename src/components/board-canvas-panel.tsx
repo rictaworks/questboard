@@ -107,6 +107,7 @@ export interface BoardCanvasData {
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
   onReloadBoard: () => Promise<void>;
+  userDisplayName: string;
   userXUserId: string;
 };
 
@@ -167,8 +168,83 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
   }
 }
 
+function resolveRoleLabelKey(roleCode: string): 'ownerRole' | 'editorRole' | 'commenterRole' | 'viewerRole' {
+  if (roleCode === 'owner') return 'ownerRole';
+  if (roleCode === 'editor') return 'editorRole';
+  if (roleCode === 'commenter') return 'commenterRole';
+  return 'viewerRole';
+}
 
-export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}: BoardCanvasPanelProps) {
+function resolveInitials(displayName: string): string {
+  const trimmed = displayName.trim();
+  if (trimmed.length === 0) return '?';
+  const words = trimmed.split(/\s+/);
+  if (words.length >= 2) {
+    return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+  }
+  return trimmed[0].toUpperCase();
+}
+
+type UserAvatarProps = {
+  displayName: string;
+  roleLabel: string;
+  onSignOut: () => void;
+};
+
+function UserAvatar({displayName, roleLabel, onSignOut}: UserAvatarProps) {
+  const t = useTranslations('BoardCanvas');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleOutsideClick(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [menuOpen]);
+
+  const initials = resolveInitials(displayName);
+
+  return (
+    <div className="board-user-avatar-container" ref={containerRef}>
+      <button
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        aria-label={t('userMenuLabel')}
+        className="board-user-avatar-button"
+        onClick={() => setMenuOpen((prev) => !prev)}
+        type="button"
+      >
+        <span aria-hidden="true" className="board-user-avatar-initials">{initials}</span>
+      </button>
+      {menuOpen ? (
+        <div className="board-user-menu" role="menu">
+          <div className="board-user-menu-info">
+            <span className="board-user-menu-name">{displayName}</span>
+            <span className="board-user-menu-role">{roleLabel}</span>
+          </div>
+          <button
+            className="board-user-menu-signout"
+            onClick={() => { setMenuOpen(false); onSignOut(); }}
+            role="menuitem"
+            type="button"
+          >
+            {t('signOut')}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+
+export default function BoardCanvasPanel({boardData, onReloadBoard, userDisplayName, userXUserId}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
@@ -319,6 +395,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   const objects = useMemo(() => boardState.objects.filter((object) => object.deletedAt == null), [boardState.objects]);
   const currentUserId = boardState.membership.userId;
   const roleCode = boardState.membership.role.code;
+  const roleLabel = t(resolveRoleLabelKey(roleCode));
   const contentBounds = useMemo<CameraBounds | null>(() => resolveContentBounds(objects), [objects]);
   // ステージ実寸が確定するまで RAF もフィットも走らせない。判定だけを依存配列に置き、
   // 毎フレーム再生成される viewport / contentBounds でループを作り直さない。
@@ -1346,6 +1423,19 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
     void mutateLegacyObject(object.id, object.locked ? 'unlock' : 'lock');
   }
 
+  async function handleSignOut() {
+    const {backendUrl} = readXAuthSettings();
+    const response = await fetch(`${backendUrl}/session`, {
+      credentials: 'include',
+      method: 'DELETE'
+    });
+    if (!response.ok) {
+      enqueueToast(t('actionFailed'));
+      return;
+    }
+    window.location.href = '/';
+  }
+
   function focusMinimap(event: ReactMouseEvent<HTMLButtonElement>) {
     const minimap = event.currentTarget.getBoundingClientRect();
     analyticsTrackerRef.current?.track({
@@ -1455,6 +1545,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
           <button className="button button-secondary" onClick={onReloadBoard} type="button">
             {t('refresh')}
           </button>
+          <UserAvatar
+            displayName={userDisplayName}
+            onSignOut={() => { void handleSignOut(); }}
+            roleLabel={roleLabel}
+          />
         </div>
       </header>
 
