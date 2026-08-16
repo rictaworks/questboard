@@ -100,6 +100,39 @@ export function BoardJoinSuccessBanner({
   );
 }
 
+export function BoardErrorBanner({
+  message,
+  dismissLabel,
+  onDismiss
+}: {
+  message: string;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="board-join-success"
+      role="alert"
+      style={{
+        border: 'var(--border-width) solid rgba(239, 68, 68, 0.45)',
+        background: 'rgba(239, 68, 68, 0.14)'
+      }}
+    >
+      <div className="board-join-success-body">
+        <strong>{message}</strong>
+      </div>
+      <button
+        aria-label={dismissLabel}
+        className="board-join-success-dismiss"
+        onClick={onDismiss}
+        type="button"
+      >
+        <FontAwesomeIcon icon={faXmark} />
+      </button>
+    </div>
+  );
+}
+
 export function createExistingMembershipNotice(
   boardData: Pick<BoardCanvasData, 'board' | 'membership'>
 ): BoardMembershipNotice {
@@ -490,16 +523,28 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
   if (boardData) {
     const bannerContent = membershipNotice ? createMembershipBannerContent(membershipNotice, t) : null;
+    const hasNotifications = !!bannerContent || !!errorMessage;
 
     return (
       <>
-        {bannerContent ? (
-          <BoardJoinSuccessBanner
-            description={bannerContent.description}
-            dismissLabel={bannerContent.dismissLabel}
-            heading={bannerContent.heading}
-            onDismiss={() => setMembershipNotice(null)}
-          />
+        {hasNotifications ? (
+          <div className="board-notifications" style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            {bannerContent ? (
+              <BoardJoinSuccessBanner
+                description={bannerContent.description}
+                dismissLabel={bannerContent.dismissLabel}
+                heading={bannerContent.heading}
+                onDismiss={() => setMembershipNotice(null)}
+              />
+            ) : null}
+            {errorMessage ? (
+              <BoardErrorBanner
+                message={errorMessage}
+                dismissLabel={t('successDismiss')}
+                onDismiss={() => setErrorMessage(null)}
+              />
+            ) : null}
+          </div>
         ) : null}
         <BoardCanvasPanel
           boardData={boardData}

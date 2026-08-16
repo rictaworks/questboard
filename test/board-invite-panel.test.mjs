@@ -78,6 +78,7 @@ async function loadModule() {
 const {
   BoardInviteContent,
   BoardJoinSuccessBanner,
+  BoardErrorBanner,
   createMembershipBannerContent,
   createExistingMembershipNotice,
   isBoardNotFoundStatus,
@@ -193,5 +194,17 @@ test('join success banner announces the outcome and the confirmed role', () => {
   assert.match(markup, /role="status"/);
   assert.match(markup, /You joined the board/);
   assert.match(markup, /as Commenter\./);
+  assert.match(markup, /aria-label="Dismiss this message"/);
+});
+
+test('board error banner announces the error message with role="alert"', () => {
+  const markup = renderToStaticMarkup(React.createElement(BoardErrorBanner, {
+    message: 'Unable to sign out',
+    dismissLabel: 'Dismiss this message',
+    onDismiss: () => {}
+  }));
+
+  assert.match(markup, /role="alert"/);
+  assert.match(markup, /Unable to sign out/);
   assert.match(markup, /aria-label="Dismiss this message"/);
 });

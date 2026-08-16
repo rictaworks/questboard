@@ -928,6 +928,10 @@ a {
     height: auto;
     aspect-ratio: 5 / 1;
   }
+
+  .board-user-menu-copy {
+    display: none;
+  }
 }
 
 .board-toasts {
