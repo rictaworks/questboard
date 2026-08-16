@@ -51,3 +51,19 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 | [#150](https://github.com/rictaworks/questboard/pull/150) | ボードキャンバスのレイアウトにPlaywrightでの回帰テストを追加 | [pr150.md](./pr150.md) |
 | [#151](https://github.com/rictaworks/questboard/pull/151) | fix: 既存メンバーの共有URLアクセス時にロールを表示する (#97) | [pr151.md](./pr151.md) |
 | [#152](https://github.com/rictaworks/questboard/pull/152) | サイドバーの入れ子スクロール発生をミニマップの可変高さ化で軽減 | [pr152.md](./pr152.md) |
+| [#159](https://github.com/rictaworks/questboard/pull/159) | Xフォロー対象ハンドルの正規化によるプロフィールリンク修正 | [pr159.md](./pr159.md) |
+| [#160](https://github.com/rictaworks/questboard/pull/160) | ログアウト後にセッション依存パネルを再読み込みして古い利用不可表示を解消 | [pr160.md](./pr160.md) |
+| [#161](https://github.com/rictaworks/questboard/pull/161) | プランの初期データが無い場合に /admin/users が500エラーになる不具合を修正 | [pr161.md](./pr161.md) |
+| [#163](https://github.com/rictaworks/questboard/pull/163) | PR142のユーザーテスト手順の検索語を修正しBASIC認証との誤判定を防止 | [pr163.md](./pr163.md) |
+| [#164](https://github.com/rictaworks/questboard/pull/164) | FollowerCacheSync の Plan 参照を自己修復型に統一 | [pr164.md](./pr164.md) |
+| [#165](https://github.com/rictaworks/questboard/pull/165) | board_membersにuser_idインデックスを追加してユーザー別ボード検索を高速化 | [pr165.md](./pr165.md) |
+| [#166](https://github.com/rictaworks/questboard/pull/166) | seedとマイグレーションでユニークインデックス名を共有する | [pr166.md](./pr166.md) |
+| [#167](https://github.com/rictaworks/questboard/pull/167) | リクエストスペックの共通ヘルパーをspec/supportに集約 | [pr167.md](./pr167.md) |
+| [#168](https://github.com/rictaworks/questboard/pull/168) | ログイン後トップに自分のボード一覧を追加する | [pr168.md](./pr168.md) |
+| [#169](https://github.com/rictaworks/questboard/pull/169) | 共通フッターと法務情報ページを追加 | [pr169.md](./pr169.md) |
+| [#170](https://github.com/rictaworks/questboard/pull/170) | PermissionServiceのtarget_stateキーを現在の呼び出し契約に限定 | [pr170.md](./pr170.md) |
+| [#172](https://github.com/rictaworks/questboard/pull/172) | tombstone復元権限をdelete権限から分離する | [pr172.md](./pr172.md) |
+| [#173](https://github.com/rictaworks/questboard/pull/173) | 削除の復元操作をF7同時押しから2段階確認ボタン方式に変更（アクセシビリティ改善） | [pr173.md](./pr173.md) |
+| [#177](https://github.com/rictaworks/questboard/pull/177) | ユーザー削除時の外部キー挙動を明文化してFK制約を整理 | [pr177.md](./pr177.md) |
+| [#178](https://github.com/rictaworks/questboard/pull/178) | ボードのリアルタイム再同期（resync）状態管理の回帰テスト追加と不具合修正 | [pr178.md](./pr178.md) |
+| [#179](https://github.com/rictaworks/questboard/pull/179) | ボード画面にログイン中ユーザーの表示とロール付きメニューを追加 | [pr179.md](./pr179.md) |
