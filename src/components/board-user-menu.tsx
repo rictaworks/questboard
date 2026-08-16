@@ -13,31 +13,16 @@ type BoardUserMenuProps = {
   roleCode: BoardRoleCode;
 };
 
-function resolveAvatarGlyph(displayName: string): string {
-  const trimmed = displayName.trim();
-  if (!trimmed) {
-    return '?';
-  }
-
-  return Array.from(trimmed)[0]?.toUpperCase() ?? '?';
-}
-
 export default function BoardUserMenu({displayName, onSignOut, roleCode}: BoardUserMenuProps) {
   const t = useTranslations('BoardCanvas');
   const roleLabelKey = resolveRoleLabelKey(roleCode);
   const resolvedDisplayName = displayName.trim() || t('unknownUser');
-  const avatarGlyph = resolveAvatarGlyph(resolvedDisplayName);
+  const resolvedRoleLabel = roleLabelKey ? t(roleLabelKey) : roleCode;
 
   return (
     <details className="board-user-menu">
-      <summary className="board-user-menu-trigger" title={resolvedDisplayName}>
-        <span className="board-user-menu-avatar" aria-hidden="true">
-          {avatarGlyph}
-        </span>
-        <span className="board-user-menu-copy">
-          <strong className="board-user-menu-name">{resolvedDisplayName}</strong>
-          <span className="board-user-menu-role">{roleLabelKey ? t(roleLabelKey) : roleCode}</span>
-        </span>
+      <summary className="board-user-menu-trigger" aria-label={resolvedDisplayName} title={resolvedDisplayName}>
+        <FontAwesomeIcon icon={faUser} className="board-user-menu-avatar" />
         <FontAwesomeIcon icon={faChevronDown} className="board-user-menu-chevron" />
       </summary>
       <div className="board-user-menu-panel">
@@ -45,7 +30,7 @@ export default function BoardUserMenu({displayName, onSignOut, roleCode}: BoardU
           <FontAwesomeIcon icon={faUser} />
           <span>{resolvedDisplayName}</span>
         </p>
-        <p className="board-user-menu-panel-role">{roleLabelKey ? t(roleLabelKey) : roleCode}</p>
+        <p className="board-user-menu-panel-role">{resolvedRoleLabel}</p>
         {onSignOut ? (
           <button className="button button-secondary board-user-menu-sign-out" type="button" onClick={onSignOut}>
             <FontAwesomeIcon icon={faRightFromBracket} />

@@ -22,8 +22,13 @@ const SELECTOR = {
   minimapSurface: '.board-minimap-surface',
   userMenu: '.board-user-menu',
   userMenuTrigger: '.board-user-menu-trigger',
-  userMenuName: '.board-user-menu-name',
-  userMenuPanel: '.board-user-menu-panel'
+  userMenuAvatar: '.board-user-menu-avatar',
+  userMenuPanel: '.board-user-menu-panel',
+  footer: '.site-footer',
+  boardFooter: 'body:has(.board-canvas-shell) .site-footer',
+  footerDisclosure: '.site-footer-disclosure',
+  footerTrigger: '.site-footer-trigger',
+  footerPanel: '.site-footer-panel'
 };
 // 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
 // デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。
@@ -171,6 +176,10 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.boardShell, 'height', '100%');
+  assertDeclaration(rules, SELECTOR.boardShell, 'width', '100%');
+  assertDeclaration(rules, SELECTOR.boardShell, 'max-width', 'none');
+  assertDeclaration(rules, SELECTOR.boardShell, 'margin', '0');
+  assertDeclaration(rules, SELECTOR.boardShell, 'padding', 'var(--space-4)');
   assertDeclaration(rules, SELECTOR.boardShell, 'overflow', 'hidden');
   assertDeclaration(rules, SELECTOR.boardShell, 'grid-template-rows', 'minmax(0, 1fr)');
   // `* { box-sizing: border-box }` が全体に効いているので再指定しない。
@@ -206,11 +215,16 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   assertDeclaration(rules, SELECTOR.userMenu, 'margin-left', 'auto');
   assertDeclaration(rules, SELECTOR.userMenuTrigger, 'display', 'inline-flex');
   assertDeclaration(rules, SELECTOR.userMenuTrigger, 'align-items', 'center');
-  assertDeclaration(rules, SELECTOR.userMenuName, 'max-width', '12rem');
-  assertDeclaration(rules, SELECTOR.userMenuName, 'overflow', 'hidden');
-  assertDeclaration(rules, SELECTOR.userMenuName, 'text-overflow', 'ellipsis');
+  assertDeclaration(rules, SELECTOR.userMenuAvatar, 'width', '2rem');
+  assertDeclaration(rules, SELECTOR.userMenuAvatar, 'height', '2rem');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'position', 'absolute');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'top', 'calc(100% + var(--space-2))');
+
+  assertDeclaration(rules, SELECTOR.footer, 'padding', 'var(--space-3) var(--space-4)');
+  assertDeclaration(rules, SELECTOR.boardFooter, 'padding', 'var(--space-2) var(--space-4)');
+  assertDeclaration(rules, SELECTOR.footerDisclosure, 'display', 'grid');
+  assertDeclaration(rules, SELECTOR.footerTrigger, 'display', 'inline-flex');
+  assertDeclaration(rules, SELECTOR.footerPanel, 'display', 'grid');
 });
 
 test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {

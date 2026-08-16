@@ -106,6 +106,8 @@ test('legal page renders the shared footer and policy links', async () => {
     await page.locator('main.legal-page').waitFor();
 
     const footer = page.locator('footer.site-footer');
+    await footer.locator('summary.site-footer-trigger').click();
+    await footer.locator('.site-footer-panel').waitFor();
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#privacy-policy"]').waitFor());
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#terms"]').waitFor());
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#operator"]').waitFor());

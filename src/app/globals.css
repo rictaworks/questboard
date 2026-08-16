@@ -38,7 +38,7 @@ body:has(.board-canvas-shell) {
 }
 
 body:has(.board-canvas-shell) .site-footer {
-  padding: var(--space-2) var(--space-8);
+  padding: var(--space-2) var(--space-4);
 }
 
 .app-shell {
@@ -60,6 +60,10 @@ a {
 }
 
 .home-shell:has(.board-canvas-shell) {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--space-4);
   height: 100%;
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr);
@@ -142,9 +146,43 @@ a {
 .site-footer {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-4) var(--space-8) var(--space-6);
+  padding: var(--space-3) var(--space-4);
   border-top: var(--border-width) solid rgba(255, 255, 255, 0.12);
   color: var(--color-text-muted);
+}
+
+.site-footer-disclosure {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.site-footer-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  list-style: none;
+}
+
+.site-footer-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.site-footer-trigger::marker {
+  content: '';
+}
+
+.site-footer-panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 0;
 }
 
 .site-footer-links {
@@ -470,28 +508,6 @@ a {
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(123, 47, 255, 0.95), rgba(56, 189, 248, 0.92));
   color: white;
-  font-weight: 800;
-}
-
-.board-user-menu-copy {
-  display: grid;
-  min-width: 0;
-  text-align: left;
-}
-
-.board-user-menu-name {
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.board-user-menu-role {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .board-user-menu-chevron {
@@ -927,10 +943,6 @@ a {
     min-height: 0;
     height: auto;
     aspect-ratio: 5 / 1;
-  }
-
-  .board-user-menu-copy {
-    display: none;
   }
 }
 

@@ -133,9 +133,14 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
 
     for (const viewport of DESKTOP_VIEWPORTS) {
       const {innerHeight, scrollHeight} = await resizeAndMeasure(page, viewport);
+      const shellWidth = await page.locator('main.home-shell').evaluate((element) => element.getBoundingClientRect().width);
       assert.ok(
         scrollHeight <= innerHeight,
         `${viewport.width}×${viewport.height} でページ全体がスクロールしています（scrollHeight=${scrollHeight}, innerHeight=${innerHeight}）`
+      );
+      assert.ok(
+        shellWidth >= viewport.width - 2,
+        `${viewport.width}×${viewport.height} で main.home-shell が横幅いっぱいに広がっていません（actual=${shellWidth}）`
       );
     }
 
