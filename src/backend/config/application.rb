@@ -53,6 +53,11 @@ module Backend
       same_site: :lax,
       secure: Rails.env.production?
 
+    # config.api_only = true は Rack::MethodOverride も既定のスタックから除外する。
+    # admin/users の button_to ..., method: :patch は実ブラウザでは method="post" の
+    # HTMLフォーム + 隠しフィールド _method=patch として送信され、このミドルウェアが
+    # 無いと PATCH にリライトされずルーティングエラーになる（issue #181）。
+    config.middleware.use Rack::MethodOverride
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use ActionDispatch::Session::CookieStore, config.session_options
     config.middleware.use ActionDispatch::Flash

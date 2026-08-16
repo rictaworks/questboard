@@ -215,7 +215,14 @@ RSpec.describe "X authentication", type: :request do
       recaptcha_token: "recaptcha-token"
     }, as: :json
 
-    delete "/session"
+    # フロントエンド（app/../auth-panel.tsx handleSignOut）はボディなしの
+    # fetch(..., { method: "DELETE" }) でログアウトしており、実ブラウザは
+    # Content-Typeヘッダーを送らない。素の delete "/session" だと
+    # Rails のテストヘルパーが application/x-www-form-urlencoded を既定で
+    # 付与してしまい、RequestOriginGuardのCSRF対策（フォーム形式の
+    # 状態変更リクエストを拒否する）に誤って引っかかるため、実際の
+    # 送信内容に合わせて as: :json を明示する。
+    delete "/session", as: :json
 
     expect(response).to have_http_status(:no_content)
 
