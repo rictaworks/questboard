@@ -11,6 +11,7 @@ test('restore toast uses an accessible confirmation flow instead of the F7 gate'
   assert.equal(source.includes('restoreGateOpen'), false);
   assert.equal(source.includes('restoreGateHint'), false);
   assert.equal(source.includes('F7'), false);
+  assert.match(source, /enqueueToast\(t\('objectDeleted'\)/);
   assert.match(source, /requiresRestoreConfirmation/);
   assert.match(source, /dismissAfterMs:\s*15000/);
   assert.match(source, /restoreConfirmAction/);

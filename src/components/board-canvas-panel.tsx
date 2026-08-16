@@ -773,15 +773,15 @@ export default function BoardCanvasPanel({
     objectId: number,
     property: BoardRealtimeObjectProperty,
     value: Record<string, unknown>
-  ) => {
+  ): boolean => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
    if (!object) {
-     return;
+     return false;
    }
 
    if (!canPerformBoardAction(roleCode, resolveBoardActionForObjectMutation(property, value), objectToLockState(object), currentUserId)) {
      enqueueToast(t('permissionDenied'));
-     return;
+     return false;
    }
 
    const op: BoardRealtimeOp = {
@@ -795,6 +795,7 @@ export default function BoardCanvasPanel({
 
    recordRealtimeOp(op);
    queueRealtimeOp(op);
+   return true;
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
   const restoreDeletedObject = useCallback((objectId: number) => {
@@ -1352,7 +1353,18 @@ export default function BoardCanvasPanel({
       return;
     }
 
-    sendObjectRealtimeOp(active.id, 'deleted_at', {});
+    const deleted = sendObjectRealtimeOp(active.id, 'deleted_at', {});
+    if (!deleted) {
+      return;
+    }
+
+    enqueueToast(t('objectDeleted'), {
+      actionDisabled: !canPerformBoardAction(roleCode, 'restore', objectToLockState(active), currentUserId),
+      actionLabel: t('restoreAction'),
+      dismissAfterMs: 15000,
+      requiresRestoreConfirmation: true,
+      onAction: () => restoreDeletedObject(active.id)
+    });
   }
 
   function toggleLock(object: BoardCanvasObject) {

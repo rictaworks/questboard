@@ -112,6 +112,7 @@
     "resetCamera": "表示をリセット",
     "duplicate": "複製",
     "delete": "削除",
+    "objectDeleted": "オブジェクトを削除しました",
     "lockedByYou": "あなたがロック中",
     "lockedByOther": "ロック中",
     "permissionDenied": "このオブジェクトは編集できません。",
