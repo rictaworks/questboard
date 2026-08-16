@@ -55,6 +55,11 @@ export interface BoardResyncRequired {
   resyncRequired: true;
 }
 
+export interface BoardResyncState {
+  pendingOps: BoardRealtimeOp[];
+  resyncingObjects: Set<string>;
+}
+
 export function readRealtimeSettings() {
   const syncServerUrl = process.env.NEXT_PUBLIC_SYNC_SERVER_URL;
 
@@ -210,6 +215,35 @@ export function isNewerRealtimeOp(candidate: BoardRealtimeOp, current: BoardReal
   }
 
   return candidate.clientId < current.clientId;
+}
+
+export function markResyncRequired(state: BoardResyncState, objectId: string): BoardResyncState {
+  return {
+    pendingOps: state.pendingOps.map((pending) => (
+      pending.objectId === objectId
+        ? {...pending, resyncFailed: true}
+        : pending
+    )),
+    resyncingObjects: new Set(state.resyncingObjects).add(objectId),
+  };
+}
+
+export function settleResyncReload(
+  state: BoardResyncState,
+  coveredObjectIds: Set<string>
+): BoardResyncState & {shouldReloadAgain: boolean} {
+  const resyncingObjects = new Set(state.resyncingObjects);
+  coveredObjectIds.forEach((objectId) => {
+    resyncingObjects.delete(objectId);
+  });
+
+  return {
+    pendingOps: state.pendingOps.filter((pending) => (
+      !coveredObjectIds.has(pending.objectId) || pending.resyncFailed !== true
+    )),
+    resyncingObjects,
+    shouldReloadAgain: resyncingObjects.size > 0,
+  };
 }
 
 // ボード取得レスポンスの lamportTs までクライアントの Lamport カウンタを進める。

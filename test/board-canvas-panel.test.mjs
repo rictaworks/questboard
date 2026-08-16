@@ -17,3 +17,13 @@ test('restore toast uses an accessible confirmation flow instead of the F7 gate'
   assert.match(source, /restoreCancelAction/);
   assert.doesNotMatch(source, /\b(confirm|alert|prompt)\s*\(/);
 });
+
+test('board canvas panel keeps board reload and board switch safety guards in place', async () => {
+  const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
+  const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
+
+  assert.match(panelSource, /const coveredObjectIds = new Set\(resyncingObjectsRef\.current\);/);
+  assert.match(panelSource, /const nextState = settleResyncReload\(/);
+  assert.match(panelSource, /resyncTimerRef\.current = null;/);
+  assert.match(inviteSource, /key=\{boardData\.board\.shareToken\}/);
+});

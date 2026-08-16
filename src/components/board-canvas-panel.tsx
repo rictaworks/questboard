@@ -21,9 +21,11 @@ import {
   buildSyncWebSocketUrl,
   createPresenceValue,
   isNewerRealtimeOp,
+  markResyncRequired,
   parseRealtimeMessage,
   readRealtimeSettings,
   resumeLamportTs,
+  settleResyncReload,
   type BoardPresenceCursor,
   type BoardPresenceMessage,
   type BoardRealtimeOp,
@@ -813,11 +815,17 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
       .then(() => {
         if (disposedRef.current) return;
         inFlightReloadRef.current = false;
-        coveredObjectIds.forEach((objectId) => {
-          resyncingObjectsRef.current.delete(objectId);
-          prunePendingOps((pending) => pending.objectId === objectId && pending.resyncFailed === true);
-        });
-        if (resyncingObjectsRef.current.size > 0) {
+        const nextState = settleResyncReload(
+          {
+            pendingOps: pendingOpsRef.current,
+            resyncingObjects: resyncingObjectsRef.current,
+          },
+          coveredObjectIds
+        );
+        pendingOpsRef.current = nextState.pendingOps;
+        resyncingObjectsRef.current = nextState.resyncingObjects;
+        setPendingSyncCount(pendingOpsRef.current.length);
+        if (nextState.shouldReloadAgain) {
           reloadBoardRef.current();
         }
       })
@@ -830,7 +838,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
           reloadBoardRef.current(Math.min(delay * 2, 30000));
         }, delay);
       });
-  }, [onReloadBoard, prunePendingOps]);
+  }, [onReloadBoard]);
 
   useEffect(() => {
     reloadBoardRef.current = reloadBoardWithBackoff;
@@ -923,15 +931,16 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
            const resyncMessage = message as BoardResyncRequired;
            enqueueToast(resyncMessage.error);
 
-           // Mark all pending ops for this object as resyncFailed to prevent them from being resent
-           pendingOpsRef.current.forEach((pending) => {
-             if (pending.objectId === resyncMessage.objectId) {
-               pending.resyncFailed = true;
-             }
-           });
-
-           // Track the object and kick off the reload
-           resyncingObjectsRef.current.add(resyncMessage.objectId);
+           const nextState = markResyncRequired(
+             {
+               pendingOps: pendingOpsRef.current,
+               resyncingObjects: resyncingObjectsRef.current,
+             },
+             resyncMessage.objectId
+           );
+           pendingOpsRef.current = nextState.pendingOps;
+           resyncingObjectsRef.current = nextState.resyncingObjects;
+           setPendingSyncCount(pendingOpsRef.current.length);
            reloadBoardWithBackoff();
            return;
          }
@@ -1007,6 +1016,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
      disposedRef.current = true;
      if (reconnectTimerRef.current != null) {
        window.clearTimeout(reconnectTimerRef.current);
+       reconnectTimerRef.current = null;
      }
      if (resyncTimerRef.current != null) {
        window.clearTimeout(resyncTimerRef.current);
