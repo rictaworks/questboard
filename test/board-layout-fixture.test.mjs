@@ -103,7 +103,7 @@ async function openFixturePage(viewport) {
   const context = await browser.newContext({viewport, locale: 'ja-JP'});
   const page = await context.newPage();
   await page.goto(`${resolvedBaseUrl}${FIXTURE_PATH}`, {waitUntil: 'domcontentloaded'});
-  await page.locator('.board-join-success').waitFor();
+  await page.locator('.board-join-success').waitFor({state: 'attached'});
   await page.locator('.board-canvas-shell').waitFor();
   return {context, page};
 }

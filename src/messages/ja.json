@@ -133,6 +133,10 @@
     "connectionReconnecting": "ライブ同期を再接続中…",
     "connectionOffline": "ライブ同期はオフラインです",
     "queuedOps": "{count, plural, one {保留中の編集が#件あります} other {保留中の編集が#件あります}}",
+    "ownerRole": "オーナー",
+    "editorRole": "編集者",
+    "commenterRole": "コメント可",
+    "viewerRole": "閲覧者",
     "restoreAction": "復元",
     "restoreConfirmAction": "復元を確定",
     "restoreCancelAction": "キャンセル",
@@ -153,7 +157,9 @@
     "intensityLabel": "演出強度",
     "intensityFull": "フル",
     "intensitySubtle": "控えめ",
-    "intensityOff": "オフ"
+    "intensityOff": "オフ",
+    "unknownUser": "不明なユーザー",
+    "signOut": "ログアウト"
   },
   "NotFound": {
     "title": "ページが見つかりません",
@@ -169,6 +175,7 @@
     "commenter": "テスター {commentIndex}",
     "commentBody": "レイアウト確認コメント {commentIndex}。低いビューポートでも詳細ペインが内部スクロールするかを検証するためのダミーテキストです。",
     "dismiss": "×",
+    "userDisplayName": "テスター",
     "commentTime": "2026/08/13 12:{minute}",
     "badgeCount": "12",
     "minimapCount": "1"

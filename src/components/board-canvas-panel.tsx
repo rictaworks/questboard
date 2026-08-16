@@ -38,6 +38,7 @@ import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feed
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
 import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
 import {CanvasInputController, resolveHitTargetFromElement, type CanvasIntent} from '@/lib/input-intent-resolver';
+import BoardUserMenu from '@/components/board-user-menu';
 import {
   consumeGestureZoom,
   createGesturePanTracker,
@@ -108,7 +109,9 @@ export interface BoardCanvasData {
 
 type BoardCanvasPanelProps = {
   boardData: BoardCanvasData;
+  currentUserDisplayName: string;
   onReloadBoard: () => Promise<void>;
+  onSignOut: () => void;
   userXUserId: string;
 };
 
@@ -170,7 +173,13 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
 }
 
 
-export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}: BoardCanvasPanelProps) {
+export default function BoardCanvasPanel({
+  boardData,
+  currentUserDisplayName,
+  onReloadBoard,
+  onSignOut,
+  userXUserId
+}: BoardCanvasPanelProps) {
   const t = useTranslations('BoardCanvas');
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef(new CameraController(createCameraState()));
@@ -1396,6 +1405,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
 
   const minimap = resolveMinimapBounds(viewport);
   const viewportRect = resolveViewportRect(cameraState, viewport, contentBounds, minimap);
+  const resolvedDisplayName = currentUserDisplayName.trim() || t('unknownUser');
 
   return (
     <section className="board-canvas-shell">
@@ -1465,6 +1475,11 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
           <button className="button button-secondary" onClick={onReloadBoard} type="button">
             {t('refresh')}
           </button>
+          <BoardUserMenu
+            displayName={resolvedDisplayName}
+            onSignOut={onSignOut}
+            roleCode={roleCode}
+          />
         </div>
       </header>
 

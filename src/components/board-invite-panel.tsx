@@ -8,6 +8,7 @@ import {useTranslations} from 'next-intl';
 import AuthPanel from '@/components/auth-panel';
 import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-panel';
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
+import {resolveRoleLabelKey} from '@/lib/board-role-label';
 import {
   isPlanGated,
   MEMBER_PLAN_CODE,
@@ -70,21 +71,6 @@ export function isBoardNotFoundStatus(status: number) {
 // 呼び出し側でコードをそのまま表示する。既知のロールへ丸めてしまうと、
 // 実際とは違うロール名を見せることになり Issue #89 の目的（ロールの取り違えに
 // 気づけるようにする）に反する。
-export function resolveRoleLabelKey(roleCode: string): keyof BoardInviteTranslations | null {
-  switch (roleCode) {
-    case 'owner':
-      return 'ownerRole';
-    case 'editor':
-      return 'editorRole';
-    case 'commenter':
-      return 'commenterRole';
-    case 'viewer':
-      return 'viewerRole';
-    default:
-      return null;
-  }
-}
-
 export function BoardJoinSuccessBanner({
   description,
   dismissLabel,
@@ -101,6 +87,39 @@ export function BoardJoinSuccessBanner({
       <div className="board-join-success-body">
         <strong>{heading}</strong>
         <span>{description}</span>
+      </div>
+      <button
+        aria-label={dismissLabel}
+        className="board-join-success-dismiss"
+        onClick={onDismiss}
+        type="button"
+      >
+        <FontAwesomeIcon icon={faXmark} />
+      </button>
+    </div>
+  );
+}
+
+export function BoardErrorBanner({
+  message,
+  dismissLabel,
+  onDismiss
+}: {
+  message: string;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="board-join-success"
+      role="alert"
+      style={{
+        border: 'var(--border-width) solid rgba(239, 68, 68, 0.45)',
+        background: 'rgba(239, 68, 68, 0.14)'
+      }}
+    >
+      <div className="board-join-success-body">
+        <strong>{message}</strong>
       </div>
       <button
         aria-label={dismissLabel}
@@ -143,6 +162,8 @@ export function createMembershipBannerContent(
     heading: t(notice.kind === 'existing' ? 'existingMembershipHeading' : 'successHeading')
   };
 }
+
+export {resolveRoleLabelKey};
 
 export function BoardInviteContent({
   boardNotFound,
@@ -445,6 +466,24 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     }
   }
 
+  async function handleSignOut() {
+    try {
+      const {backendUrl} = readXAuthSettings();
+      const response = await fetch(`${backendUrl}/session`, {
+        credentials: 'include',
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error(authT('signOutError'));
+      }
+
+      window.location.reload();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : authT('signOutError'));
+    }
+  }
+
   if (loading) {
     return (
       <section className="board-panel" aria-live="polite">
@@ -484,21 +523,35 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
   if (boardData) {
     const bannerContent = membershipNotice ? createMembershipBannerContent(membershipNotice, t) : null;
+    const hasNotifications = !!bannerContent || !!errorMessage;
 
     return (
       <>
-        {bannerContent ? (
-          <BoardJoinSuccessBanner
-            description={bannerContent.description}
-            dismissLabel={bannerContent.dismissLabel}
-            heading={bannerContent.heading}
-            onDismiss={() => setMembershipNotice(null)}
-          />
+        {hasNotifications ? (
+          <div className="board-notifications" style={{ display: 'grid', gap: 'var(--space-2)' }}>
+            {bannerContent ? (
+              <BoardJoinSuccessBanner
+                description={bannerContent.description}
+                dismissLabel={bannerContent.dismissLabel}
+                heading={bannerContent.heading}
+                onDismiss={() => setMembershipNotice(null)}
+              />
+            ) : null}
+            {errorMessage ? (
+              <BoardErrorBanner
+                message={errorMessage}
+                dismissLabel={t('successDismiss')}
+                onDismiss={() => setErrorMessage(null)}
+              />
+            ) : null}
+          </div>
         ) : null}
         <BoardCanvasPanel
           boardData={boardData}
+          currentUserDisplayName={sessionState.displayName ?? authT('unknownUser')}
           key={boardData.board.shareToken}
           onReloadBoard={reloadBoard}
+          onSignOut={() => void handleSignOut()}
           userXUserId={sessionState.xUserId ?? 'development-x-user-id'}
         />
       </>

@@ -187,6 +187,11 @@ test('restore toast actions maintain keyboard focus during toggle', async () => 
     }
 
     await page.locator('.board-canvas-shell').waitFor();
+    const userMenu = page.locator('.board-user-menu-trigger');
+    await userMenu.waitFor();
+    await userMenu.click();
+    await page.locator('.board-user-menu-panel').waitFor();
+    await page.getByRole('button', {name: 'ログアウト'}).waitFor();
 
     // オブジェクト（付箋）を選択する
     const sticky = page.locator('.board-object');
