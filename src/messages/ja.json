@@ -158,6 +158,7 @@
     "intensityFull": "フル",
     "intensitySubtle": "控えめ",
     "intensityOff": "オフ",
+    "unknownUser": "不明なユーザー",
     "signOut": "ログアウト"
   },
   "NotFound": {

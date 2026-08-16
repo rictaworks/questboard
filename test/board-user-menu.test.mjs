@@ -93,3 +93,20 @@ test('board user menu falls back to the unknown user label and a fallback initia
   assert.match(markup, /閲覧者/);
   assert.match(markup, />不<\/span>/);
 });
+
+// 上記2件のテストは useTranslations を独自辞書でモックしているため、
+// t('unknownUser') が実際の ja.json に存在しなくてもテスト自体は通ってしまう。
+// board-user-menu.tsx / board-canvas-panel.tsx が useTranslations('BoardCanvas')
+// 経由で呼ぶキーが、実物の ja.json の BoardCanvas 名前空間に存在することを
+// 別途検証する。存在しないキーは next-intl の既定フォールバックで
+// "BoardCanvas.unknownUser" のようなキーパスをそのまま画面に出してしまい、
+// 画面を見るまで気づけない（フォールバック処理の禁止＝CLAUDE.md）。
+test('BoardCanvas namespace in ja.json defines every key board-user-menu.tsx reads', async () => {
+  const messages = JSON.parse(await readFile(path.join(root, 'src/messages/ja.json'), 'utf8'));
+  const boardCanvas = messages.BoardCanvas;
+
+  assert.ok(boardCanvas, 'BoardCanvas namespace missing from ja.json');
+  for (const key of ['unknownUser', 'signOut', 'ownerRole', 'editorRole', 'commenterRole', 'viewerRole']) {
+    assert.equal(typeof boardCanvas[key], 'string', `BoardCanvas.${key} missing from ja.json`);
+  }
+});
