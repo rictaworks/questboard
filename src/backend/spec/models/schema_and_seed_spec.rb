@@ -85,13 +85,23 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(connection.columns("object_ops").find { |c| c.name == "user_id" }.null).to be(true)
     expect(connection.columns("kpi_events").find { |c| c.name == "user_id" }.null).to be(true)
 
-    expect(connection.foreign_keys("board_members").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
-    expect(connection.foreign_keys("comments").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
-    expect(connection.foreign_keys("frame_locks").find { |fk| fk.to_table == "users" && fk.options[:column].to_s == "locked_by" }.on_delete.to_s).to eq("cascade")
-    expect(connection.foreign_keys("kpi_events").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("nullify")
-    expect(connection.foreign_keys("object_ops").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("nullify")
-    expect(connection.foreign_keys("user_quests").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
-    expect(connection.foreign_keys("user_settings").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
+    board_members_user_fk = connection.foreign_keys("board_members").find { |fk| fk.to_table == "users" }
+    comments_user_fk = connection.foreign_keys("comments").find { |fk| fk.to_table == "users" }
+    frame_locks_user_fk = connection.foreign_keys("frame_locks").find do |fk|
+      fk.to_table == "users" && fk.options[:column].to_s == "locked_by"
+    end
+    kpi_events_user_fk = connection.foreign_keys("kpi_events").find { |fk| fk.to_table == "users" }
+    object_ops_user_fk = connection.foreign_keys("object_ops").find { |fk| fk.to_table == "users" }
+    user_quests_user_fk = connection.foreign_keys("user_quests").find { |fk| fk.to_table == "users" }
+    user_settings_user_fk = connection.foreign_keys("user_settings").find { |fk| fk.to_table == "users" }
+
+    expect(board_members_user_fk.on_delete.to_s).to eq("cascade")
+    expect(comments_user_fk.on_delete.to_s).to eq("cascade")
+    expect(frame_locks_user_fk.on_delete.to_s).to eq("cascade")
+    expect(kpi_events_user_fk.on_delete.to_s).to eq("nullify")
+    expect(object_ops_user_fk.on_delete.to_s).to eq("nullify")
+    expect(user_quests_user_fk.on_delete.to_s).to eq("cascade")
+    expect(user_settings_user_fk.on_delete.to_s).to eq("cascade")
 
     # schema.rb は t.jsonb 呼び出しのまま維持すること。db:schema:load で復元した DB と
     # マイグレーション適用後の DB が同じ型定義になるよう、PostgreSQL の表記を直接守る。

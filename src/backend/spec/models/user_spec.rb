@@ -26,7 +26,11 @@ RSpec.describe User, type: :model do
       role = Role.find_or_create_by!(code: "viewer")
       object_type = ObjectType.find_or_create_by!(code: "sticky")
       color = ColorPalette.find_or_create_by!(hex: "#111111")
-      quest = Quest.find_or_create_by!(title: "delete-policy-quest", condition_event: "comment_created", condition_count: 1)
+      quest = Quest.find_or_create_by!(
+        title: "delete-policy-quest",
+        condition_event: "comment_created",
+        condition_count: 1
+      )
       intensity = IntensityMaster.find_or_create_by!(code: "full")
       effect = EffectMaster.find_or_create_by!(code: "delete_policy_effect", duration_ms: 1000)
       event_def = EventDef.find_or_create_by!(code: "delete_policy_event", effect_id: effect.id)
@@ -43,7 +47,15 @@ RSpec.describe User, type: :model do
       FrameLock.create!(board_object:, locked_by_user: user, locked_at: Time.current)
       UserQuest.create!(user:, quest:)
       UserSetting.create!(user:, intensity_master: intensity)
-      ObjectOp.create!(board:, board_object:, user:, property: "geometry", value: {}, lamport_ts: 1, client_id: "delete-policy")
+      ObjectOp.create!(
+        board:,
+        board_object:,
+        user:,
+        property: "geometry",
+        value: {},
+        lamport_ts: 1,
+        client_id: "delete-policy"
+      )
       KpiEvent.create!(event_def:, user:, board:, occurred_at: Time.current)
 
       expect { user.destroy! }.to change(BoardMember, :count).by(-1)
