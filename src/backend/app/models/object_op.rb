@@ -3,7 +3,7 @@ class ObjectOp < ApplicationRecord
 
   belongs_to :board
   belongs_to :board_object, class_name: "BoardObject", foreign_key: :object_id, inverse_of: false
-  belongs_to :user
+  belongs_to :user, optional: true
 
   validates :property, presence: true
   validates :client_id, presence: true
