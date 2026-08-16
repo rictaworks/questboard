@@ -24,6 +24,15 @@ test('board canvas panel keeps board reload and board switch safety guards in pl
 
   assert.match(panelSource, /const coveredObjectIds = new Set\(resyncingObjectsRef\.current\);/);
   assert.match(panelSource, /const nextState = settleResyncReload\(/);
-  assert.match(panelSource, /resyncTimerRef\.current = null;/);
+  // retry timer 待機中に effect が再実行されても再同期が永久ブロックされないよう、
+  // WS再接続のクリーンアップで reconnectTimerRef を確実に null に戻す（resyncTimerRef の
+  // クリーンアップと対になっている）ことを検証する。`reconnectTimerRef.current = null;`
+  // という文字列単体は connectSocket 内（本PR以前から存在）にも出現するため、
+  // クリーンアップブロックの構造（clearTimeout+nullが2つ連続する箇所）ごとマッチさせ、
+  // このPRで追加された行が消えても検出できるようにしている。
+  assert.match(
+    panelSource,
+    /if \(reconnectTimerRef\.current != null\) \{\s*window\.clearTimeout\(reconnectTimerRef\.current\);\s*reconnectTimerRef\.current = null;\s*\}\s*if \(resyncTimerRef\.current != null\) \{\s*window\.clearTimeout\(resyncTimerRef\.current\);\s*resyncTimerRef\.current = null;\s*\}/
+  );
   assert.match(inviteSource, /key=\{boardData\.board\.shareToken\}/);
 });
