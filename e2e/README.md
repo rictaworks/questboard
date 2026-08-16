@@ -5,6 +5,7 @@ questboard の全マージ済みPRのユーザーテスト手順をPR本文か�
 実施結果のレポート:
 
 - [manual-user-test-report_20260803.md](./manual-user-test-report_20260803.md) — 本番環境での実施結果（2026-08-03）
+- [manual-user-test-report_20260816.md](./manual-user-test-report_20260816.md) — 本番環境での実施結果（2026-08-16）
 
 | PR | タイトル | 手順 |
 |---|---|---|
