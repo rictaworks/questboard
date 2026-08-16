@@ -162,7 +162,7 @@ RSpec.describe "Comments", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
-  it "allows commenters to mutate only their own comments while editors can manage all comments" do
+  it "allows commenters and editors to mutate only their own comments" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
 
@@ -183,6 +183,7 @@ RSpec.describe "Comments", type: :request do
     sign_in(editor)
     editor_comment = create_comment(share_token:, object_id:, body: "Editor body")
 
+    sign_in(commenter)
     patch "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", params: { body: "Updated own body" }, as: :json
     expect(response).to have_http_status(:ok)
     expect(JSON.parse(response.body).fetch("body")).to eq("Updated own body")
@@ -192,14 +193,24 @@ RSpec.describe "Comments", type: :request do
     expect(response).to have_http_status(:forbidden)
 
     sign_in(editor)
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: { body: "Updated editor body" }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("body")).to eq("Updated editor body")
+
+    sign_in(editor)
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(Comment.find_by(id: own_comment.fetch("id"))).to be_present
+
+    sign_in(commenter)
     delete "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", as: :json
     expect(response).to have_http_status(:no_content)
     expect(Comment.find_by(id: own_comment.fetch("id"))).to be_nil
 
-    sign_in(commenter)
+    sign_in(editor)
     delete "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", as: :json
-    expect(response).to have_http_status(:forbidden)
-    expect(Comment.find_by(id: editor_comment.fetch("id"))).to be_present
+    expect(response).to have_http_status(:no_content)
+    expect(Comment.find_by(id: editor_comment.fetch("id"))).to be_nil
   end
 
   it "hides comment data from viewers" do

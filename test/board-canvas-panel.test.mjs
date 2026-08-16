@@ -22,6 +22,8 @@ test('board canvas panel keeps board reload and board switch safety guards in pl
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
   const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
 
+  assert.match(panelSource, /roleCode === 'owner' \|\| comment\.userId === currentUserId/);
+  assert.doesNotMatch(panelSource, /roleCode === 'editor'/);
   assert.match(panelSource, /const coveredObjectIds = new Set\(resyncingObjectsRef\.current\);/);
   assert.match(panelSource, /const nextState = settleResyncReload\(/);
   // retry timer 待機中に effect が再実行されても再同期が永久ブロックされないよう、

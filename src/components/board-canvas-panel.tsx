@@ -2091,7 +2091,7 @@ function BoardComments({
   }
 
   function canEditComment(comment: BoardCanvasComment) {
-    return roleCode === 'owner' || roleCode === 'editor' || (roleCode === 'commenter' && comment.userId === currentUserId);
+    return roleCode === 'owner' || comment.userId === currentUserId;
   }
 
   return (

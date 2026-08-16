@@ -174,7 +174,7 @@ class PermissionService
     return true if read_action?(action)
     return true if comment_view_action?(action)
     return true if comment_create_action?(action)
-    return true if comment_self_mutation_action?(action)
+    return true if comment_self_mutation_action?(action) && self_comment?(state)
     return true if share_action?(action)
     return true if lock_set_action?(action) && unlocked?(state)
     return true if lock_release_action?(action) && locked?(state) && lock_holder?(state) && direct_lock?(state)
