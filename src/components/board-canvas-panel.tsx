@@ -122,7 +122,8 @@ type ToastItem = {
   message: string;
   actionLabel?: string;
   actionDisabled?: boolean;
-  requiresRestoreGate?: boolean;
+  dismissAfterMs?: number;
+  requiresRestoreConfirmation?: boolean;
   onAction?: () => void;
 };
 
@@ -203,7 +204,7 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   const [syncStatus, setSyncStatus] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>('connecting');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [presenceEntries, setPresenceEntries] = useState<PresenceEntry[]>([]);
-  const [restoreGateOpen, setRestoreGateOpen] = useState(false);
+  const [pendingRestoreConfirmationToastId, setPendingRestoreConfirmationToastId] = useState<number | null>(null);
   const hasAppliedInitialCameraRef = useRef(false);
   const [intensity, setIntensity] = useState<FeedbackIntensityCode>(
     () => readIntensityFromStorage(`feedback_intensity:${userXUserId}`) ?? 'full'
@@ -619,34 +620,6 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
   }, []);
 
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'F7') {
-        setRestoreGateOpen(true);
-      }
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.key === 'F7') {
-        setRestoreGateOpen(false);
-      }
-    };
-
-    const handleBlur = () => {
-      setRestoreGateOpen(false);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('blur', handleBlur);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('blur', handleBlur);
-    };
-  }, []);
-
-  useEffect(() => {
     const interval = window.setInterval(() => {
       setPresenceEntries((current) => current.filter((entry) => Date.now() - entry.updatedAt < 5000));
     }, 1000);
@@ -661,7 +634,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
     setToasts((current) => [...current, {id, message, ...options}]);
     window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 4000);
+    }, options.dismissAfterMs ?? 4000);
+    return id;
   }, []);
 
   // スキップ／再開の失敗は握り潰さずトーストで通知する。onSettled 側で必ず
@@ -924,7 +898,8 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
                objectToLockState(restoreObject),
                currentUserId
              ),
-             requiresRestoreGate: true,
+             dismissAfterMs: 15000,
+             requiresRestoreConfirmation: true,
              onAction: () => restoreDeletedObject(Number(restoreMessage.objectId))
            });
            return;
@@ -1678,18 +1653,47 @@ export default function BoardCanvasPanel({boardData, onReloadBoard, userXUserId}
             <p>{toast.message}</p>
             {toast.onAction && toast.actionLabel ? (
               <div className="board-toast-actions">
-                <button
-                  className="button button-secondary"
-                  disabled={toast.actionDisabled || (toast.requiresRestoreGate === true && !restoreGateOpen)}
-                  onClick={() => {
-                    toast.onAction?.();
-                    setToasts((current) => current.filter((entry) => entry.id !== toast.id));
-                  }}
-                  type="button"
-                >
-                  {toast.actionLabel}
-                </button>
-                {toast.requiresRestoreGate ? <span className="board-toast-hint">{t('restoreGateHint')}</span> : null}
+                {toast.requiresRestoreConfirmation && pendingRestoreConfirmationToastId === toast.id ? (
+                  <>
+                    <button
+                      className="button button-primary"
+                      disabled={toast.actionDisabled}
+                      onClick={() => {
+                        toast.onAction?.();
+                        setPendingRestoreConfirmationToastId(null);
+                        setToasts((current) => current.filter((entry) => entry.id !== toast.id));
+                      }}
+                      type="button"
+                    >
+                      {t('restoreConfirmAction')}
+                    </button>
+                    <button
+                      className="button button-secondary"
+                      onClick={() => setPendingRestoreConfirmationToastId(null)}
+                      type="button"
+                    >
+                      {t('restoreCancelAction')}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    aria-expanded={toast.requiresRestoreConfirmation ? pendingRestoreConfirmationToastId === toast.id : undefined}
+                    className="button button-secondary"
+                    disabled={toast.actionDisabled}
+                    onClick={() => {
+                      if (toast.requiresRestoreConfirmation) {
+                        setPendingRestoreConfirmationToastId(toast.id);
+                        return;
+                      }
+
+                      toast.onAction?.();
+                      setToasts((current) => current.filter((entry) => entry.id !== toast.id));
+                    }}
+                    type="button"
+                  >
+                    {toast.actionLabel}
+                  </button>
+                )}
               </div>
             ) : null}
           </div>
