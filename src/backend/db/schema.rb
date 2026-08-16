@@ -10,14 +10,14 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_15_155900) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
   create_table "board_members", force: :cascade do |t|
     t.bigint "board_id", null: false
     t.integer "role_id", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.index ["board_id", "user_id"], name: "index_board_members_on_board_id_and_user_id", unique: true
     t.index ["role_id"], name: "index_board_members_on_role_id"
     t.index ["user_id"], name: "index_board_members_on_user_id"
@@ -42,7 +42,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_155900) do
     t.text "body", null: false
     t.datetime "created_at", null: false
     t.bigint "object_id", null: false
-    t.bigint "user_id", null: false
+    t.bigint "user_id"
     t.index ["object_id"], name: "index_comments_on_object_id"
     t.index ["user_id"], name: "index_comments_on_user_id"
   end
@@ -184,25 +184,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_15_155900) do
 
   add_foreign_key "board_members", "boards"
   add_foreign_key "board_members", "roles"
-  add_foreign_key "board_members", "users"
+  add_foreign_key "board_members", "users", on_delete: :cascade
   add_foreign_key "comments", "objects"
-  add_foreign_key "comments", "users"
+  add_foreign_key "comments", "users", on_delete: :cascade
   add_foreign_key "event_defs", "effect_masters", column: "effect_id"
   add_foreign_key "frame_locks", "objects"
-  add_foreign_key "frame_locks", "users", column: "locked_by"
+  add_foreign_key "frame_locks", "users", column: "locked_by", on_delete: :cascade
   add_foreign_key "kpi_events", "boards"
   add_foreign_key "kpi_events", "event_defs"
-  add_foreign_key "kpi_events", "users"
+  add_foreign_key "kpi_events", "users", on_delete: :nullify
   add_foreign_key "object_ops", "boards"
   add_foreign_key "object_ops", "objects"
-  add_foreign_key "object_ops", "users"
+  add_foreign_key "object_ops", "users", on_delete: :nullify
   add_foreign_key "objects", "boards"
   add_foreign_key "objects", "color_palettes", column: "color_id"
   add_foreign_key "objects", "object_types"
   add_foreign_key "objects", "objects", column: "parent_frame_id"
   add_foreign_key "user_quests", "quests"
-  add_foreign_key "user_quests", "users"
+  add_foreign_key "user_quests", "users", on_delete: :cascade
   add_foreign_key "user_settings", "intensity_masters", column: "intensity_id"
-  add_foreign_key "user_settings", "users"
+  add_foreign_key "user_settings", "users", on_delete: :cascade
   add_foreign_key "users", "plans"
 end

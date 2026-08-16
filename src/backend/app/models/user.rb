@@ -8,6 +8,10 @@ class User < ApplicationRecord
 
   has_many :user_quests, dependent: :destroy
   has_many :board_members, dependent: :destroy
+  has_many :comments, dependent: :destroy
+  has_many :frame_locks, foreign_key: :locked_by, dependent: :destroy
+  has_many :object_ops, dependent: :nullify
+  has_many :kpi_events, dependent: :nullify
   has_one :user_setting, foreign_key: :user_id, dependent: :destroy, inverse_of: :user
 
   def self.upsert_from_x_identity!(x_user_id:, display_name:, plan:)

@@ -1,6 +1,6 @@
 class KpiEvent < ApplicationRecord
   belongs_to :event_def
-  belongs_to :user
+  belongs_to :user, optional: true
   belongs_to :board
 
   after_commit :advance_user_quests, on: :create

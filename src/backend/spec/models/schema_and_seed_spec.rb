@@ -82,6 +82,16 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(connection.columns("objects").find { |c| c.name == "text_crdt" }.sql_type).to eq("jsonb")
     expect(connection.columns("object_ops").find { |c| c.name == "value" }.sql_type).to eq("jsonb")
     expect(connection.columns("kpi_events").find { |c| c.name == "props" }.sql_type).to eq("jsonb")
+    expect(connection.columns("object_ops").find { |c| c.name == "user_id" }.null).to be(true)
+    expect(connection.columns("kpi_events").find { |c| c.name == "user_id" }.null).to be(true)
+
+    expect(connection.foreign_keys("board_members").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
+    expect(connection.foreign_keys("comments").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
+    expect(connection.foreign_keys("frame_locks").find { |fk| fk.to_table == "users" && fk.options[:column].to_s == "locked_by" }.on_delete.to_s).to eq("cascade")
+    expect(connection.foreign_keys("kpi_events").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("nullify")
+    expect(connection.foreign_keys("object_ops").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("nullify")
+    expect(connection.foreign_keys("user_quests").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
+    expect(connection.foreign_keys("user_settings").find { |fk| fk.to_table == "users" }.on_delete.to_s).to eq("cascade")
 
     # schema.rb は t.jsonb 呼び出しのまま維持すること。db:schema:load で復元した DB と
     # マイグレーション適用後の DB が同じ型定義になるよう、PostgreSQL の表記を直接守る。
@@ -90,12 +100,17 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(schema_content).to match(/t\.jsonb "text_crdt"/)
     expect(schema_content).to match(/t\.jsonb "value"/)
     expect(schema_content).to match(/t\.jsonb "props"/)
+    expect(schema_content).to include('add_foreign_key "kpi_events", "users", on_delete: :nullify')
+    expect(schema_content).to include('add_foreign_key "object_ops", "users", on_delete: :nullify')
+    expect(schema_content).to include('add_foreign_key "comments", "users", on_delete: :cascade')
 
     migration_content = all_migrations_content
     expect(migration_content).to include("t.jsonb :geometry")
     expect(migration_content).to include("t.jsonb :text_crdt")
     expect(migration_content).to include("t.jsonb :value")
     expect(migration_content).to include("t.jsonb :props")
+    expect(migration_content).to include("on_delete: :cascade")
+    expect(migration_content).to include("on_delete: :nullify")
 
     board_member_indexes = connection.indexes("board_members")
     expect(board_member_indexes.any? { |index| index.unique && index.columns == %w[board_id user_id] }).to be(true)
