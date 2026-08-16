@@ -32,6 +32,20 @@ RSpec.describe "Admin users", type: :request do
     expect(response.body).to include(I18n.t("admin.users.create.params_missing"))
   end
 
+  it "toggles manual bypass without raising and shows the success flash" do
+    user = User.create!(x_user_id: "x-toggle-target", display_name: "Toggle Target")
+
+    patch toggle_bypass_admin_user_path(user), headers: admin_headers
+
+    expect(response).to redirect_to(admin_users_path)
+    expect(user.reload.is_manual_member).to be(true)
+
+    get admin_users_path, headers: admin_headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(I18n.t("admin.users.toggle_bypass.success"))
+  end
+
   private
 
   def admin_headers
