@@ -134,9 +134,10 @@ export default function BoardListPanel() {
       return;
     }
 
-    if (process.env.NEXT_PUBLIC_ENV === 'development') {
-      return;
-    }
+    // 開発環境でも実際にfetchする。auth-panel.tsx の isDev 分岐が establishDevSession
+    // で本物のセッションCookieを張るようになったため、ここをスキップすると
+    // 「ボードを作成しても一覧に反映されない」（board-created イベントで
+    // refreshCount が変わってもこのeffect自体が動かない）というバグになる。
 
     const abortController = new AbortController();
 

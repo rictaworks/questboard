@@ -125,3 +125,25 @@ func TestFromEnvRelaySettings(t *testing.T) {
 		t.Fatalf("FromEnv() RedisChannelPrefix = %q, want custom:sync", cfg.RedisChannelPrefix)
 	}
 }
+
+// CODESPACE_NAME / CODESPACES_FORWARDING_DOMAIN は、フロントの動的backend URL解決
+// （src/lib/backend-url.ts）・Railsの development_allowed_origins.rb と同じ変数名を
+// 使い回す。cmd/sync-server/main.go がこれを originmatch.DevelopmentPattern に渡す。
+func TestFromEnvCodespacesSettings(t *testing.T) {
+	t.Setenv("SYNC_SERVER_ENV", "development")
+	t.Setenv("CODESPACE_NAME", "curly-journey-gxq7gpgxwwj73j6w")
+	t.Setenv("CODESPACES_FORWARDING_DOMAIN", "app.github.dev")
+
+	cfg, err := config.FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v, want nil", err)
+	}
+
+	if cfg.CodespaceName != "curly-journey-gxq7gpgxwwj73j6w" {
+		t.Fatalf("FromEnv() CodespaceName = %q, want curly-journey-gxq7gpgxwwj73j6w", cfg.CodespaceName)
+	}
+
+	if cfg.CodespacesForwardingDomain != "app.github.dev" {
+		t.Fatalf("FromEnv() CodespacesForwardingDomain = %q, want app.github.dev", cfg.CodespacesForwardingDomain)
+	}
+}

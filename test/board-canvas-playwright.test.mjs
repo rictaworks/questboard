@@ -198,8 +198,9 @@ test('restore toast actions maintain keyboard focus during toggle', async () => 
     await sticky.waitFor();
     await sticky.click();
 
-    // 削除ボタンをクリックする
-    const deleteButton = page.locator('.board-canvas-toolbar button:has-text("削除")');
+    // 削除ボタンをクリックする（左ドックのレールボタンはアイコンのみで、
+    // aria-label で判別する。visible text は無い）
+    const deleteButton = page.locator('.board-canvas-create-rail button[aria-label="削除"]');
     await deleteButton.waitFor();
     await deleteButton.click();
 

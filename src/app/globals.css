@@ -37,8 +37,17 @@ body:has(.board-canvas-shell) {
   overflow: hidden;
 }
 
+/* ボード編集画面では、フッターを通常のページ下部バーから、右端のコマンドレールに
+   連なる最後のアイコンへ視覚的に統合する（issue #183）。フッター自体は
+   RootLayout に置いたままの共通コンポーネントなので、構造は変えずに配置だけを
+   ここで上書きする。space-4 が二重なのは、.home-shell の padding（外側）＋
+   .board-canvas-rail の inset（内側）の合計に合わせ、レールの右端と揃えるため。 */
 body:has(.board-canvas-shell) .site-footer {
-  padding: var(--space-2) var(--space-8);
+  position: fixed;
+  right: calc(var(--space-4) * 2);
+  bottom: calc(var(--space-4) * 2);
+  z-index: 6;
+  padding: 0;
 }
 
 .app-shell {
@@ -60,20 +69,20 @@ a {
 }
 
 .home-shell:has(.board-canvas-shell) {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--space-4);
   height: 100%;
   overflow: hidden;
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* .board-canvas-body / .board-stage の既定 min-height（下部）は :has() 非対応環境で
+/* .board-canvas-shell の既定 min-height（下部で定義）は :has() 非対応環境で
    キャンバスが0に潰れないための保険。ここは :has() 対応環境限定で、上の
    .home-shell の 100% 制約がグリッド行の高さを与えている前提のもとでのみ
-   0 へ上書きする。この上書きが効かない環境では既定の min-height が残る。 */
-.home-shell:has(.board-canvas-shell) .board-canvas-body {
-  min-height: 0;
-}
-
-.home-shell:has(.board-canvas-shell) .board-stage {
+   0 へ上書きする。この上書きが効かない環境では既定の min-height が残る（issue #109）。 */
+.home-shell:has(.board-canvas-shell) .board-canvas-shell {
   min-height: 0;
 }
 
@@ -142,9 +151,46 @@ a {
 .site-footer {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-4) var(--space-8) var(--space-6);
+  padding: var(--space-3) var(--space-4);
   border-top: var(--border-width) solid rgba(255, 255, 255, 0.12);
   color: var(--color-text-muted);
+}
+
+.site-footer-disclosure {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.site-footer-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  list-style: none;
+}
+
+.site-footer-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.site-footer-trigger::marker {
+  content: '';
+}
+
+.site-footer-panel {
+  gap: var(--space-2);
+  padding: var(--space-2) 0 0;
+}
+
+.site-footer-disclosure[open] > .site-footer-panel {
+  display: grid;
 }
 
 .site-footer-links {
@@ -399,39 +445,251 @@ a {
   align-content: center;
 }
 
+/* ── ボードキャンバス：コマンドレール型レイアウト（issue #183） ──
+   常設サイドバーを廃し、キャンバスを常に画面いっぱいに使う。ヘッダーは
+   キャンバスの上に浮かせて専用の行高さを取らず、クエスト／ミニマップ／詳細・
+   コメント／設定／ユーザーは右端の縦アイコンレールに集約する。選択中の
+   パネルだけがオーバーレイで開く（同時に開くのは1枚のみ）。 */
 .board-canvas-shell {
-  display: grid;
-  gap: var(--space-4);
+  position: relative;
   height: 100%;
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* :has() 非対応環境向けフォールバック。対応環境では直前の規則で 0 に上書きされ、
+     .home-shell 側の 100dvh 制約がこの要素の実高さを決める（issue #109 の踏襲）。 */
+  min-height: 36rem;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
 }
 
-.board-canvas-header {
+.board-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: rgba(10, 9, 32, 0.4);
+  touch-action: none;
+}
+
+/* タイトルバー。app-ui/ のモック（Questboard Prototype.dc.html）どおり、画面上部に
+   隙間なく全幅で固定する（height 64px 相当の単一バーが元デザイン仕様）。
+   以前はオブジェクト作成ボタンまで含めて横いっぱいのヘッダーにしていたため、
+   キャンバス上部の広い帯が丸ごとクリックを奪っていたが、ボタン群は
+   .board-canvas-create-rail（このバーとは独立）に分離したので、このバー自体は
+   戻る／タイトル／同期状態だけの薄い帯になり、同じ問題は再発しない。 */
+.board-canvas-title-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 4;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: var(--space-4);
-  align-items: start;
-}
-
-.board-canvas-kicker {
-  margin: 0 0 var(--space-2);
-  color: var(--color-purple-light);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-size: 0.78rem;
-}
-
-.board-canvas-header h1 {
-  margin: 0;
-}
-
-.board-canvas-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
   align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: var(--border-width) solid var(--border-default);
+  background: rgba(18, 19, 45, 0.78);
+  backdrop-filter: var(--blur-overlay);
+}
+
+.board-canvas-back-link {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  text-decoration: none;
+}
+
+.board-canvas-back-link:hover,
+.board-canvas-back-link:focus-visible {
+  color: var(--color-purple-light);
+}
+
+/* 見出しはロゴ・home-title と同じ表示書体（Cinzel）に揃える。以前はここだけ
+   本文書体のままで、画面内でいちばん重要な固有名詞（ボード名）が
+   周りのUI文言と見分けづらかった。 */
+.board-canvas-title-bar h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  overflow-wrap: break-word;
+}
+
+/* 全幅になった分、同期状態は右端に寄せる（左に戻るリンクとタイトル、
+   右に状態、という帯としての情報の置き場を作る）。 */
+.board-canvas-title-bar .board-sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* 接続状態を色相では表現しない（Velioraは紫単色の世界観で、赤・緑・黄は
+   置かない）。代わりに明るさと動きで読ませる：繋がっていれば静かに光り、
+   繋ぎ直している間だけ脈打ち、切れていれば沈む。テキストを読まなくても
+   一目で state が分かる、という情報だけを足す。 */
+.board-sync-status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 999px;
+  background: var(--color-purple-light);
+  box-shadow: 0 0 0.4rem var(--color-glow-text);
+}
+
+.board-sync-status-offline .board-sync-status-dot {
+  background: var(--color-muted);
+  box-shadow: none;
+}
+
+.board-sync-status-reconnecting .board-sync-status-dot,
+.board-sync-status-connecting .board-sync-status-dot {
+  animation: syncStatusPulse 1400ms ease-in-out infinite;
+}
+
+@keyframes syncStatusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* オブジェクト作成ボタン（sticky/shape/text/connector/image/frame）＋選択中は
+   複製・削除。右端のコマンドレールと同じ「アイコンだけの円形ボタン」の意匠
+   （.board-canvas-rail-button）を再利用し、左右対称にする。タイトルバーとは
+   独立に配置する（タイトルバーは全幅の帯として画面上部に固定されるが、この
+   レールはボタン群だけの縦の列としてタイトルバーの下に収まる）。
+   top: 4rem はタイトルバーの実測高さ（padding + 1行 + border、おおよそ
+   53px）に余白を足した固定値。app-ui/ のモックのバー高さ（64px）に合わせた。 */
+.board-canvas-create-rail {
+  position: absolute;
+  top: 4rem;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* 右端の縦アイコンレール。クエスト／ミニマップ／詳細・コメント／設定／ユーザーの
+   各トリガーをここに並べ、フッター（body:has(.board-canvas-shell) .site-footer）も
+   同じ右端の列の最下部に視覚的に連なる。 */
+.board-canvas-rail {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* .site-footer-trigger / .board-user-menu-trigger と同じ「アイコンだけの円形
+   トリガー」の意匠を流用し、レール全体で統一する。 */
+.board-canvas-rail-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  padding: 0;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+}
+
+.board-canvas-rail-button[aria-pressed='true'] {
+  border-color: var(--color-border-active);
+  background: rgba(123, 47, 255, 0.3);
+  box-shadow: var(--shadow-glow-sm);
+}
+
+.board-canvas-rail-badge {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.35rem;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--color-purple);
+  color: white;
+  font-size: 0.65rem;
+  line-height: 1.1rem;
+}
+
+/* パネルの共通オーバーレイ意匠。個別パネル（.board-quest-panel 等）の内側の
+   レイアウト・余白はそれぞれの規則に残し、ここでは位置・寸法・枠のみを持つ
+   （overflow は各パネル固有の規則に委ねる：.board-minimap は hidden、
+   .board-quest-panel / .board-details は auto）。右端の起点はヘッダーと同じ
+   計算式で、レールの手前に揃える。 */
+.board-canvas-panel-overlay {
+  position: absolute;
+  top: var(--space-4);
+  right: calc(var(--space-4) + 2.5rem + var(--space-3));
+  bottom: var(--space-4);
+  z-index: 5;
+  width: 22rem;
+  max-width: calc(100% - 2.5rem - var(--space-4) * 3);
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: rgba(18, 19, 45, 0.92);
+  backdrop-filter: var(--blur-overlay);
+  box-shadow: var(--shadow-glow-md);
+}
+
+.board-canvas-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+.board-canvas-settings-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.board-canvas-settings-row {
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* レール内ではアイコンだけの円形トリガーに揃え、他のレールボタンと寸法を統一する。
+   ポップオーバー（.board-user-menu-panel）はレール右端の外側に開くと画面外へ
+   はみ出すため、ここだけ左側（レールの内側）へ開く向きに上書きする。 */
+.board-canvas-rail .board-user-menu {
+  position: relative;
+  margin-left: 0;
+}
+
+.board-canvas-rail .board-user-menu-trigger {
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  gap: 0;
+}
+
+.board-canvas-rail .board-user-menu-chevron {
+  display: none;
+}
+
+.board-canvas-rail .board-user-menu-avatar {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.board-canvas-rail .board-user-menu-panel {
+  top: auto;
+  right: calc(100% + var(--space-2));
+  bottom: 0;
 }
 
 .board-user-menu {
@@ -470,28 +728,6 @@ a {
   border-radius: 999px;
   background: linear-gradient(135deg, rgba(123, 47, 255, 0.95), rgba(56, 189, 248, 0.92));
   color: white;
-  font-weight: 800;
-}
-
-.board-user-menu-copy {
-  display: grid;
-  min-width: 0;
-  text-align: left;
-}
-
-.board-user-menu-name {
-  max-width: 12rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.board-user-menu-role {
-  color: var(--color-text-muted);
-  font-size: 0.75rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .board-user-menu-chevron {
@@ -576,41 +812,6 @@ a {
   white-space: nowrap;
 }
 
-/* min-height: 36rem が既定。:has() 対応環境では上部の
-   .home-shell:has(.board-canvas-shell) .board-canvas-body が 0 へ上書きし、
-   100dvh 制約がグリッド行の高さを与える。:has() 非対応環境ではこの上書きが
-   効かないため、既定の 36rem が残ってレイアウトが潰れない（issue #109）。 */
-.board-canvas-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem;
-  gap: var(--space-4);
-  min-height: 36rem;
-}
-
-.board-stage,
-.board-sidebar,
-.board-minimap,
-.board-details {
-  border: var(--border-width) solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: rgba(18, 19, 45, 0.72);
-  backdrop-filter: var(--blur-overlay);
-  box-shadow: var(--shadow-glow-md);
-}
-
-/* .board-scene は position: absolute; inset: 0 なので、.board-stage 自体には内在高さがない。
-   min-height: 36rem が既定で、:has() 対応環境では上部の
-   .home-shell:has(.board-canvas-shell) .board-stage が 0 へ上書きする（100dvh 制約が
-   グリッド行の高さを与えている前提）。この上書きが効かない :has() 非対応環境や、
-   下部の max-width: 960px 分岐で制約を外す場合は、既定の 36rem が残る／戻る
-   ことでキャンバスが潰れない（issue #109）。 */
-.board-stage {
-  position: relative;
-  overflow: hidden;
-  min-height: 36rem;
-  touch-action: none;
-}
-
 .board-scene {
   position: absolute;
   inset: 0;
@@ -637,10 +838,20 @@ a {
   opacity: 0.85;
 }
 
+/* 以前は通常のフローに乗っていて、コンパクトな付箋では最初の1行を種別名が
+   占有し、書く／貼るためのスペースを圧迫していた。フローから外し、隅の
+   小さな透かしに変える（種別は作成時にレールで選んでいるので、常に大きく
+   見せる情報ではない。完全な文字列は title 属性に残す）。 */
 .board-object-label {
-  font-size: 0.78rem;
+  position: absolute;
+  top: 0.3rem;
+  right: 0.5rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .connector-line {
@@ -703,34 +914,21 @@ a {
   pointer-events: none;
 }
 
-/* 各パネルの min-height が積み上がってサイドバーに収まらなくなったときの受け皿。
-   パネル側の下限を優先し、あふれた分はサイドバーごとスクロールさせる。 */
-.board-sidebar {
-  display: grid;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  min-height: 0;
-  overflow: auto;
-}
-
-/* 下限を置かないと、低いビューポートで各パネルが 1 行分まで潰れる。
-   .home-shell が overflow: hidden なので、潰れた先に逃げ道が無くなる。
-   overscroll-behavior は指定しない：.board-stage はパネルの祖先ではなく兄弟なので
-   キャンバスへは元々連鎖せず、contain を付けるとパネル末端から .board-sidebar への
-   ホイール伝播まで止めてしまう。 */
+/* .board-canvas-panel-overlay が top/bottom で高さを確定させるため、
+   パネル自身は min-height を持たず overflow: auto だけで内部スクロールする。 */
 .board-details,
 .board-quest-panel {
   padding: var(--space-4);
-  min-height: 8rem;
   overflow: auto;
 }
 
+/* ミニマップだけは俯瞰性を優先し、盤面をスクロールさせずグリッド行の
+   minmax(0, 1fr) で使える高さいっぱいに収める。 */
 .board-minimap {
   padding: var(--space-4);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
-  min-height: 15rem; /* 通常表示の時だけ 15rem を指定し、中身の 10rem 固定高盤面がクリップされないようにする */
 }
 
 .board-minimap-header {
@@ -789,15 +987,14 @@ a {
   gap: var(--space-2);
 }
 
-/* 十分な縦幅がある通常表示では、俯瞰性を優先して固定下限の盤面を保つ。
-   aspect-ratio による可変化は、入れ子スクロールが実際に問題になる
-   低いビューポート（下の @media (max-height: 820px)）だけに限定する。
-   issue #111 の要求は「狭いビューポートでの発生ラインを下げる」ことであり、
-   広いビューポートの見た目を変えるのは要求範囲外（development-principles: 最小変更）。 */
+/* .board-canvas-panel-overlay の top/bottom がパネル高さをビューポート問わず
+   常に確定させるため、盤面は固定高やモバイル向け aspect-ratio 切り替えを持たず、
+   親グリッド行（minmax(0, 1fr)）いっぱいに広がるだけでよい（issue #183）。 */
 .board-minimap-surface {
   position: relative;
   width: 100%;
-  height: 10rem;
+  height: 100%;
+  min-height: 0;
   padding: 0;
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-md);
@@ -897,46 +1094,10 @@ a {
   outline-offset: 2px;
 }
 
-@media (max-height: 820px) {
-  .board-sidebar {
-    gap: var(--space-2);
-    padding: var(--space-2);
-  }
-
-  .board-minimap {
-    min-height: 5.5rem;
-  }
-
-  .board-details,
-  .board-quest-panel {
-    min-height: 5.5rem;
-  }
-
-  .board-minimap,
-  .board-details,
-  .board-quest-panel {
-    padding: var(--space-2) var(--space-4);
-  }
-
-  /* 低いビューポートでは固定下限 10rem がサイドバー全体の入れ子スクロールを
-     引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
-     .board-minimap は overflow: hidden かつ grid-template-rows の第2行が
-     minmax(0, 1fr) なので、盤面が利用可能な高さを超える場合はパネル内で
-     クリップされ、サイドバー側の二重スクロールへは連鎖しない。 */
-  .board-minimap-surface {
-    min-height: 0;
-    height: auto;
-    aspect-ratio: 5 / 1;
-  }
-
-  .board-user-menu-copy {
-    display: none;
-  }
-}
-
+/* トーストは右下のコマンドレール／フッターと競合しないよう、左下に置く。 */
 .board-toasts {
   position: fixed;
-  right: var(--space-4);
+  left: var(--space-4);
   bottom: var(--space-4);
   display: grid;
   gap: var(--space-2);
@@ -965,61 +1126,11 @@ a {
   align-items: center;
 }
 
-@media (max-width: 960px) {
-  body:has(.board-canvas-shell) {
-    height: auto;
-    min-height: auto;
-    overflow: visible;
-  }
-
-  .home-shell:has(.board-canvas-shell) {
-    height: auto;
-    overflow: visible;
-    grid-template-rows: auto;
-  }
-
-  /* メディアクエリは詳細度を上げない。バナー版（:has が 1 つ多く詳細度が高い）を
-     書き漏らすと、上の grid-template-rows: auto がトップレベルの
-     `auto minmax(0, 1fr)` に負けて効かなくなる。 */
-  .home-shell:has(.board-canvas-shell):has(.board-join-success) {
-    grid-template-rows: auto;
-  }
-
-  .board-canvas-shell {
-    height: auto;
-    min-height: auto;
-  }
-
-  /* 縦積みになるモバイルではサイドバー自体の高さ制約が無いため、
-     パネルは内容なりに伸ばす（内部スクロールを二重に作らない）。 */
-  .board-sidebar {
-    overflow: visible;
-  }
-
-  .board-minimap {
-    min-height: auto;
-  }
-
-  .board-minimap,
-  .board-details,
-  .board-quest-panel {
-    overflow: visible;
-  }
-
-  .board-minimap-surface {
-    min-height: 0;
-    height: auto;
-    aspect-ratio: 5 / 1;
-  }
-
-  .board-canvas-body {
-    grid-template-columns: 1fr;
-  }
-
-  .home-shell:has(.board-canvas-shell) .board-stage {
-    min-height: 36rem;
-  }
-}
+/* 常設サイドバーが無くなり、キャンバスは常に .board-canvas-shell いっぱいの
+   絶対配置で、パネルもオーバーレイの top/bottom 固定高さで開く。この構造は
+   ビューポート幅に依存しないため、モバイル専用に高さ制約を外したり
+   縦積みへ切り替えたりする分岐はもう必要ない（issue #183 で issue #94 / #109 /
+   #111 の対象だった縦積みレイアウト自体を廃止したため）。 */
 
 /* ── Quest Celebration Animation Overlay ── */
 .quest-celebration-overlay {

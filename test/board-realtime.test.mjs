@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
+import {createRequire} from 'node:module';
 import test from 'node:test';
 import * as ts from 'typescript';
 
@@ -10,23 +11,65 @@ async function read(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8');
 }
 
-async function loadBoardRealtimeModule() {
+async function loadBoardRealtimeModule(mocks = {}) {
   const source = await read('src/lib/board-realtime.ts');
   const {outputText} = ts.transpileModule(source, {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
   });
 
   const moduleShim = {exports: {}};
-  new Function('module', 'exports', outputText)(moduleShim, moduleShim.exports);
+  const require = createRequire(import.meta.url);
+  const mockRequire = (specifier) => (specifier in mocks ? mocks[specifier] : require(specifier));
+
+  new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, mockRequire);
   return moduleShim.exports;
 }
 
-const realtime = await loadBoardRealtimeModule();
+const realtime = await loadBoardRealtimeModule({
+  '@/lib/backend-url': {resolveBackendUrl: (configuredUrl) => configuredUrl}
+});
 
 test('buildSyncWebSocketUrl rewrites the protocol and adds the board id', () => {
   const url = realtime.buildSyncWebSocketUrl('https://sync.example.test', 'board-123');
 
   assert.equal(url, 'wss://sync.example.test/ws?boardId=board-123');
+});
+
+// readRealtimeSettings は NEXT_PUBLIC_SYNC_SERVER_URL を直接読まず、必ず resolveBackendUrl を
+// 経由すること。backendUrl（REST API）と同じくCodespacesの転送URL越しに開いたときの
+// 動的解決が効かなくなるため。トップレベルの恒等mockだと配線漏れを見逃すので、
+// 値を変換するmockで別途検証する。
+test('readRealtimeSettings routes syncServerUrl through resolveBackendUrl', async () => {
+  const realtimeWithTransform = await loadBoardRealtimeModule({
+    '@/lib/backend-url': {resolveBackendUrl: (configuredUrl) => `resolved:${configuredUrl}`}
+  });
+
+  const original = process.env.NEXT_PUBLIC_SYNC_SERVER_URL;
+  process.env.NEXT_PUBLIC_SYNC_SERVER_URL = 'ws://localhost:8080';
+
+  try {
+    assert.equal(
+      realtimeWithTransform.readRealtimeSettings().syncServerUrl,
+      'resolved:ws://localhost:8080'
+    );
+  } finally {
+    if (original === undefined) {
+      delete process.env.NEXT_PUBLIC_SYNC_SERVER_URL;
+    } else {
+      process.env.NEXT_PUBLIC_SYNC_SERVER_URL = original;
+    }
+  }
+});
+
+test('readRealtimeSettings throws when NEXT_PUBLIC_SYNC_SERVER_URL is unset', async () => {
+  const realtimeWithoutUrl = await loadBoardRealtimeModule({
+    '@/lib/backend-url': {resolveBackendUrl: () => undefined}
+  });
+
+  assert.throws(
+    () => realtimeWithoutUrl.readRealtimeSettings(),
+    /NEXT_PUBLIC_SYNC_SERVER_URL is required/
+  );
 });
 
 test('parseRealtimeMessage keeps presence display names and restore suggestions', () => {

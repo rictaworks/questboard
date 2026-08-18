@@ -8,14 +8,16 @@ import (
 )
 
 type Config struct {
-	Address            string
-	ShardCount         int
-	AllowedOrigins     []string
-	NodeID             string
-	RedisURL           string
-	RedisChannelPrefix string
-	Env                string
-	BackendURL         string
+	Address                    string
+	ShardCount                 int
+	AllowedOrigins             []string
+	NodeID                     string
+	RedisURL                   string
+	RedisChannelPrefix         string
+	Env                        string
+	BackendURL                 string
+	CodespaceName              string
+	CodespacesForwardingDomain string
 }
 
 // validEnvironments enumerates the only values SYNC_SERVER_ENV may take. Unknown values
@@ -60,6 +62,11 @@ func FromEnv() (Config, error) {
 		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
 		Env:                env,
 		BackendURL:         envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3000"),
+		// フロント（src/lib/backend-url.ts）・Rails（development_allowed_origins.rb）と
+		// 同じ変数名を使い回す。Codespaces自身がCODESPACE_NAMEを設定し、
+		// CODESPACES_FORWARDING_DOMAINは.envで明示する（本番には設定しない）。
+		CodespaceName:              strings.TrimSpace(os.Getenv("CODESPACE_NAME")),
+		CodespacesForwardingDomain: strings.TrimSpace(os.Getenv("CODESPACES_FORWARDING_DOMAIN")),
 	}, nil
 }
 

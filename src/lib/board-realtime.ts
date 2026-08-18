@@ -1,3 +1,5 @@
+import {resolveBackendUrl} from "@/lib/backend-url";
+
 export interface BoardCanvasObjectLike {
   id: number;
   geometry: {x: number; y: number; w: number; h: number; rotation: number};
@@ -61,7 +63,12 @@ export interface BoardResyncState {
 }
 
 export function readRealtimeSettings() {
-  const syncServerUrl = process.env.NEXT_PUBLIC_SYNC_SERVER_URL;
+  // backendUrl（REST API）と同じ問題：Codespacesの転送URL越しに実ブラウザで開くと
+  // ws://localhost:8080 は開発者の手元マシンを指してしまい繋がらない。resolveBackendUrl
+  // は本番では何もせず設定値をそのまま返すため、Sync-serverのURLにも安全に使い回せる
+  // （src/lib/backend-url.ts）。https/httpで返った結果はbuildSyncWebSocketUrlが
+  // wss/wsへ変換する。
+  const syncServerUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_SYNC_SERVER_URL);
 
   if (!syncServerUrl) {
     throw new Error('NEXT_PUBLIC_SYNC_SERVER_URL is required');

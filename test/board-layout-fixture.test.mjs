@@ -53,12 +53,18 @@ async function waitForServer(url) {
   throw new Error(`Playwright 対象サーバーが ${url} で応答しませんでした`);
 }
 
-async function startLocalDevServer() {
+// `next dev` ではなく `next start` を使う。このフィクスチャは右端のコマンドレール
+// （issue #183）をクリックしてパネルを開閉する実インタラクションに依存しており、
+// `next dev` の HMR 用 WebSocket 接続に失敗する環境（本サンドボックス含む）では
+// クライアント側のイベントハンドラが実質的に動かなくなる（クリックしても
+// onClick が一切発火しない）。board-canvas-playwright.test.mjs / legal-page.test.mjs
+// も同じ理由で `next start` を使っている。
+async function startLocalServer() {
   const port = await reserveFreePort();
   resolvedBaseUrl = `http://127.0.0.1:${port}`;
   const nextBin = path.join(root, 'node_modules/next/dist/bin/next');
 
-  server = spawn(process.execPath, [nextBin, 'dev', '-p', String(port)], {
+  server = spawn(process.execPath, [nextBin, 'start', '-p', String(port)], {
     cwd: root,
     env: {...process.env, NEXT_PUBLIC_ENV: 'development'},
     stdio: ['ignore', 'pipe', 'pipe']
@@ -80,7 +86,7 @@ async function startLocalDevServer() {
 
 before(async () => {
   if (!resolvedBaseUrl) {
-    await startLocalDevServer();
+    await startLocalServer();
   }
 
   await waitForServer(resolvedBaseUrl);
@@ -125,7 +131,14 @@ async function panelMetrics(page, selector) {
   }));
 }
 
-test('ボードレイアウトの実測でスクロール境界が保たれる', async () => {
+// 右端のコマンドレール（issue #183）はパネルを1枚だけ開く。計測対象のパネルを
+// 開いてから測る。
+async function openRailPanel(page, testId, panelSelector) {
+  await page.locator(`[data-testid="rail-${testId}"]`).click();
+  await page.locator(panelSelector).waitFor({state: 'visible'});
+}
+
+test('ボードレイアウトの実測でオーバーレイパネルのスクロール境界が保たれる', async () => {
   const {context, page} = await openFixturePage({width: 1280, height: 560});
 
   try {
@@ -133,65 +146,59 @@ test('ボードレイアウトの実測でスクロール境界が保たれる',
 
     for (const viewport of DESKTOP_VIEWPORTS) {
       const {innerHeight, scrollHeight} = await resizeAndMeasure(page, viewport);
+      const shellWidth = await page.locator('main.home-shell').evaluate((element) => element.getBoundingClientRect().width);
       assert.ok(
         scrollHeight <= innerHeight,
         `${viewport.width}×${viewport.height} でページ全体がスクロールしています（scrollHeight=${scrollHeight}, innerHeight=${innerHeight}）`
       );
+      assert.ok(
+        shellWidth >= viewport.width - 2,
+        `${viewport.width}×${viewport.height} で main.home-shell が横幅いっぱいに広がっていません（actual=${shellWidth}）`
+      );
     }
 
-    // 通常表示の時（1440x900）に、親パネル .board-minimap が 240px (15rem) 前後の高さを確保し、
-    // 盤面がクリップされないようにすることを確認する（ソース順依存による 8rem への意図しない縮小の防止）。
     await resizeAndMeasure(page, { width: 1440, height: 900 });
-    const minimapRect = await page.locator('.board-minimap').evaluate((element) => {
-      const rect = element.getBoundingClientRect();
-      return { width: rect.width, height: rect.height };
-    });
-    assert.ok(
-      Math.abs(minimapRect.height - 240) < 5,
-      `desktop minimap should maintain ~240px (15rem) height (actual height: ${minimapRect.height}px)`
-    );
 
+    await openRailPanel(page, 'quests', '.board-quest-panel');
     const questMetrics = await panelMetrics(page, '.board-quest-panel');
-    const detailsMetrics = await panelMetrics(page, '.board-details');
-
     assert.ok(
       questMetrics.scrollHeight > questMetrics.clientHeight,
       `quest panel should scroll (${JSON.stringify(questMetrics)})`
     );
+
+    await openRailPanel(page, 'details', '.board-details');
+    const detailsMetrics = await panelMetrics(page, '.board-details');
     assert.ok(
       detailsMetrics.scrollHeight > detailsMetrics.clientHeight,
       `details panel should scroll (${JSON.stringify(detailsMetrics)})`
     );
+
+    await openRailPanel(page, 'minimap', '.board-minimap');
     await resizeAndMeasure(page, NESTED_SCROLL_CHECK_VIEWPORT);
     const minimapMetrics = await panelMetrics(page, '.board-minimap');
-    const sidebarMetrics = await panelMetrics(page, '.board-sidebar');
     assert.ok(
       minimapMetrics.scrollHeight <= minimapMetrics.clientHeight,
       `minimap should not scroll (${JSON.stringify(minimapMetrics)})`
     );
-    assert.ok(
-      sidebarMetrics.scrollHeight <= sidebarMetrics.clientHeight,
-      `sidebar should not scroll at ${NESTED_SCROLL_CHECK_VIEWPORT.width}×${NESTED_SCROLL_CHECK_VIEWPORT.height} (${JSON.stringify(sidebarMetrics)})`
-    );
-
-    const {innerHeight: mobileInnerHeight, scrollHeight: mobileScrollHeight} = await resizeAndMeasure(page, MOBILE_VIEWPORT);
-    assert.ok(
-      mobileScrollHeight > mobileInnerHeight,
-      `mobile viewport should scroll (${mobileScrollHeight} <= ${mobileInnerHeight})`
-    );
-
-    const stageHeight = await page.locator('.board-stage').evaluate((element) => element.getBoundingClientRect().height);
-    assert.ok(stageHeight >= 576, `mobile stage should stay at least 36rem (${stageHeight})`);
-
+    // 盤面（.board-minimap-surface）は親パネルの利用可能な高さいっぱいに広がり、
+    // クリップされない（ソース順依存で 0 に潰れる回帰の防止）。
     const minimapSurfaceRect = await page.locator('.board-minimap-surface').evaluate((element) => {
       const rect = element.getBoundingClientRect();
       return { width: rect.width, height: rect.height };
     });
-    const ratio = minimapSurfaceRect.width / minimapSurfaceRect.height;
+    assert.ok(minimapSurfaceRect.height > 40, `minimap surface should have a real height (actual: ${minimapSurfaceRect.height}px)`);
+
+    // .board-canvas-shell は常設サイドバーを持たず絶対配置のキャンバスがビューポート
+    // いっぱいに広がるため、モバイル幅でもページ自体はスクロールしない（issue #183）。
+    const {innerHeight: mobileInnerHeight, scrollHeight: mobileScrollHeight} = await resizeAndMeasure(page, MOBILE_VIEWPORT);
     assert.ok(
-      Math.abs(ratio - 5) < 0.1,
-      `mobile minimap surface should maintain 5:1 aspect ratio (actual ratio: ${ratio})`
+      mobileScrollHeight <= mobileInnerHeight,
+      `mobile viewport should not scroll the page (scrollHeight=${mobileScrollHeight}, innerHeight=${mobileInnerHeight})`
     );
+
+    const stageRect = await page.locator('.board-stage').evaluate((element) => element.getBoundingClientRect());
+    assert.ok(stageRect.height > MOBILE_VIEWPORT.height * 0.5, `mobile stage should fill most of the viewport height (${stageRect.height})`);
+    assert.ok(stageRect.width > MOBILE_VIEWPORT.width * 0.5, `mobile stage should fill most of the viewport width (${stageRect.width})`);
   } finally {
     await context.close();
   }

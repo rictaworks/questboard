@@ -40,6 +40,11 @@ ja:
       # （内部のキー名が漏れる）ため、汎用の500文言にする。原因はログ（error.message）に残す。
       internal_server_error: "サーバーエラーが発生しました"
 
+    # 開発専用のセッション発行（app/controllers/dev/session_controller.rb）が
+    # find_or_create する固定ユーザーの表示名。
+    dev_session:
+      display_name: "開発ユーザー"
+
   # モデルをまたいで同じ意味で使う項目名。activerecord.attributes に無いときの既定として
   # 参照されるため、モデルごとに同じ和名を書き写さずに済む。
   attributes:

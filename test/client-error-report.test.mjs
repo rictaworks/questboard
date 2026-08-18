@@ -44,6 +44,9 @@ async function loadReporter({sendBeacon, fetchImpl, sentry}) {
     if (specifier === '@/lib/sentry-config') {
       return {sentryEnabled: () => sentry !== undefined};
     }
+    if (specifier === '@/lib/backend-url') {
+      return {resolveBackendUrl: (configuredUrl) => configuredUrl};
+    }
     if (specifier === '@sentry/nextjs') {
       return sentry;
     }

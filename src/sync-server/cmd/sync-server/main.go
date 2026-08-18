@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rictaworks/questboard/src/sync-server/internal/config"
+	"github.com/rictaworks/questboard/src/sync-server/internal/originmatch"
 	"github.com/rictaworks/questboard/src/sync-server/internal/server"
 	"github.com/rictaworks/questboard/src/sync-server/internal/sharding"
 	"github.com/rictaworks/questboard/src/sync-server/internal/ws"
@@ -45,6 +46,18 @@ func main() {
 	}
 
 	wsHandler := ws.NewHandler(router, cfg.AllowedOrigins)
+
+	if cfg.Env != "production" {
+		// フロント（src/lib/backend-url.ts）・Rails（development_allowed_origins.rb）と
+		// 同じ問題：Codespacesの転送URL越しに開いたフロントのOriginは、Sync-server自身の
+		// 転送ドメインとは別（ポートごとに別サブドメイン）なので、静的な許可リストにも
+		// 同一Hostフォールバックにも一致しない。
+		developmentPattern, err := originmatch.DevelopmentPattern(cfg.CodespaceName, cfg.CodespacesForwardingDomain)
+		if err != nil {
+			log.Fatal(err)
+		}
+		wsHandler.SetDevelopmentOriginPattern(developmentPattern)
+	}
 
 	if cfg.Env == "production" {
 		wsHandler.SetAuthenticator(ws.NewRailsAPIClient(cfg.BackendURL))

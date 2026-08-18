@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -363,18 +364,20 @@ func (errorStore) SaveConfirmedOp(context.Context, Op) (Op, bool, error) {
 }
 
 type Handler struct {
-	router          *sharding.Router
-	upgrader        websocket.Upgrader
-	originAllowed   func(*http.Request) bool
-	readLimit       int64
-	hub             *Hub
-	metrics         *Metrics
-	authenticator   Authenticator
-	authorizer      Authorizer
-	store           Store
-	relay           Relay
-	nodeID          string
-	presenceLimiter *RateLimiter
+	router                   *sharding.Router
+	upgrader                 websocket.Upgrader
+	originAllowed            func(*http.Request) bool
+	allowedOrigins           []string
+	developmentOriginPattern *regexp.Regexp
+	readLimit                int64
+	hub                      *Hub
+	metrics                  *Metrics
+	authenticator            Authenticator
+	authorizer               Authorizer
+	store                    Store
+	relay                    Relay
+	nodeID                   string
+	presenceLimiter          *RateLimiter
 
 	mu            sync.Mutex
 	closing       bool
@@ -385,13 +388,14 @@ type Handler struct {
 
 func NewHandler(router *sharding.Router, allowedOrigins []string) *Handler {
 	metrics := NewMetrics()
-	originChecker := newOriginChecker(allowedOrigins)
+	originChecker := newOriginChecker(allowedOrigins, nil)
 	return &Handler{
 		router: router,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: originChecker,
 		},
 		originAllowed:   originChecker,
+		allowedOrigins:  allowedOrigins,
 		readLimit:       MaxMessageSize,
 		hub:             NewHub(metrics),
 		metrics:         metrics,
@@ -425,6 +429,18 @@ func (h *Handler) SetStore(store Store) {
 
 func (h *Handler) SetRelay(relay Relay) {
 	h.relay = relay
+}
+
+// SetDevelopmentOriginPattern additionally allows origins matching pattern (typically the
+// current Codespace's forwarded-URL pattern from originmatch.DevelopmentPattern), on top of
+// whatever SYNC_SERVER_ALLOWED_ORIGINS / same-Host fallback already allow. Passing nil clears
+// it. Must be called before the handler starts accepting connections — like the other Set*
+// methods, it is not safe to call concurrently with ServeHTTP.
+func (h *Handler) SetDevelopmentOriginPattern(pattern *regexp.Regexp) {
+	h.developmentOriginPattern = pattern
+	originChecker := newOriginChecker(h.allowedOrigins, pattern)
+	h.upgrader.CheckOrigin = originChecker
+	h.originAllowed = originChecker
 }
 
 func (h *Handler) SetNodeID(nodeID string) {
@@ -975,7 +991,7 @@ func writeClose(conn *websocket.Conn, code int, text string) error {
 	return conn.WriteMessage(websocket.CloseMessage, message)
 }
 
-func newOriginChecker(allowedOrigins []string) func(*http.Request) bool {
+func newOriginChecker(allowedOrigins []string, developmentPattern *regexp.Regexp) func(*http.Request) bool {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
 	for _, origin := range allowedOrigins {
 		allowed[strings.ToLower(strings.TrimSpace(origin))] = struct{}{}
@@ -985,6 +1001,14 @@ func newOriginChecker(allowedOrigins []string) func(*http.Request) bool {
 		origin := strings.ToLower(strings.TrimSpace(request.Header.Get("Origin")))
 		if origin == "" {
 			return false
+		}
+
+		// SetDevelopmentOriginPattern 経由。Codespacesの転送URL越しに実ブラウザで
+		// 開いたフロントのOriginは、Sync-server自身の転送ドメインとは別
+		// （ポートごとに別サブドメイン）なので、下の静的許可リスト／同一Host
+		// フォールバックのどちらにも一致しない（originmatch パッケージ参照）。
+		if developmentPattern != nil && developmentPattern.MatchString(origin) {
+			return true
 		}
 
 		if len(allowed) > 0 {

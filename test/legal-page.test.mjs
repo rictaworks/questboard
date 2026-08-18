@@ -106,6 +106,16 @@ test('legal page renders the shared footer and policy links', async () => {
     await page.locator('main.legal-page').waitFor();
 
     const footer = page.locator('footer.site-footer');
+    const panel = footer.locator('.site-footer-panel');
+
+    // 初期状態では折りたたみパネルが非表示であることを検証
+    assert.equal(await panel.isVisible(), false, 'フッターパネルは初期状態で非表示であるべきです');
+
+    await footer.locator('summary.site-footer-trigger').click();
+    await panel.waitFor({ state: 'visible' });
+
+    // クリック後に折りたたみパネルが表示されることを検証
+    assert.equal(await panel.isVisible(), true, 'フッターパネルはクリック後に表示されるべきです');
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#privacy-policy"]').waitFor());
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#terms"]').waitFor());
     await assert.doesNotReject(async () => footer.locator('a[href="/legal#operator"]').waitFor());

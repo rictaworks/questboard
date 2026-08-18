@@ -54,7 +54,10 @@ async function loadModule() {
     }
 
     if (specifier === '@fortawesome/react-fontawesome') {
-      return {FontAwesomeIcon: () => null};
+      const React = require('react');
+      return {
+        FontAwesomeIcon: (props) => React.createElement('svg', props)
+      };
     }
 
     return require(specifier);
@@ -68,30 +71,35 @@ const {default: BoardUserMenu} = await loadModule();
 const {renderToStaticMarkup} = await import('react-dom/server');
 const React = await import('react');
 
-test('board user menu shows the current role, initials avatar, and logout action', () => {
+test('board user menu shows the current role, icon trigger, and logout action', () => {
   const markup = renderToStaticMarkup(React.createElement(BoardUserMenu, {
     displayName: 'Ada Lovelace',
     onSignOut: () => {},
     roleCode: 'owner'
   }));
+  const summaryMarkup = markup.match(/<summary[^>]*>([\s\S]*?)<\/summary>/)?.[1] ?? '';
 
   assert.match(markup, /Ada Lovelace/);
   assert.match(markup, /オーナー/);
-  assert.match(markup, /title="Ada Lovelace"/);
-  assert.match(markup, />A<\/span>/);
+  assert.match(markup, /aria-label="Ada Lovelace"/);
+  assert.match(summaryMarkup, /svg/);
+  assert.doesNotMatch(summaryMarkup, /Ada Lovelace/);
   assert.match(markup, /ログアウト/);
 });
 
-test('board user menu falls back to the unknown user label and a fallback initial', () => {
+test('board user menu falls back to the unknown user label and icon trigger', () => {
   const markup = renderToStaticMarkup(React.createElement(BoardUserMenu, {
     displayName: '   ',
     onSignOut: () => {},
     roleCode: 'viewer'
   }));
+  const summaryMarkup = markup.match(/<summary[^>]*>([\s\S]*?)<\/summary>/)?.[1] ?? '';
 
   assert.match(markup, /不明なユーザー/);
   assert.match(markup, /閲覧者/);
-  assert.match(markup, />不<\/span>/);
+  assert.match(markup, /aria-label="不明なユーザー"/);
+  assert.match(summaryMarkup, /svg/);
+  assert.doesNotMatch(summaryMarkup, /不明なユーザー/);
 });
 
 // 上記2件のテストは useTranslations を独自辞書でモックしているため、
