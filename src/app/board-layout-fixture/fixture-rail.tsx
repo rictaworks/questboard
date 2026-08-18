@@ -1,5 +1,10 @@
 "use client";
 
+// 【未使用】issue #192 のモック準拠再構築で右端コマンドレールが廃止されたため、
+// このフィクスチャ用レールはどこからも参照されていない。削除コマンドの実行は
+// 運用ルールで禁止されているため、このファイルは手動で削除（または DELETE/ へ
+// 移動）してください。
+
 import {faGear, faListCheck, faMap, faSliders} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useState, type ReactNode} from 'react';

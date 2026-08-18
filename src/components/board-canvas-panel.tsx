@@ -1,9 +1,8 @@
 "use client";
 
-import {faArrowLeft, faArrowRightLong, faClone, faComment, faFont, faGear, faImage, faListCheck, faLock, faMap, faNoteSticky, faPenToSquare, faPalette, faRotateRight, faShapes, faSliders, faStar, faTrashCan, faUnlock, faSquareFull, type IconDefinition} from '@fortawesome/free-solid-svg-icons';
+import {faComment, faCompress, faLock, faPenToSquare, faRotateRight, faStar, faXmark} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
-import Link from 'next/link';
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
 import {useTranslations} from 'next-intl';
 
@@ -39,6 +38,10 @@ import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feed
 import {fetchUserSettings, updateUserSettings} from '@/lib/user-settings-api';
 import {createSerialAsyncQueue} from '@/lib/serial-async-queue';
 import {CanvasInputController, resolveHitTargetFromElement, type CanvasIntent} from '@/lib/input-intent-resolver';
+import {buildRadialMenuItems, shouldShowLockedNote, type RadialMenuItem} from '@/lib/radial-menu';
+import BoardQuestSidebar from '@/components/board-quest-sidebar';
+import BoardRadialMenu from '@/components/board-radial-menu';
+import BoardTopBar from '@/components/board-top-bar';
 import BoardUserMenu from '@/components/board-user-menu';
 import {
   consumeGestureZoom,
@@ -65,11 +68,9 @@ import {
 } from '@/hooks/use-quests';
 import {QUEST_CELEBRATION_OVERLAY_MS} from '@/lib/quest-celebration';
 import {
-  countActiveQuests,
   createPlaceholderQuestSnapshots,
   isQuestPanelVisible,
-  isQuestSkippable,
-  questStateLabelKey
+  isQuestSkippable
 } from '@/lib/quest-engine';
 
 export interface BoardCanvasObject {
@@ -123,9 +124,22 @@ type Interaction =
   | {kind: 'marquee'; startX: number; startY: number; currentX: number; currentY: number}
   | null;
 
-// 右端のコマンドレール（issue #183）で開く1枚のオーバーレイパネル。
-// サイドバーは常設せず、選択中の1枚だけを開く。
-type ActivePanel = 'quests' | 'minimap' | 'details' | 'settings' | null;
+// モック準拠の再構築（issue #192）でオーバーレイパネルは詳細（色＋コメント）の
+// 1枚だけになった。クエストは常設サイドバー、ミニマップは右下固定、設定は
+// 上部バー（演出強度）へ移設済み。
+type ActivePanel = 'details' | null;
+
+// 右クリック／長押しで開くラジアルメニューの状態。項目列は開いた時点で確定させ、
+// 開いている間に同期で対象が変わっても表示が揺れないようにする。
+type RadialMenuState = {
+  x: number;
+  y: number;
+  worldX: number;
+  worldY: number;
+  targetObjectId: number | null;
+  items: RadialMenuItem[];
+  showLockedNote: boolean;
+};
 
 type ToastItem = {
   id: number;
@@ -177,21 +191,9 @@ function writeIntensityToStorage(storageKey: string, intensity: FeedbackIntensit
   }
 }
 
-// 左レールのオブジェクト作成ボタンはアイコンのみ（右レールの意匠に合わせる）。
-// boardState.objectTypes はバックエンドから来る動的な一覧なので、未知の code が
-// 来ても崩れないよう既定アイコン（faShapes）にフォールバックする。
-const OBJECT_TYPE_ICONS: Record<string, IconDefinition> = {
-  connector: faArrowRightLong,
-  frame: faSquareFull,
-  image: faImage,
-  shape: faShapes,
-  sticky: faNoteSticky,
-  text: faFont
-};
-
-// アイコンだけでは種別が判別できないため、aria-label/title は日本語ラベルにする。
-// オンボーディングクエスト（例:「付箋を3枚作る」）と同じ語を使い、
-// クエスト文言とレールのどのボタンが対応するか分かるようにする。
+// オブジェクト種別の日本語ラベル。オンボーディングクエスト（例:「付箋を3枚作る」）
+// と同じ語を使い、ラジアルメニュー・盤面ラベルのどれがどのクエストに対応するか
+// 分かるようにする（生の code は表示しない）。
 const OBJECT_TYPE_LABEL_KEYS: Record<string, string> = {
   connector: 'objectTypeConnector',
   frame: 'objectTypeFrame',
@@ -235,6 +237,13 @@ export default function BoardCanvasPanel({
   const [interaction, setInteraction] = useState<Interaction>(null);
   // 右端のコマンドレールで開いているオーバーレイパネル。同時に開くのは1枚のみ。
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [radialMenu, setRadialMenu] = useState<RadialMenuState | null>(null);
+  // クエストサイドバーはモック準拠で常時表示だが、たたむ操作だけは許す。
+  // たたんでいる間は上部バーの「クエスト」ボタンで再表示できる。
+  const [questSidebarCollapsed, setQuestSidebarCollapsed] = useState(false);
+  // ラジアル／ダブルクリックの intent は CanvasInputController（依存配列 [] の
+  // effect 内）から届くため、最新の state を参照できるよう ref 経由で受ける。
+  const uiIntentHandlerRef = useRef<(intent: CanvasIntent, event: Event) => void>(() => {});
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [boardState, setBoardState] = useState(boardData);
@@ -547,6 +556,15 @@ export default function BoardCanvasPanel({
 
     const controller = new CanvasInputController({
       onIntent(intent, event) {
+        // ラジアルメニュー（右クリック/長押し）と空白ダブルクリック作成は
+        // UI 層のハンドラへ委譲する（issue #192）。ref 経由なのは、この effect が
+        // 依存配列 [] でマウント時に固定されるのに対し、ハンドラ側は最新の
+        // role・カメラ・オブジェクト一覧を参照する必要があるため。
+        if (intent.kind === 'radial-menu' || intent.kind === 'create-note') {
+          uiIntentHandlerRef.current(intent, event);
+          return;
+        }
+
         if ((intent.kind === 'zoom' && intent.source === 'pinch') || (intent.kind === 'pan' && intent.source === 'touch')) {
           if (interactionRef.current) {
             interactionRef.current = null;
@@ -1346,7 +1364,9 @@ export default function BoardCanvasPanel({
     }
   }
 
-  async function createObject(objectTypeCode: string) {
+  // at を渡すとその world 座標を中心に作成する（ダブルクリック・ラジアルメニュー用）。
+  // 省略時は従来どおり画面中央付近の自動配置（resolveNewObjectGeometry）。
+  async function createObject(objectTypeCode: string, at?: {x: number; y: number}) {
     try {
       if (!canPerformBoardAction(roleCode, 'create', null, currentUserId)) {
         enqueueToast(t('permissionDenied'));
@@ -1354,11 +1374,19 @@ export default function BoardCanvasPanel({
       }
 
       const {backendUrl} = readXAuthSettings();
-      const nextGeometry = resolveNewObjectGeometry(
-        cameraStateRef.current,
-        viewport,
-        boardStateRef.current.objects.filter((object) => object.deletedAt == null)
-      );
+      const nextGeometry = at
+        ? {
+            x: Math.round(at.x - DEFAULT_OBJECT_SIZE.w / 2),
+            y: Math.round(at.y - DEFAULT_OBJECT_SIZE.h / 2),
+            w: DEFAULT_OBJECT_SIZE.w,
+            h: DEFAULT_OBJECT_SIZE.h,
+            rotation: 0,
+          }
+        : resolveNewObjectGeometry(
+            cameraStateRef.current,
+            viewport,
+            boardStateRef.current.objects.filter((object) => object.deletedAt == null)
+          );
 
       const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(boardState.board.shareToken)}/objects`, {
         body: JSON.stringify({object_type_code: objectTypeCode, geometry: nextGeometry}),
@@ -1383,22 +1411,125 @@ export default function BoardCanvasPanel({
     sendObjectRealtimeOp(object.id, 'color', {color_id: colorId});
   }
 
-  function duplicateSelection() {
-    const active = selectedObjects[0];
-    if (!active) {
+  // CanvasInputController から届く radial-menu / create-note intent の実処理。
+  // effect（依存配列 []）内のクロージャから最新の state を参照するため、
+  // uiIntentHandlerRef 経由で毎レンダー差し替える。
+  function handleUiIntent(intent: CanvasIntent, event: Event) {
+    if (intent.kind !== 'radial-menu' && intent.kind !== 'create-note') {
       return;
     }
 
-    void mutateLegacyObject(active.id, 'duplicate');
+    const pointer = event as MouseEvent;
+    const targetElement = event.target as Element | null;
+    // ミニマップ等のキャンバス上の UI 部品では作成もメニューも発動させない。
+    if (targetElement?.closest('button, a, [data-ui-chrome]')) {
+      return;
+    }
+
+    const stageRect = canvasRef.current?.getBoundingClientRect();
+    if (!stageRect) {
+      return;
+    }
+
+    const world = screenToWorld(pointer.clientX, pointer.clientY, stageRect, cameraStateRef.current, viewportRef.current);
+
+    if (intent.kind === 'create-note') {
+      // モック準拠：空白ダブルクリックは付箋を作る。権限が無ければトーストのみ。
+      if (!canCreateObject) {
+        enqueueToast(t('permissionDenied'));
+        return;
+      }
+
+      void createObject('sticky', world);
+      return;
+    }
+
+    const hit = resolveHitTargetFromElement(targetElement);
+    const objectId = hit.kind !== 'blank' && hit.objectId != null ? Number(hit.objectId) : null;
+    const object = objectId != null ? objectsRef.current.find((entry) => entry.id === objectId) ?? null : null;
+    const radialTarget = object
+      ? {
+          objectId: object.id,
+          locked: object.locked,
+          lockedByUserId: object.lockedByUserId,
+          lockOriginObjectId: object.lockOriginObjectId,
+        }
+      : null;
+    const menuInput = {
+      roleCode,
+      currentUserId,
+      target: radialTarget,
+      objectTypeCodes: boardStateRef.current.objectTypes.map((type) => type.code),
+    };
+    const items = buildRadialMenuItems(menuInput);
+
+    if (items.length === 0) {
+      enqueueToast(t('permissionDenied'));
+      return;
+    }
+
+    if (object) {
+      setSelection([object.id]);
+    }
+
+    setRadialMenu({
+      x: pointer.clientX,
+      y: pointer.clientY,
+      worldX: world.x,
+      worldY: world.y,
+      targetObjectId: object?.id ?? null,
+      items,
+      showLockedNote: shouldShowLockedNote(menuInput),
+    });
+    analyticsTrackerRef.current?.track({
+      eventId: 'radial_opened',
+      attributes: {source: intent.source}
+    });
   }
 
-  function deleteSelection() {
-    const active = selectedObjects[0];
-    if (!active) {
+  // レンダー中の ref 書き換えを避け、コミット後に最新のハンドラへ差し替える。
+  useEffect(() => {
+    uiIntentHandlerRef.current = handleUiIntent;
+  });
+
+  function handleRadialSelect(item: RadialMenuItem) {
+    const menu = radialMenu;
+    setRadialMenu(null);
+    if (!menu) {
       return;
     }
 
-    sendObjectRealtimeOp(active.id, 'deleted_at', {});
+    if (item.kind === 'create') {
+      void createObject(item.objectTypeCode, {x: menu.worldX, y: menu.worldY});
+      return;
+    }
+
+    const object = menu.targetObjectId != null
+      ? objects.find((entry) => entry.id === menu.targetObjectId) ?? null
+      : null;
+    if (!object) {
+      return;
+    }
+
+    switch (item.kind) {
+      case 'color':
+        changeColor(object, nextColorId(object, boardState.colorPalettes));
+        break;
+      case 'duplicate':
+        void mutateLegacyObject(object.id, 'duplicate');
+        break;
+      case 'lock':
+      case 'unlock':
+        toggleLock(object);
+        break;
+      case 'delete':
+        sendObjectRealtimeOp(object.id, 'deleted_at', {});
+        break;
+      case 'comment':
+        setSelection([object.id]);
+        setActivePanel('details');
+        break;
+    }
   }
 
   function toggleLock(object: BoardCanvasObject) {
@@ -1454,34 +1585,94 @@ export default function BoardCanvasPanel({
   const resolvedDisplayName = currentUserDisplayName.trim() || t('unknownUser');
 
   const questPanelVisible = isQuestPanelVisible(quests);
-  const activeQuestCount = countActiveQuests(quests);
+  const questSidebarVisible = questPanelVisible && !questSidebarCollapsed;
 
-  function toggleActivePanel(panel: ActivePanel) {
-    setActivePanel((current) => (current === panel ? null : panel));
+  // 上部バーの参加者アバター。自分を先頭に、presence で届いた参加者を並べる。
+  const participants = useMemo(
+    () => [
+      {key: 'self', displayName: resolvedDisplayName},
+      ...presenceEntries.map((entry) => ({key: entry.objectId, displayName: entry.displayName})),
+    ],
+    [presenceEntries, resolvedDisplayName]
+  );
+
+  // 演出強度の切替（旧・設定パネルから上部バーへ移設。永続化・KPI 送出は従来どおり）。
+  function applyIntensity(nextIntensity: FeedbackIntensityCode) {
+    hasAppliedServerIntensityRef.current = true;
+    setIntensity(nextIntensity);
+    writeIntensityToStorage(`feedback_intensity:${userXUserId}`, nextIntensity);
+    analyticsTrackerRef.current?.track({
+      eventId: 'intensity_changed',
+      attributes: {intensity: nextIntensity}
+    });
+    void queueUserSettingsUpdate(nextIntensity).catch((error) => {
+      enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
+    });
+  }
+
+  // モックの「すべてスキップ」。専用 API は作らず、既存のスキップ mutation を
+  // 進行中クエストへ順に適用する。
+  function handleSkipAllQuests() {
+    for (const quest of quests) {
+      if (isQuestSkippable(quest.state)) {
+        skipQuestMutation.mutate(quest.id);
+      }
+    }
   }
 
   return (
     <section className="board-canvas-shell">
-      <div className="board-stage" ref={canvasRef} style={{ touchAction: 'none' }}>
-        <div
-            aria-label={t('canvasLabel')}
-            className="board-scene"
-            onContextMenu={() => {
-              analyticsTrackerRef.current?.track({
-                eventId: 'radial_opened',
-                attributes: {
-                  source: 'contextmenu'
-                }
-              });
-            }}
-            onPointerDown={handleBackgroundPointerDown}
-            onPointerMove={handleScenePointerMove}
-            onPointerLeave={handleScenePointerLeave}
-            style={sceneStyle(cameraState, viewport)}
-          >
+      {/* モック（app-ui/Questboard Prototype.dc.html）準拠の上部バー（issue #192）。
+          ロゴ（ボード一覧への戻る導線を兼ねる）・タイトル・ロール表示・演出強度・
+          参加者アバター・同期状態・ユーザーメニューを横一列に集約する。 */}
+      <BoardTopBar
+        boardTitle={boardState.board.title}
+        intensity={intensity}
+        onIntensityChange={applyIntensity}
+        onReloadBoard={() => void onReloadBoard()}
+        onShowQuests={() => setQuestSidebarCollapsed(false)}
+        participants={participants}
+        pendingSyncCount={pendingSyncCount}
+        roleCode={roleCode}
+        showQuestButton={questPanelVisible && questSidebarCollapsed}
+        syncStatus={syncStatus}
+        userMenu={(
+          <BoardUserMenu
+            displayName={resolvedDisplayName}
+            onSignOut={onSignOut}
+            roleCode={roleCode}
+          />
+        )}
+      />
+      <div className="board-canvas-body">
+        {/* オンボーディングクエストはモック準拠の常設サイドバー。操作ヒント凡例も
+            ここに出す。全クエスト完了/スキップで自動的に消える（isQuestPanelVisible）。 */}
+        {questSidebarVisible ? (
+          <BoardQuestSidebar
+            hasSyncError={questsQuery.isError}
+            onCollapse={() => setQuestSidebarCollapsed(true)}
+            onReopen={(questId) => reopenQuestMutation.mutate(questId)}
+            onSkip={(questId) => skipQuestMutation.mutate(questId)}
+            onSkipAll={handleSkipAllQuests}
+            quests={quests}
+            reopenPending={reopenQuestMutation.isPending}
+            skipPending={skipQuestMutation.isPending}
+          />
+        ) : null}
+        <div className="board-stage-area">
+          <div className="board-stage" ref={canvasRef} style={{ touchAction: 'none' }}>
+            <div
+              aria-label={t('canvasLabel')}
+              className="board-scene"
+              onPointerDown={handleBackgroundPointerDown}
+              onPointerMove={handleScenePointerMove}
+              onPointerLeave={handleScenePointerLeave}
+              style={sceneStyle(cameraState, viewport)}
+            >
             {visibleObjects.map((object) => (
               <article
                 className={`board-object board-object-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''} ${object.locked && object.lockedByUserId !== currentUserId ? 'is-locked' : ''}`}
+                data-obj-id={object.id}
                 key={object.id}
                 style={{...objectStyle(object.geometry), ...objectColorStyle(boardState.colorPalettes, object.colorId)} as CSSProperties}
                 onPointerDown={(event) => handleObjectPointerDown(object, event)}
@@ -1502,46 +1693,29 @@ export default function BoardCanvasPanel({
                     <span>{object.lockedByUserId === currentUserId ? t('lockedByYou') : t('lockedByOther')}</span>
                   </span>
                 ) : null}
-                <button
-                  className="board-object-action board-object-action-rotate"
-                  disabled={!canPerformBoardAction(roleCode, 'rotate', objectToLockState(object), currentUserId)}
-                  onPointerDown={(event) => handleRotatePointerDown(object, event)}
-                  type="button"
-                >
-                  <FontAwesomeIcon icon={faRotateRight} />
-                </button>
-                <button
-                  className="board-object-action board-object-action-resize"
-                  disabled={!canPerformBoardAction(roleCode, 'resize', objectToLockState(object), currentUserId)}
-                  onPointerDown={(event) => handleResizePointerDown(object, event)}
-                  type="button"
-                >
-                  <FontAwesomeIcon icon={faPenToSquare} />
-                </button>
-                <button
-                  className="board-object-action board-object-action-color"
-                  disabled={!canPerformBoardAction(roleCode, 'recolor', objectToLockState(object), currentUserId)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    changeColor(object, nextColorId(object, boardState.colorPalettes));
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  type="button"
-                >
-                  <FontAwesomeIcon icon={faPalette} />
-                </button>
-                <button
-                  className="board-object-action board-object-action-lock"
-                  disabled={object.locked && object.lockOriginObjectId != null && object.lockOriginObjectId !== object.id}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    toggleLock(object);
-                  }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  type="button"
-                >
-                  <FontAwesomeIcon icon={object.locked ? faUnlock : faLock} />
-                </button>
+                {/* 色・ロックはラジアルメニューへ移設（issue #192）。オブジェクト上に
+                    残すのはドラッグ操作が必要な回転・リサイズのハンドルだけで、
+                    モックと同じく選択中のみ表示する。 */}
+                {selection.includes(object.id) ? (
+                  <>
+                    <button
+                      className="board-object-action board-object-action-rotate"
+                      disabled={!canPerformBoardAction(roleCode, 'rotate', objectToLockState(object), currentUserId)}
+                      onPointerDown={(event) => handleRotatePointerDown(object, event)}
+                      type="button"
+                    >
+                      <FontAwesomeIcon icon={faRotateRight} />
+                    </button>
+                    <button
+                      className="board-object-action board-object-action-resize"
+                      disabled={!canPerformBoardAction(roleCode, 'resize', objectToLockState(object), currentUserId)}
+                      onPointerDown={(event) => handleResizePointerDown(object, event)}
+                      type="button"
+                    >
+                      <FontAwesomeIcon icon={faPenToSquare} />
+                    </button>
+                  </>
+                ) : null}
               </article>
             ))}
             <div className="board-presence-layer" aria-hidden="true">
@@ -1562,189 +1736,65 @@ export default function BoardCanvasPanel({
             {interaction?.kind === 'marquee' ? (
               <div className="selection-marquee" style={selectionStyle(interaction, cameraState, viewport)} />
             ) : null}
+            </div>
           </div>
-      </div>
 
-      {/* タイトルバー。app-ui/ のモック（Questboard Prototype.dc.html）どおり画面上部に
-          隙間なく全幅で固定する。オブジェクト作成ボタンは独立した
-          .board-canvas-create-rail に分離しているので、以前の「横いっぱいの
-          ヘッダーがクリックを奪う」問題は再発しない。 */}
-      <header className="board-canvas-title-bar">
-        <Link aria-label={t('backToBoardList')} className="board-canvas-back-link" href="/" title={t('backToBoardList')}>
-          <FontAwesomeIcon icon={faArrowLeft} />
-        </Link>
-        <h1>{boardState.board.title}</h1>
-        <div className={`board-sync-status board-sync-status-${syncStatus}`} role="status">
-          <span className="board-sync-status-dot" />
-          <span>
-          {syncStatus === 'connected'
-            ? t('connectionConnected')
-            : syncStatus === 'offline'
-              ? t('connectionOffline')
-              : syncStatus === 'reconnecting'
-                ? t('connectionReconnecting')
-                : t('connectionConnecting')}
-          </span>
-          {pendingSyncCount > 0 ? <span>{t('queuedOps', {count: pendingSyncCount})}</span> : null}
+          {/* ミニマップはモック準拠でキャンバス右下に固定表示する（トグル廃止）。
+              data-ui-chrome はダブルクリック作成・ラジアルメニューの発動対象から
+              外すための目印（handleUiIntent が参照）。 */}
+          <div className="board-minimap-fixed" data-ui-chrome="true">
+            <div className="board-minimap-header">
+              <span aria-hidden="true" className="board-minimap-caption">{t('minimapCaption')}</span>
+              <button
+                aria-label={t('resetCamera')}
+                className="board-minimap-reset"
+                onClick={resetCamera}
+                title={t('resetCamera')}
+                type="button"
+              >
+                <FontAwesomeIcon icon={faCompress} />
+              </button>
+            </div>
+            <button aria-label={t('minimapHeading')} className="board-minimap-surface" onClick={focusMinimap} type="button">
+              {objects.map((object) => (
+                <div
+                  className={`board-minimap-dot board-minimap-dot-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''}`}
+                  key={object.id}
+                  style={minimapDotStyle(object.geometry, contentBounds, minimap)}
+                />
+              ))}
+              <div className="board-minimap-viewport" style={viewportRect} />
+            </button>
+          </div>
         </div>
-      </header>
-
-      {/* 左端の縦レール（オブジェクト作成＋選択中は複製・削除）。タイトルバーとは
-          独立に配置する。右端のコマンドレール（issue #183）と同じ「アイコンだけの
-          縦レール」意匠。 */}
-      <div className="board-canvas-create-rail">
-        {boardState.objectTypes.map((type) => {
-          const label = t(OBJECT_TYPE_LABEL_KEYS[type.code] ?? 'objectTypeShape');
-          return (
-            <button
-              aria-label={label}
-              className="board-canvas-rail-button"
-              disabled={!canCreateObject}
-              key={type.id}
-              onClick={() => void createObject(type.code)}
-              title={label}
-              type="button"
-            >
-              <FontAwesomeIcon icon={OBJECT_TYPE_ICONS[type.code] ?? faShapes} />
-            </button>
-          );
-        })}
-        {selectedObjects[0] ? (
-          <>
-            <button aria-label={t('duplicate')} className="board-canvas-rail-button" onClick={duplicateSelection} title={t('duplicate')} type="button">
-              <FontAwesomeIcon icon={faClone} />
-            </button>
-            <button aria-label={t('delete')} className="board-canvas-rail-button" onClick={deleteSelection} title={t('delete')} type="button">
-              <FontAwesomeIcon icon={faTrashCan} />
-            </button>
-          </>
-        ) : null}
       </div>
 
-      {/* 右端のコマンドレール（issue #183）。クエスト／ミニマップ／詳細・コメント／
-          設定／ユーザーの各トリガーを集約し、選択中の1枚だけをオーバーレイで開く。
-          フッターは RootLayout 側の共通コンポーネントのまま、CSS だけでこの列の
-          最下部に視覚的に連なる（globals.css の body:has(.board-canvas-shell) .site-footer）。 */}
-      <nav aria-label={t('heading')} className="board-canvas-rail">
-        {questPanelVisible ? (
-          <button
-            aria-label={t('questsToggle')}
-            aria-pressed={activePanel === 'quests'}
-            className="board-canvas-rail-button"
-            onClick={() => toggleActivePanel('quests')}
-            type="button"
-          >
-            <FontAwesomeIcon icon={faListCheck} />
-            {activeQuestCount > 0 ? <span className="board-canvas-rail-badge">{activeQuestCount}</span> : null}
-          </button>
-        ) : null}
-        <button
-          aria-label={t('minimapToggle')}
-          aria-pressed={activePanel === 'minimap'}
-          className="board-canvas-rail-button"
-          onClick={() => toggleActivePanel('minimap')}
-          type="button"
-        >
-          <FontAwesomeIcon icon={faMap} />
-        </button>
-        {selectedObject ? (
-          <button
-            aria-label={t('detailsToggle')}
-            aria-pressed={activePanel === 'details'}
-            className="board-canvas-rail-button"
-            onClick={() => toggleActivePanel('details')}
-            type="button"
-          >
-            <FontAwesomeIcon icon={faSliders} />
-          </button>
-        ) : null}
-        <button
-          aria-label={t('settingsToggle')}
-          aria-pressed={activePanel === 'settings'}
-          className="board-canvas-rail-button"
-          onClick={() => toggleActivePanel('settings')}
-          type="button"
-        >
-          <FontAwesomeIcon icon={faGear} />
-        </button>
-        <BoardUserMenu
-          displayName={resolvedDisplayName}
-          onSignOut={onSignOut}
-          roleCode={roleCode}
+      {radialMenu ? (
+        <BoardRadialMenu
+          items={radialMenu.items}
+          onClose={() => setRadialMenu(null)}
+          onSelect={handleRadialSelect}
+          showLockedNote={radialMenu.showLockedNote}
+          x={radialMenu.x}
+          y={radialMenu.y}
         />
-      </nav>
-
-      {activePanel === 'quests' && questPanelVisible ? (
-        <section className="board-canvas-panel-overlay board-quest-panel" aria-labelledby="quest-panel-heading" tabIndex={0}>
-          <div className="board-minimap-header">
-            <h2 id="quest-panel-heading">{t('questHeading')}</h2>
-            <span>{activeQuestCount}</span>
-          </div>
-          <p className="board-quest-copy">{t('questDescription')}</p>
-          {questsQuery.isError ? (
-            <p className="board-quest-error" role="alert">{t('questSyncError')}</p>
-          ) : null}
-          <ul className="board-quest-list">
-            {quests.map((quest) => (
-              <li className="board-quest-item" key={quest.id}>
-                <div className="board-quest-item-header">
-                  <strong>{quest.title}</strong>
-                  <span>{t(questStateLabelKey(quest.state) as never)}</span>
-                </div>
-                <p className="board-quest-progress">
-                  {t('questProgress', {current: quest.progress, total: quest.conditionCount})}
-                </p>
-                <div className="board-quest-actions">
-                  {isQuestSkippable(quest.state) ? (
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      disabled={skipQuestMutation.isPending}
-                      onClick={() => skipQuestMutation.mutate(quest.id)}
-                    >
-                      {t('questSkip')}
-                    </button>
-                  ) : null}
-                  {quest.state === 'skipped' ? (
-                    <button
-                      className="button button-secondary"
-                      type="button"
-                      disabled={reopenQuestMutation.isPending}
-                      onClick={() => reopenQuestMutation.mutate(quest.id)}
-                    >
-                      {t('questReopen')}
-                    </button>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {activePanel === 'minimap' ? (
-        <section className="board-canvas-panel-overlay board-minimap" aria-labelledby="minimap-heading" tabIndex={0}>
-          <div className="board-minimap-header">
-            <h2 id="minimap-heading">{t('minimapHeading')}</h2>
-            <span>{selectedObjects.length}</span>
-          </div>
-          <button className="board-minimap-surface" onClick={focusMinimap} type="button">
-            {objects.map((object) => (
-              <div
-                className={`board-minimap-dot board-minimap-dot-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''}`}
-                key={object.id}
-                style={minimapDotStyle(object.geometry, contentBounds, minimap)}
-              />
-            ))}
-            <div className="board-minimap-viewport" style={viewportRect} />
-          </button>
-        </section>
       ) : null}
 
       {activePanel === 'details' && selectedObject ? (
         <section className="board-canvas-panel-overlay board-details" aria-labelledby="details-heading" tabIndex={0}>
-          <h2 id="details-heading">{t('selectionHeading')}</h2>
-          <p>{selectedObject.objectTypeCode}</p>
+          <div className="board-details-header">
+            <h2 id="details-heading">{t('selectionHeading')}</h2>
+            <button
+              aria-label={t('detailsClose')}
+              className="board-details-close"
+              onClick={() => setActivePanel(null)}
+              title={t('detailsClose')}
+              type="button"
+            >
+              <FontAwesomeIcon icon={faXmark} />
+            </button>
+          </div>
+          <p>{t(OBJECT_TYPE_LABEL_KEYS[selectedObject.objectTypeCode] ?? 'objectTypeShape')}</p>
           <div className="board-color-grid">
             {boardState.colorPalettes.map((color) => (
               <button
@@ -1771,45 +1821,6 @@ export default function BoardCanvasPanel({
           ) : (
             <p className="board-comments-empty">{t('commentsHidden')}</p>
           )}
-        </section>
-      ) : null}
-
-      {activePanel === 'settings' ? (
-        <section className="board-canvas-panel-overlay board-canvas-settings-panel" aria-labelledby="settings-heading" tabIndex={0}>
-          <h2 id="settings-heading">{t('settingsHeading')}</h2>
-          <div className="board-canvas-settings-row">
-            <label htmlFor="intensity-select" className="sr-only">{t('intensityLabel')}</label>
-            <select
-              id="intensity-select"
-              className="button button-secondary"
-              value={intensity}
-              onChange={(e) => {
-                const nextIntensity = e.target.value as FeedbackIntensityCode;
-                hasAppliedServerIntensityRef.current = true;
-                setIntensity(nextIntensity);
-                writeIntensityToStorage(`feedback_intensity:${userXUserId}`, nextIntensity);
-                analyticsTrackerRef.current?.track({
-                  eventId: 'intensity_changed',
-                  attributes: { intensity: nextIntensity }
-                });
-                void queueUserSettingsUpdate(nextIntensity).catch((error) => {
-                  enqueueToast(error instanceof Error ? error.message : t('actionFailed'));
-                });
-              }}
-            >
-              <option value="full">{t('intensityFull')}</option>
-              <option value="subtle">{t('intensitySubtle')}</option>
-              <option value="off">{t('intensityOff')}</option>
-            </select>
-          </div>
-          <div className="board-canvas-settings-row">
-            <button className="button button-secondary" onClick={resetCamera} type="button">
-              {t('resetCamera')}
-            </button>
-            <button className="button button-secondary" onClick={onReloadBoard} type="button">
-              {t('refresh')}
-            </button>
-          </div>
         </section>
       ) : null}
 
