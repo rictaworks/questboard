@@ -10,12 +10,13 @@ import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
 import {resolveRoleLabelKey} from '@/lib/board-role-label';
 import {
-  establishDevSession,
+  ensureDevSession,
   isPlanGated,
   MEMBER_PLAN_CODE,
   requestManualRecheck,
   resolveFollowTargetHandle,
-  SessionExpiredError
+  SessionExpiredError,
+  waitForDevSession
 } from '@/lib/session-api';
 import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
@@ -232,6 +233,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       // （dev/session_controller.rb の DEV_USER_X_ID）に上書きされる。それまでの
       // 短い間もバックエンドの定数と同じ値にしておき、KPIイベントの
       // userId不一致（422）を起こさない。
+      // （コメント中の establishDevSession は共有Promise版 ensureDevSession 経由で呼ばれる）
       ? {
           authenticated: true,
           displayName: authT('developmentDisplayName'),
@@ -262,7 +264,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       // 得られず、クエスト進捗が記録されない。
       let cancelled = false;
 
-      void establishDevSession(authT('developmentSessionError'))
+      void ensureDevSession(authT('developmentSessionError'))
         .then((session) => {
           if (cancelled) {
             return;
@@ -388,6 +390,11 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
     void (async () => {
       try {
+        // issue #194: 共有リンクをCookie未保持のブラウザで直接開くと、devセッション確立と
+        // このボード取得が同時に走り、Cookie確立前の401でボードに到達できなかった。
+        // 開発環境では共有devセッションの確立完了を待ってから取得する（本番では何もしない）。
+        await waitForDevSession(authT('developmentSessionError'));
+
         const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/boards/${encodeURIComponent(shareToken)}`, {
           credentials: 'include',
@@ -437,7 +444,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
     return () => {
       abortController.abort();
     };
-  }, [authenticated, planGated, shareToken, t]);
+  }, [authenticated, planGated, shareToken, authT, t]);
 
   async function handleJoin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

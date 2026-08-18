@@ -24,7 +24,8 @@ async function loadModule(relativePath, mocks = {}) {
 }
 
 const sessionApi = await loadModule('src/lib/session-api.ts', {
-  '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+  '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})},
+  '@/lib/environment': {isDevelopmentEnvironment: () => true}
 });
 
 // フロントのゲート判定は、サーバーの ApplicationController#require_feature_plan!
@@ -166,6 +167,131 @@ test('establishDevSession throws the caller-provided message when the endpoint f
 
   try {
     await assert.rejects(() => sessionApi.establishDevSession('fallback'), /fallback/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// issue #194: 開発セッションの確立は AuthPanel・BoardInvitePanel など複数のコンポーネントが
+// マウント時に同時に必要とする。各自が establishDevSession を直接呼ぶと、POST /dev/session が
+// 複数飛ぶうえに、Cookie確立前に認証必須のfetch（/boards 等）が走って初回アクセスだけ
+// 401になるレースが起きる。確立は1回だけ・全員が同じ完了を待つことを固定する。
+test('ensureDevSession shares one in-flight establishment across concurrent callers', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})},
+    '@/lib/environment': {isDevelopmentEnvironment: () => true}
+  });
+
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {planCode: 'member'}})
+    });
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      api.ensureDevSession('fallback'),
+      api.ensureDevSession('fallback')
+    ]);
+    const third = await api.ensureDevSession('fallback');
+
+    assert.equal(calls, 1);
+    assert.equal(first.authenticated, true);
+    assert.equal(second.authenticated, true);
+    assert.equal(third.authenticated, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 失敗したPromiseを共有し続けると、一時的な接続断が「リロードするまで全パネル失敗」に
+// 固定される。失敗時は共有を破棄し、次の呼び出しで再確立を試みられることを固定する。
+test('ensureDevSession retries after a failed establishment instead of caching the failure', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})},
+    '@/lib/environment': {isDevelopmentEnvironment: () => true}
+  });
+
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ok: false, status: 500, json: () => Promise.resolve({})});
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {planCode: 'member'}})
+    });
+  };
+
+  try {
+    await assert.rejects(() => api.ensureDevSession('fallback'), /fallback/);
+
+    const session = await api.ensureDevSession('fallback');
+
+    assert.equal(calls, 2);
+    assert.equal(session.authenticated, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 本番には devセッションという概念自体が無い（POST /dev/session はルートごと存在しない）。
+// 順序ガードが本番で誤ってリクエストを発行しないことを固定する。
+test('waitForDevSession does nothing outside the development environment', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})},
+    '@/lib/environment': {isDevelopmentEnvironment: () => false}
+  });
+
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.resolve({ok: true, status: 201, json: () => Promise.resolve({authenticated: true})});
+  };
+
+  try {
+    await api.waitForDevSession('fallback');
+
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 開発環境では、認証必須のfetchの前に置いた waitForDevSession が devセッションの確立完了を
+// 待つ（＝確立のPOSTが実際に発行されてから解決する）ことを固定する。
+test('waitForDevSession establishes the shared dev session in development', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})},
+    '@/lib/environment': {isDevelopmentEnvironment: () => true}
+  });
+
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, init) => {
+    calls.push({url, init});
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {planCode: 'member'}})
+    });
+  };
+
+  try {
+    await api.waitForDevSession('fallback');
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `${BACKEND_URL}/dev/session`);
+    assert.equal(calls[0].init.method, 'POST');
   } finally {
     globalThis.fetch = originalFetch;
   }

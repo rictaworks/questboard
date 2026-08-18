@@ -45,7 +45,8 @@ async function loadModule() {
 
     if (specifier === '@/lib/session-api') {
       return {
-        establishDevSession: async () => ({authenticated: true, xUserId: 'dev-user'}),
+        ensureDevSession: async () => ({authenticated: true, xUserId: 'dev-user'}),
+        waitForDevSession: async () => {},
         isPlanGated: (session) => session?.planCode !== 'member',
         resolveFollowTargetHandle: () => ({errorMessage: null, followTargetHandle: 'rictaworks'}),
         requestManualRecheck: async () => ({authenticated: true}),
@@ -214,11 +215,34 @@ test('board error banner announces the error message with role="alert"', () => {
 // （'development-x-user-id'）を渡していたため、実際に発行される開発用セッション
 // （dev/session_controller.rb の DEV_USER_X_ID = 'dev-user'）と一致せず、
 // KPIイベント送信（AnalyticsTracker）が毎回 422 で拒否されていた
-// （オンボーディングクエストの進捗が記録されない不具合）。establishDevSession を
-// 実際に呼び、本物のセッションから得た xUserId を使うことを退行防止として固定する。
-test('development bypass establishes a real backend session and does not use the stale placeholder x user id', async () => {
+// （オンボーディングクエストの進捗が記録されない不具合）。共有Promise版の
+// ensureDevSession（issue #194）を実際に呼び、本物のセッションから得た xUserId を
+// 使うことを退行防止として固定する。
+test('development bypass establishes the shared real backend session and does not use the stale placeholder x user id', async () => {
   const source = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
 
-  assert.match(source, /establishDevSession/);
+  assert.match(source, /ensureDevSession/);
   assert.doesNotMatch(source, /development-x-user-id/, 'バックエンドの実際の値と一致しない固定プレースホルダーが残っている');
+});
+
+// issue #194: 共有リンク（/b/<token>）をセッションCookie未保持のブラウザで直接開くと、
+// devセッション確立（POST /dev/session）とボード取得（GET /boards/<token>）が同時に走り、
+// Cookie確立前の401でボードに到達できなかった。確立完了を待ってからfetchすることを固定する。
+test('board fetch waits for the shared dev session before requesting the board', async () => {
+  const source = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
+
+  const boardFetchEffect = source.match(
+    /useEffect\(\(\) => \{\s*\/\/[\s\S]*?if \(!authenticated \|\| planGated\)[\s\S]*?\}, \[authenticated, planGated, shareToken, authT, t\]\);/
+  );
+  assert.ok(boardFetchEffect, 'could not locate the board-fetching useEffect in board-invite-panel.tsx');
+
+  const waitIndex = boardFetchEffect[0].indexOf('await waitForDevSession(');
+  const fetchIndex = boardFetchEffect[0].indexOf('await fetch(');
+
+  assert.notEqual(waitIndex, -1, 'ボード取得の前に waitForDevSession で devセッション確立を待っていない');
+  assert.notEqual(fetchIndex, -1, 'could not locate the board fetch call in the effect');
+  assert.ok(
+    waitIndex < fetchIndex,
+    'waitForDevSession が fetch の後に置かれている。Cookie確立前に /boards/<token> が飛ぶレース（issue #194）が残る'
+  );
 });

@@ -1,3 +1,4 @@
+import {isDevelopmentEnvironment} from "@/lib/environment";
 import {readXAuthSettings} from "@/lib/x-auth";
 
 // 機能を利用できる唯一のプラン。サーバー側の
@@ -126,4 +127,35 @@ export async function establishDevSession(fallbackErrorMessage: string): Promise
   }
 
   return toSessionUser(await response.json() as SessionPayload);
+}
+
+// issue #194: 開発セッションの確立は AuthPanel・BoardInvitePanel など複数のコンポーネントが
+// マウント時に同時に必要とする。各自が establishDevSession を直接呼ぶと、POST /dev/session が
+// 複数飛ぶうえに、認証必須のfetch（/boards 等）がCookie確立前に走って初回アクセスだけ
+// 401になるレースが起きる（ボード一覧が無言で消える）。Promiseをモジュールレベルで
+// 1つだけ共有し、必要とする全員が同じ確立完了を待てるようにする。
+let sharedDevSessionPromise: Promise<SessionUser> | null = null;
+
+export function ensureDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
+  if (!sharedDevSessionPromise) {
+    sharedDevSessionPromise = establishDevSession(fallbackErrorMessage).catch((error: unknown) => {
+      // 失敗したPromiseを共有し続けると、一時的な接続断が「リロードするまで全パネル失敗」に
+      // 固定される。失敗時は共有を破棄し、次の呼び出しで再確立を試みられるようにする。
+      sharedDevSessionPromise = null;
+      throw error;
+    });
+  }
+
+  return sharedDevSessionPromise;
+}
+
+// 認証が必要なAPIを叩く直前に置く順序ガード。開発環境では共有devセッションの確立完了を
+// 待ってからfetchさせ、本番環境では何もしない（本番のセッションはXログインで確立済みで、
+// POST /dev/session はルートごと存在しない）。
+export async function waitForDevSession(fallbackErrorMessage: string): Promise<void> {
+  if (!isDevelopmentEnvironment()) {
+    return;
+  }
+
+  await ensureDevSession(fallbackErrorMessage);
 }

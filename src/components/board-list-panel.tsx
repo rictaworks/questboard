@@ -6,6 +6,8 @@ import Link from 'next/link';
 import {useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
+import {isDevelopmentEnvironment} from '@/lib/environment';
+import {waitForDevSession} from '@/lib/session-api';
 import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
@@ -80,6 +82,9 @@ function formatUpdatedAt(updatedAt: string) {
 
 export default function BoardListPanel() {
   const t = useTranslations('BoardList');
+  // devセッション確立の失敗メッセージに使う。BoardList には無い文言で、
+  // AuthPanel が同じ失敗時に出すものと揃える。
+  const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development' ? {authenticated: true} : null
   );
@@ -134,15 +139,20 @@ export default function BoardListPanel() {
       return;
     }
 
-    // 開発環境でも実際にfetchする。auth-panel.tsx の isDev 分岐が establishDevSession
-    // で本物のセッションCookieを張るようになったため、ここをスキップすると
-    // 「ボードを作成しても一覧に反映されない」（board-created イベントで
-    // refreshCount が変わってもこのeffect自体が動かない）というバグになる。
+    // 開発環境でも実際にfetchする。auth-panel.tsx の isDev 分岐が本物のセッションCookieを
+    // 張るようになったため、ここをスキップすると「ボードを作成しても一覧に反映されない」
+    // （board-created イベントで refreshCount が変わってもこのeffect自体が動かない）
+    // というバグになる。
 
     const abortController = new AbortController();
 
     void (async () => {
       try {
+        // issue #194: 初回アクセスでは AuthPanel の POST /dev/session とこのeffectが同時に
+        // 走り、Cookie確立前の /boards が401になって一覧が無言で消えていた。開発環境では
+        // 共有devセッションの確立完了を待ってから取得する（本番では何もしない）。
+        await waitForDevSession(authT('developmentSessionError'));
+
         const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/boards?page=${page}&per_page=10`, {
           credentials: 'include',
@@ -150,6 +160,11 @@ export default function BoardListPanel() {
         });
 
         if (response.status === 401) {
+          if (isDevelopmentEnvironment()) {
+            // devセッション確立後の401は想定外の異常。authenticated:false に倒すとパネルが
+            // 無言で消えてデバッグ不能になるため、エラー表示に倒す。
+            throw new Error(t('boardLoadError'));
+          }
           setSessionState({authenticated: false});
           return;
         }
@@ -174,7 +189,7 @@ export default function BoardListPanel() {
     return () => {
       abortController.abort();
     };
-  }, [page, sessionState?.authenticated, refreshCount, t]);
+  }, [page, sessionState?.authenticated, refreshCount, authT, t]);
 
   useEffect(() => {
     function handleBoardCreated() {

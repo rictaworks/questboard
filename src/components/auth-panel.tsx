@@ -15,7 +15,7 @@ import {
   xAuthStorageKeys,
   readXAuthSettings
 } from "@/lib/x-auth";
-import {establishDevSession} from "@/lib/session-api";
+import {ensureDevSession} from "@/lib/session-api";
 
 type SessionState = {
   authenticated: boolean;
@@ -38,9 +38,11 @@ export default function AuthPanel() {
       // ボード作成のような書き込み系（RequestOriginGuard・ApplicationController#current_user
       // がセッションクッキー頼み）が常に401になる（本番には存在しない開発専用エンドポイント。
       // src/backend/app/controllers/dev/session_controller.rb 参照）。
+      // 共有Promise版を使うことで、他パネルの waitForDevSession が同じ確立完了を
+      // 待ち合わせられる（issue #194）。
       let cancelled = false;
 
-      void establishDevSession(t("developmentSessionError")).catch((error: unknown) => {
+      void ensureDevSession(t("developmentSessionError")).catch((error: unknown) => {
         if (cancelled) {
           return;
         }

@@ -11,7 +11,8 @@ import {
   MEMBER_PLAN_CODE,
   requestManualRecheck,
   resolveFollowTargetHandle,
-  SessionExpiredError
+  SessionExpiredError,
+  waitForDevSession
 } from '@/lib/session-api';
 import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
@@ -131,6 +132,11 @@ export default function BoardCreatePanel() {
     setCreating(true);
 
     try {
+      // issue #194: 開発環境の初回アクセスでは、マウント直後の POST /dev/session が完了する
+      // 前に作成を送信でき（特に自動テスト）、Cookie未確立の POST /boards が401になる。
+      // 開発環境では共有devセッションの確立完了を待ってから送信する（本番では何もしない）。
+      await waitForDevSession(authT('developmentSessionError'));
+
       const {backendUrl} = readXAuthSettings();
       const response = await fetch(`${backendUrl}/boards`, {
         body: JSON.stringify({title}),
