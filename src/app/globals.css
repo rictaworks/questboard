@@ -37,14 +37,14 @@ body:has(.board-canvas-shell) {
   overflow: hidden;
 }
 
-/* ボード編集画面では、フッターを通常のページ下部バーから、右端のコマンドレールに
-   連なる最後のアイコンへ視覚的に統合する（issue #183）。フッター自体は
-   RootLayout に置いたままの共通コンポーネントなので、構造は変えずに配置だけを
-   ここで上書きする。space-4 が二重なのは、.home-shell の padding（外側）＋
-   .board-canvas-rail の inset（内側）の合計に合わせ、レールの右端と揃えるため。 */
+/* ボード編集画面では、フッターを小さなアイコンとして右下へ寄せる。右下の角は
+   固定ミニマップ（issue #192、幅 12.5rem）が占めるため、そのすぐ左に並べる。
+   フッター自体は RootLayout に置いたままの共通コンポーネントなので、構造は
+   変えずに配置だけをここで上書きする。space-4 が二重なのは .home-shell の
+   padding（外側）＋ミニマップの inset（内側）の合計に合わせるため。 */
 body:has(.board-canvas-shell) .site-footer {
   position: fixed;
-  right: calc(var(--space-4) * 2);
+  right: calc(var(--space-4) * 2 + 12.5rem + var(--space-3));
   bottom: calc(var(--space-4) * 2);
   z-index: 6;
   padding: 0;
@@ -445,11 +445,11 @@ a {
   align-content: center;
 }
 
-/* ── ボードキャンバス：コマンドレール型レイアウト（issue #183） ──
-   常設サイドバーを廃し、キャンバスを常に画面いっぱいに使う。ヘッダーは
-   キャンバスの上に浮かせて専用の行高さを取らず、クエスト／ミニマップ／詳細・
-   コメント／設定／ユーザーは右端の縦アイコンレールに集約する。選択中の
-   パネルだけがオーバーレイで開く（同時に開くのは1枚のみ）。 */
+/* ── ボードキャンバス：モック準拠レイアウト（issue #192） ──
+   app-ui/Questboard Prototype.dc.html の情報設計に合わせる。
+   上部バー（64px）＋本体（クエストサイドバー常設＋キャンバス）を縦に積み、
+   ミニマップはキャンバス右下に固定、オブジェクト作成は空白ダブルクリックと
+   右クリックのラジアルメニューで行う（左レール・右レールは廃止）。 */
 .board-canvas-shell {
   position: relative;
   height: 100%;
@@ -458,70 +458,382 @@ a {
   min-height: 36rem;
   overflow: hidden;
   border-radius: var(--radius-lg);
+  border: var(--border-width) solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 上部バー（モックの 64px バー） ── */
+.board-top-bar {
+  height: 4rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  background: var(--bg-nav);
+  backdrop-filter: var(--blur-overlay);
+  border-bottom: var(--border-width) solid var(--border-default);
+  position: relative;
+  z-index: 7;
+}
+
+.board-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* モックのロゴ：45°回転した紫のダイヤ */
+.board-brand-mark {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+  border: 2px solid var(--color-purple);
+  transform: rotate(45deg);
+  box-shadow: 0 0 0.6rem var(--color-glow);
+}
+
+.board-brand-copy {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.board-brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-heading);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.board-brand-tagline {
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  color: var(--color-purple-light);
+  white-space: nowrap;
+}
+
+.board-top-bar-divider {
+  width: 1px;
+  height: 1.6rem;
+  flex-shrink: 0;
+  background: var(--border-default);
+}
+
+.board-top-bar-title {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.board-top-bar-spacer {
+  flex: 1;
+  min-width: var(--space-2);
+}
+
+.board-top-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+
+.board-top-bar-caption {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.board-role-badge {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--color-border-active);
+  border-radius: 2px;
+  background: rgba(123, 47, 255, 0.35);
+  color: var(--text-heading);
+  font-size: 0.64rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* 演出強度のセグメントボタン（モックの segBtnStyle） */
+.board-seg-button {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.board-seg-button[aria-pressed='true'] {
+  border-color: var(--color-border-active);
+  background: rgba(123, 47, 255, 0.35);
+  color: var(--text-heading);
+}
+
+/* 参加者アバター（頭文字＋色付き円の重なり） */
+.board-avatar-stack {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.board-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 999px;
+  background: rgba(26, 16, 48, 0.95);
+  border: 2px solid var(--color-purple);
+  color: var(--color-purple-light);
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
+.board-avatar + .board-avatar {
+  margin-left: -0.5rem;
+}
+
+.board-avatar-color-0 { border-color: #38bdf8; color: #38bdf8; }
+.board-avatar-color-1 { border-color: #ec4899; color: #ec4899; }
+.board-avatar-color-2 { border-color: #7b2fff; color: #c084fc; }
+.board-avatar-color-3 { border-color: #f59e0b; color: #f59e0b; }
+.board-avatar-color-4 { border-color: #6366f1; color: #818cf8; }
+.board-avatar-color-5 { border-color: #fb7185; color: #fb7185; }
+.board-avatar-color-6 { border-color: #34d399; color: #34d399; }
+.board-avatar-color-7 { border-color: #c084fc; color: #c084fc; }
+
+.board-avatar-overflow {
+  border-color: var(--color-border-subtle);
+  color: var(--text-secondary);
+}
+
+.board-top-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.board-top-bar-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  cursor: pointer;
+}
+
+.board-top-bar .board-user-menu {
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+/* ── 本体：クエストサイドバー＋キャンバス ── */
+.board-canvas-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.board-quest-sidebar {
+  width: 18rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+  background: rgba(30, 20, 70, 0.55);
+  border-right: var(--border-width) solid var(--border-default);
+  position: relative;
+  z-index: 5;
+}
+
+.board-quest-sidebar-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.board-quest-sidebar-heading h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--text-heading);
+}
+
+.board-quest-eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.58rem;
+  letter-spacing: 0.22em;
+  color: var(--color-purple-light);
+}
+
+.board-quest-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.board-quest-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.board-quest-item-icon {
+  width: 0.9rem;
+  flex-shrink: 0;
+  color: var(--color-purple-light);
+}
+
+.board-quest-item-completed .board-quest-item-icon,
+.board-quest-item-reward_granted .board-quest-item-icon {
+  color: #6ee7b7;
+}
+
+.board-quest-item-skipped .board-quest-item-icon {
+  color: var(--color-muted);
+}
+
+.board-quest-item-skipped {
+  opacity: 0.6;
+}
+
+.board-quest-item-title {
+  flex: 1;
+  font-size: 0.8rem;
+}
+
+.board-quest-item-completed .board-quest-item-title {
+  text-decoration: line-through;
+}
+
+.board-quest-item-state {
+  font-size: 0.64rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.board-quest-progress-track {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.board-quest-progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--color-purple), var(--color-purple-light));
+  transition: width 0.3s ease;
+}
+
+.board-quest-progress {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+
+.board-quest-action-button {
+  align-self: flex-end;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+
+.board-quest-skip-all {
+  padding: 0.45rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+/* モックの操作ヒント凡例。サイドバー最下部に常設する。 */
+.board-quest-hints {
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-default);
+  font-size: 0.7rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.board-quest-hints p {
+  margin: 0;
+}
+
+.board-stage-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .board-stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: rgba(10, 9, 32, 0.4);
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(123, 47, 255, 0.08), transparent 60%),
+    rgba(10, 9, 32, 0.4);
   touch-action: none;
 }
 
-/* タイトルバー。app-ui/ のモック（Questboard Prototype.dc.html）どおり、画面上部に
-   隙間なく全幅で固定する（height 64px 相当の単一バーが元デザイン仕様）。
-   以前はオブジェクト作成ボタンまで含めて横いっぱいのヘッダーにしていたため、
-   キャンバス上部の広い帯が丸ごとクリックを奪っていたが、ボタン群は
-   .board-canvas-create-rail（このバーとは独立）に分離したので、このバー自体は
-   戻る／タイトル／同期状態だけの薄い帯になり、同じ問題は再発しない。 */
-.board-canvas-title-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 4;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  border-bottom: var(--border-width) solid var(--border-default);
-  background: rgba(18, 19, 45, 0.78);
-  backdrop-filter: var(--blur-overlay);
-}
-
-.board-canvas-back-link {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-  text-decoration: none;
-}
-
-.board-canvas-back-link:hover,
-.board-canvas-back-link:focus-visible {
-  color: var(--color-purple-light);
-}
-
-/* 見出しはロゴ・home-title と同じ表示書体（Cinzel）に揃える。以前はここだけ
-   本文書体のままで、画面内でいちばん重要な固有名詞（ボード名）が
-   周りのUI文言と見分けづらかった。 */
-.board-canvas-title-bar h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  letter-spacing: 0.01em;
-  overflow-wrap: break-word;
-}
-
-/* 全幅になった分、同期状態は右端に寄せる（左に戻るリンクとタイトル、
-   右に状態、という帯としての情報の置き場を作る）。 */
-.board-canvas-title-bar .board-sync-status {
+/* 上部バー内の同期状態はコンパクトな1行表示にする。 */
+.board-top-bar .board-sync-status {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   flex: none;
-  margin-left: auto;
   white-space: nowrap;
 }
 
@@ -553,90 +865,16 @@ a {
   50% { opacity: 0.35; }
 }
 
-/* オブジェクト作成ボタン（sticky/shape/text/connector/image/frame）＋選択中は
-   複製・削除。右端のコマンドレールと同じ「アイコンだけの円形ボタン」の意匠
-   （.board-canvas-rail-button）を再利用し、左右対称にする。タイトルバーとは
-   独立に配置する（タイトルバーは全幅の帯として画面上部に固定されるが、この
-   レールはボタン群だけの縦の列としてタイトルバーの下に収まる）。
-   top: 4rem はタイトルバーの実測高さ（padding + 1行 + border、おおよそ
-   53px）に余白を足した固定値。app-ui/ のモックのバー高さ（64px）に合わせた。 */
-.board-canvas-create-rail {
-  position: absolute;
-  top: 4rem;
-  left: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* 右端の縦アイコンレール。クエスト／ミニマップ／詳細・コメント／設定／ユーザーの
-   各トリガーをここに並べ、フッター（body:has(.board-canvas-shell) .site-footer）も
-   同じ右端の列の最下部に視覚的に連なる。 */
-.board-canvas-rail {
-  position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-/* .site-footer-trigger / .board-user-menu-trigger と同じ「アイコンだけの円形
-   トリガー」の意匠を流用し、レール全体で統一する。 */
-.board-canvas-rail-button {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  flex: none;
-  padding: 0;
-  border: var(--border-width) solid var(--border-default);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  color: inherit;
-  cursor: pointer;
-}
-
-.board-canvas-rail-button[aria-pressed='true'] {
-  border-color: var(--color-border-active);
-  background: rgba(123, 47, 255, 0.3);
-  box-shadow: var(--shadow-glow-sm);
-}
-
-.board-canvas-rail-badge {
-  position: absolute;
-  top: -0.35rem;
-  right: -0.35rem;
-  min-width: 1.1rem;
-  height: 1.1rem;
-  padding: 0 0.3rem;
-  border-radius: 999px;
-  background: var(--color-purple);
-  color: white;
-  font-size: 0.65rem;
-  line-height: 1.1rem;
-}
-
-/* パネルの共通オーバーレイ意匠。個別パネル（.board-quest-panel 等）の内側の
-   レイアウト・余白はそれぞれの規則に残し、ここでは位置・寸法・枠のみを持つ
-   （overflow は各パネル固有の規則に委ねる：.board-minimap は hidden、
-   .board-quest-panel / .board-details は auto）。右端の起点はヘッダーと同じ
-   計算式で、レールの手前に揃える。 */
+/* 詳細（色＋コメント）パネル。上部バーの下・キャンバスの右肩に浮かせる
+   1枚だけのオーバーレイ。4rem は上部バーの高さ。 */
 .board-canvas-panel-overlay {
   position: absolute;
-  top: var(--space-4);
-  right: calc(var(--space-4) + 2.5rem + var(--space-3));
-  bottom: var(--space-4);
-  z-index: 5;
+  top: calc(4rem + var(--space-3));
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 6;
   width: 22rem;
-  max-width: calc(100% - 2.5rem - var(--space-4) * 3);
+  max-width: calc(100% - var(--space-4) * 2);
   border: var(--border-width) solid var(--border-default);
   border-radius: var(--radius-lg);
   background: rgba(18, 19, 45, 0.92);
@@ -644,52 +882,26 @@ a {
   box-shadow: var(--shadow-glow-md);
 }
 
-.board-canvas-settings-panel {
-  display: grid;
-  align-content: start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  overflow: auto;
-}
-
-.board-canvas-settings-panel h2 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.board-canvas-settings-row {
-  display: grid;
+.board-details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-2);
 }
 
-/* レール内ではアイコンだけの円形トリガーに揃え、他のレールボタンと寸法を統一する。
-   ポップオーバー（.board-user-menu-panel）はレール右端の外側に開くと画面外へ
-   はみ出すため、ここだけ左側（レールの内側）へ開く向きに上書きする。 */
-.board-canvas-rail .board-user-menu {
-  position: relative;
-  margin-left: 0;
-}
-
-.board-canvas-rail .board-user-menu-trigger {
-  width: 2.5rem;
-  height: 2.5rem;
+.board-details-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex-shrink: 0;
   padding: 0;
-  gap: 0;
-}
-
-.board-canvas-rail .board-user-menu-chevron {
-  display: none;
-}
-
-.board-canvas-rail .board-user-menu-avatar {
-  width: 1.6rem;
-  height: 1.6rem;
-}
-
-.board-canvas-rail .board-user-menu-panel {
-  top: auto;
-  right: calc(100% + var(--space-2));
-  bottom: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
 }
 
 .board-user-menu {
@@ -818,6 +1030,10 @@ a {
   transform-origin: 0 0;
 }
 
+/* ── オブジェクトの塗りつぶし表現（issue #192 / モックの buildObjectStyle 準拠） ──
+   半透明の縁取りだけだった旧意匠をやめ、種別ごとに塗る。色は
+   board-object-color.ts が出すカスタムプロパティ（--object-fill-soft 等）で受け、
+   ここでは種別ごとの使い分けと既定値だけを持つ。 */
 .board-object {
   position: absolute;
   display: grid;
@@ -825,23 +1041,75 @@ a {
   padding: var(--space-3);
   border: 2px solid transparent;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--object-color) 16%, transparent);
   color: var(--color-text);
   user-select: none;
 }
 
+/* 付箋：パステル塗り＋濃い文字色（モックの pastel(hex, 0.55) ＋ #241436） */
+.board-object-sticky {
+  background: var(--object-fill-soft, rgba(123, 47, 255, 0.16));
+  border: 1.5px solid var(--object-border-soft, var(--border-default));
+  border-radius: 8px;
+  color: #241436;
+  font-weight: 500;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.board-object-sticky .board-object-label {
+  color: rgba(36, 20, 54, 0.6);
+}
+
+/* 図形：半透明塗り＋強めの縁 */
+.board-object-shape {
+  background: var(--object-fill-faint, rgba(123, 47, 255, 0.16));
+  border: 1.5px solid var(--object-border-strong, var(--border-default));
+  border-radius: 12px;
+  font-family: var(--font-display);
+}
+
+/* テキスト：背景なし。選択中だけ破線で領域を示す */
+.board-object-text {
+  background: transparent;
+  border: 1px dashed transparent;
+  color: var(--text-heading);
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+/* 画像プレースホルダ：破線枠 */
+.board-object-image {
+  background: rgba(30, 20, 70, 0.5);
+  border: 1.5px dashed var(--color-border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+
+/* フレーム：面ではなく破線の領域＋浮き出しラベル */
+.board-object-frame {
+  background: rgba(123, 47, 255, 0.045);
+  border: 2px dashed rgba(123, 47, 255, 0.45);
+  border-radius: 12px;
+}
+
+.board-object-connector {
+  background: transparent;
+  border-color: transparent;
+}
+
 .board-object.is-selected {
   border-color: var(--color-purple-light);
+  box-shadow: var(--shadow-glow-md);
 }
 
 .board-object.is-locked {
   opacity: 0.85;
 }
 
-/* 以前は通常のフローに乗っていて、コンパクトな付箋では最初の1行を種別名が
-   占有し、書く／貼るためのスペースを圧迫していた。フローから外し、隅の
-   小さな透かしに変える（種別は作成時にレールで選んでいるので、常に大きく
-   見せる情報ではない。完全な文字列は title 属性に残す）。 */
+.board-object-frame.is-locked {
+  border-color: rgba(148, 163, 184, 0.6);
+}
+
+/* 種別ラベルは隅の小さな透かし。完全な文字列は title 属性に残す。 */
 .board-object-label {
   position: absolute;
   top: 0.3rem;
@@ -852,6 +1120,22 @@ a {
   color: var(--text-secondary);
   opacity: 0.55;
   pointer-events: none;
+}
+
+/* フレームだけはモックどおり上辺に浮き出すラベルチップにする */
+.board-object-frame .board-object-label {
+  top: -0.7rem;
+  right: auto;
+  left: 0.9rem;
+  padding: 0 0.5rem;
+  background: var(--color-navy);
+  color: var(--color-purple-light);
+  font-family: var(--font-display);
+  opacity: 1;
+}
+
+.board-object-frame.is-locked .board-object-label {
+  color: var(--color-muted);
 }
 
 .connector-line {
@@ -914,21 +1198,99 @@ a {
   pointer-events: none;
 }
 
+/* ── ラジアルメニュー（issue #192 / モックの半径 100px・56px 円ボタン） ── */
+.board-radial-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--bg-overlay);
+  backdrop-filter: blur(2px);
+}
+
+.board-radial-item {
+  position: fixed;
+  width: 3.5rem;
+  height: 3.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0;
+  border: 1.5px solid rgba(123, 47, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(30, 20, 70, 0.92);
+  color: var(--color-text);
+  cursor: pointer;
+  box-shadow: 0 0 1.25rem var(--color-glow-wide);
+}
+
+.board-radial-item svg {
+  color: var(--color-purple-light);
+  font-size: 1rem;
+}
+
+.board-radial-item span {
+  font-size: 0.55rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.board-radial-item:hover,
+.board-radial-item:focus-visible {
+  border-color: var(--color-border-active);
+  box-shadow: var(--shadow-glow-sm);
+}
+
+.board-radial-center {
+  position: fixed;
+  width: 3rem;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border-radius: 999px;
+  background: rgba(6, 7, 26, 0.9);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.board-radial-note {
+  position: fixed;
+  transform: translateX(-50%);
+  margin: 0;
+  width: 12rem;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--color-muted);
+}
+
 /* .board-canvas-panel-overlay が top/bottom で高さを確定させるため、
    パネル自身は min-height を持たず overflow: auto だけで内部スクロールする。 */
-.board-details,
-.board-quest-panel {
+.board-details {
   padding: var(--space-4);
   overflow: auto;
 }
 
-/* ミニマップだけは俯瞰性を優先し、盤面をスクロールさせずグリッド行の
-   minmax(0, 1fr) で使える高さいっぱいに収める。 */
-.board-minimap {
-  padding: var(--space-4);
+/* ミニマップはキャンバス右下の固定パネル（モックの 200×140 相当）。
+   トグルは廃止し常時表示する。盤面はスクロールさせず残り高さいっぱいに収める。 */
+.board-minimap-fixed {
+  position: absolute;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 5;
+  width: 12.5rem;
+  height: 8.75rem;
+  padding: var(--space-2);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+  border: var(--border-width) solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-nav);
+  backdrop-filter: var(--blur-overlay);
 }
 
 .board-minimap-header {
@@ -936,18 +1298,39 @@ a {
   justify-content: space-between;
   gap: var(--space-3);
   align-items: center;
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-1);
 }
 
-.board-minimap-header h2,
+.board-minimap-caption {
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  color: var(--text-secondary);
+}
+
+.board-minimap-reset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.board-minimap-reset:hover,
+.board-minimap-reset:focus-visible {
+  color: var(--color-purple-light);
+}
+
 .board-details h2 {
   margin: 0;
   font-size: 1rem;
-}
-
-.board-quest-copy,
-.board-quest-progress {
-  margin: 0;
 }
 
 /* クエスト取得が失敗している間だけ出る通知。復旧すると自動で消える。 */
@@ -971,25 +1354,18 @@ a {
   padding: var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.board-quest-item-header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-2);
-  font-size: 0.82rem;
+  background: rgba(6, 7, 26, 0.4);
 }
 
 .board-quest-actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-2);
 }
 
-/* .board-canvas-panel-overlay の top/bottom がパネル高さをビューポート問わず
-   常に確定させるため、盤面は固定高やモバイル向け aspect-ratio 切り替えを持たず、
-   親グリッド行（minmax(0, 1fr)）いっぱいに広がるだけでよい（issue #183）。 */
+/* .board-minimap-fixed のグリッド行（minmax(0, 1fr)）が盤面高さを確定させるため、
+   盤面は固定高や aspect-ratio を持たず親いっぱいに広がるだけでよい。 */
 .board-minimap-surface {
   position: relative;
   width: 100%;

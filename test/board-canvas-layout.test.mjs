@@ -9,21 +9,25 @@ const root = process.cwd();
 // テストが「見つからない」で落ちるように、文字列はここに集約する。
 const STYLESHEET = 'src/app/globals.css';
 const CANVAS_COMPONENT = 'src/components/board-canvas-panel.tsx';
+const TOP_BAR_COMPONENT = 'src/components/board-top-bar.tsx';
+const QUEST_SIDEBAR_COMPONENT = 'src/components/board-quest-sidebar.tsx';
+const RADIAL_MENU_COMPONENT = 'src/components/board-radial-menu.tsx';
 const SELECTOR = {
   boardShell: '.home-shell:has(.board-canvas-shell)',
   boardShellWithBanner: '.home-shell:has(.board-canvas-shell):has(.board-join-success)',
   boardShellFallback: '.home-shell:has(.board-canvas-shell) .board-canvas-shell',
   canvasShell: '.board-canvas-shell',
+  topBar: '.board-top-bar',
+  body: '.board-canvas-body',
+  questSidebar: '.board-quest-sidebar',
+  stageArea: '.board-stage-area',
   stage: '.board-stage',
-  titleBar: '.board-canvas-title-bar',
-  createRail: '.board-canvas-create-rail',
-  rail: '.board-canvas-rail',
-  railButton: '.board-canvas-rail-button',
-  panelOverlay: '.board-canvas-panel-overlay',
-  detailsAndQuest: '.board-details, .board-quest-panel',
-  minimap: '.board-minimap',
+  minimapFixed: '.board-minimap-fixed',
   minimapSurface: '.board-minimap-surface',
-  railUserMenuPanel: '.board-canvas-rail .board-user-menu-panel',
+  panelOverlay: '.board-canvas-panel-overlay',
+  details: '.board-details',
+  radialBackdrop: '.board-radial-backdrop',
+  radialItem: '.board-radial-item',
   userMenu: '.board-user-menu',
   userMenuTrigger: '.board-user-menu-trigger',
   userMenuAvatar: '.board-user-menu-avatar',
@@ -35,8 +39,6 @@ const SELECTOR = {
   footerPanel: '.site-footer-disclosure[open] > .site-footer-panel',
   toasts: '.board-toasts'
 };
-// レールボタン（2.5rem）の手前で止める、ヘッダー／パネルオーバーレイ共通の右端計算式。
-const RAIL_CLEARANCE = "calc(var(--space-4) + 2.5rem + var(--space-3))";
 
 // セレクタ抽出は直前の文字（`}` `;` または先頭）を手がかりにするため、
 // コメントが残っているとその手がかりが崩れる。解析前に必ず剥がす。
@@ -163,7 +165,9 @@ function assertDeclaration(index, selector, property, expected) {
   assert.equal(actual, expected, `${selector} の ${property} が想定と異なります（実際: ${actual ?? 'なし'}）`);
 }
 
-test('ボードキャンバスは常設サイドバーを持たず、キャンバスが常に全面を占める', async () => {
+// ── issue #192: モック（app-ui/Questboard Prototype.dc.html）準拠レイアウト ──
+
+test('シェルは上部バー＋本体の縦積みで、ページ全体はスクロールしない', async () => {
   const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
@@ -181,13 +185,37 @@ test('ボードキャンバスは常設サイドバーを持たず、キャン�
   assertDeclaration(rules, SELECTOR.canvasShell, 'min-height', '36rem');
   assertDeclaration(rules, SELECTOR.boardShellFallback, 'min-height', '0');
 
-  // キャンバスは .board-canvas-shell いっぱいに絶対配置で広がる（常設サイドバーが無い）。
-  assertDeclaration(rules, SELECTOR.canvasShell, 'position', 'relative');
+  // シェルは flex 縦積み（上部バー＋本体）。
+  assertDeclaration(rules, SELECTOR.canvasShell, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.canvasShell, 'flex-direction', 'column');
   assertDeclaration(rules, SELECTOR.canvasShell, 'height', '100%');
   assertDeclaration(rules, SELECTOR.canvasShell, 'overflow', 'hidden');
+});
+
+test('上部バーはモックの 64px バーで、本体はサイドバー＋キャンバスの横並び', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  assertDeclaration(rules, SELECTOR.topBar, 'height', '4rem');
+  assertDeclaration(rules, SELECTOR.topBar, 'flex-shrink', '0');
+  assertDeclaration(rules, SELECTOR.topBar, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.topBar, 'align-items', 'center');
+
+  assertDeclaration(rules, SELECTOR.body, 'flex', '1');
+  assertDeclaration(rules, SELECTOR.body, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.body, 'min-height', '0');
+
+  // クエストサイドバーは常設（モックの 288px 相当）で、内部スクロールする。
+  assertDeclaration(rules, SELECTOR.questSidebar, 'width', '18rem');
+  assertDeclaration(rules, SELECTOR.questSidebar, 'flex-shrink', '0');
+  assertDeclaration(rules, SELECTOR.questSidebar, 'overflow-y', 'auto');
+
+  // キャンバスは残り幅いっぱいに絶対配置で広がる。
+  assertDeclaration(rules, SELECTOR.stageArea, 'position', 'relative');
+  assertDeclaration(rules, SELECTOR.stageArea, 'flex', '1');
+  assertDeclaration(rules, SELECTOR.stageArea, 'min-width', '0');
   assertDeclaration(rules, SELECTOR.stage, 'position', 'absolute');
   assertDeclaration(rules, SELECTOR.stage, 'inset', '0');
-  // .board-stage 自身に min-height は無い（高さは .board-canvas-shell 側が保証する）。
   assert.equal(
     declarationsOf(rules, SELECTOR.stage).has('min-height'),
     false,
@@ -195,110 +223,85 @@ test('ボードキャンバスは常設サイドバーを持たず、キャン�
   );
 });
 
-test('タイトルバーは画面上部に隙間なく全幅で固定され、作成レールはそれとは独立してキャンバスの上に浮かぶ', async () => {
+test('ミニマップはキャンバス右下の固定パネル（トグル廃止）', async () => {
   const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
-  // app-ui/ のモック（Questboard Prototype.dc.html）どおり、タイトルバーは画面上部に
-  // 隙間なく全幅で固定する。以前はここにオブジェクト作成ボタンまで含めていたため、
-  // キャンバス上部の広い帯を丸ごとクリック不可にしていたが、ボタン群は独立した
-  // .board-canvas-create-rail に分離したので同じ問題は再発しない
-  // （board-canvas-panel.tsx）。
-  assertDeclaration(rules, SELECTOR.titleBar, 'position', 'absolute');
-  assertDeclaration(rules, SELECTOR.titleBar, 'top', '0');
-  assertDeclaration(rules, SELECTOR.titleBar, 'left', '0');
-  assertDeclaration(rules, SELECTOR.titleBar, 'right', '0');
-  assertDeclaration(rules, SELECTOR.titleBar, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'right', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'bottom', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'width', '12.5rem');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'height', '8.75rem');
+  assertDeclaration(rules, SELECTOR.minimapFixed, 'overflow', 'hidden');
 
-  assertDeclaration(rules, SELECTOR.createRail, 'position', 'absolute');
-  assertDeclaration(rules, SELECTOR.createRail, 'left', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.createRail, 'bottom', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.createRail, 'display', 'flex');
-  assertDeclaration(rules, SELECTOR.createRail, 'flex-direction', 'column');
-
-  assertDeclaration(rules, SELECTOR.rail, 'position', 'absolute');
-  assertDeclaration(rules, SELECTOR.rail, 'top', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.rail, 'right', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.rail, 'bottom', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.rail, 'display', 'flex');
-  assertDeclaration(rules, SELECTOR.rail, 'flex-direction', 'column');
-
-  assertDeclaration(rules, SELECTOR.railButton, 'width', '2.5rem');
-  assertDeclaration(rules, SELECTOR.railButton, 'height', '2.5rem');
-  assertDeclaration(rules, SELECTOR.railButton, 'border-radius', '999px');
-
-  // レール内のユーザーメニューはアイコン専用トリガーの寸法に揃え、
-  // ポップオーバーはレールの内側（左）へ開く。
-  assertDeclaration(rules, SELECTOR.railUserMenuPanel, 'right', 'calc(100% + var(--space-2))');
-  assertDeclaration(rules, SELECTOR.railUserMenuPanel, 'bottom', '0');
-});
-
-test('選択中の1枚だけがオーバーレイパネルとしてキャンバスの上に開く', async () => {
-  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
-  const rules = indexRules(topLevel);
-
-  assertDeclaration(rules, SELECTOR.panelOverlay, 'position', 'absolute');
-  assertDeclaration(rules, SELECTOR.panelOverlay, 'top', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.panelOverlay, 'right', RAIL_CLEARANCE);
-  assertDeclaration(rules, SELECTOR.panelOverlay, 'bottom', 'var(--space-4)');
-  assertDeclaration(rules, SELECTOR.panelOverlay, 'width', '22rem');
-
-  // パネル自身は overlay 側が高さを確定させるため min-height を持たず、
-  // クエスト／詳細パネルは overflow: auto で内部スクロールする。
-  assertDeclaration(rules, SELECTOR.detailsAndQuest, 'overflow', 'auto');
-  assert.equal(
-    declarationsOf(rules, SELECTOR.detailsAndQuest).has('min-height'),
-    false,
-    'パネルの高さは .board-canvas-panel-overlay の top/bottom が決めるため min-height は不要'
-  );
-
-  // ミニマップだけは俯瞰性を優先してスクロールさせず、盤面は使える高さいっぱいに広がる。
-  assertDeclaration(rules, SELECTOR.minimap, 'overflow', 'hidden');
-  assert.equal(
-    declarationsOf(rules, SELECTOR.minimap).has('min-height'),
-    false,
-    'ミニマップの高さも overlay 側が決めるため min-height は不要'
-  );
   assertDeclaration(rules, SELECTOR.minimapSurface, 'height', '100%');
   assert.equal(
     declarationsOf(rules, SELECTOR.minimapSurface).has('aspect-ratio'),
     false,
     '盤面は常に親グリッド行いっぱいに広がるため aspect-ratio 切り替えは不要'
   );
+});
+
+test('詳細パネルだけがオーバーレイとして上部バーの下に開く', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'top', 'calc(4rem + var(--space-3))');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'right', 'var(--space-3)');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'bottom', 'var(--space-3)');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'width', '22rem');
+
+  // パネル自身は overlay 側が高さを確定させるため min-height を持たず、
+  // overflow: auto で内部スクロールする。
+  assertDeclaration(rules, SELECTOR.details, 'overflow', 'auto');
+  assert.equal(
+    declarationsOf(rules, SELECTOR.details).has('min-height'),
+    false,
+    'パネルの高さは .board-canvas-panel-overlay の top/bottom が決めるため min-height は不要'
+  );
 
   assertDeclaration(rules, SELECTOR.userMenu, 'position', 'relative');
-  assertDeclaration(rules, SELECTOR.userMenu, 'margin-left', 'auto');
   assertDeclaration(rules, SELECTOR.userMenuTrigger, 'display', 'inline-flex');
   assertDeclaration(rules, SELECTOR.userMenuAvatar, 'width', '2rem');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'position', 'absolute');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'top', 'calc(100% + var(--space-2))');
 });
 
-test('フッターはボード編集画面ではコマンドレールの列へ視覚的に統合される', async () => {
+test('ラジアルメニューは fixed 配置の円形ボタン群', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  assertDeclaration(rules, SELECTOR.radialBackdrop, 'position', 'fixed');
+  assertDeclaration(rules, SELECTOR.radialBackdrop, 'inset', '0');
+  assertDeclaration(rules, SELECTOR.radialItem, 'position', 'fixed');
+  assertDeclaration(rules, SELECTOR.radialItem, 'width', '3.5rem');
+  assertDeclaration(rules, SELECTOR.radialItem, 'height', '3.5rem');
+  assertDeclaration(rules, SELECTOR.radialItem, 'border-radius', '999px');
+});
+
+test('フッターはミニマップの左隣に寄せ、トーストは左下に置く', async () => {
   const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.footer, 'padding', 'var(--space-3) var(--space-4)');
   assertDeclaration(rules, SELECTOR.boardFooter, 'position', 'fixed');
-  assertDeclaration(rules, SELECTOR.boardFooter, 'right', 'calc(var(--space-4) * 2)');
+  assertDeclaration(rules, SELECTOR.boardFooter, 'right', 'calc(var(--space-4) * 2 + 12.5rem + var(--space-3))');
   assertDeclaration(rules, SELECTOR.boardFooter, 'bottom', 'calc(var(--space-4) * 2)');
   assertDeclaration(rules, SELECTOR.footerDisclosure, 'display', 'grid');
   assertDeclaration(rules, SELECTOR.footerTrigger, 'display', 'inline-flex');
   assertDeclaration(rules, SELECTOR.footerPanel, 'display', 'grid');
 
-  // トーストは右下のレール／フッターと重ならないよう左下に置く。
   assertDeclaration(rules, SELECTOR.toasts, 'position', 'fixed');
   assertDeclaration(rules, SELECTOR.toasts, 'left', 'var(--space-4)');
   assertDeclaration(rules, SELECTOR.toasts, 'bottom', 'var(--space-4)');
 });
 
-test('ビューポート幅に応じてサイドバーを縦積みへ切り替える分岐はもう存在しない', async () => {
+test('ビューポート幅に応じてサイドバーを縦積みへ切り替える分岐は存在しない', async () => {
   const {mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
 
-  // キャンバスは常に絶対配置の全面表示、パネルは常にオーバーレイなので、
-  // モバイル専用に高さ・レイアウトを作り直す分岐はもう不要（issue #183）。
   const boardCanvasMediaQueries = [...mediaBlocks.entries()].filter(([, block]) => (
-    /\.board-canvas-shell|\.board-sidebar|\.board-stage|\.board-canvas-body/.test(block)
+    /\.board-canvas-shell|\.board-quest-sidebar|\.board-stage|\.board-canvas-body|\.board-top-bar/.test(block)
   ));
   assert.deepEqual(
     boardCanvasMediaQueries.map(([condition]) => condition),
@@ -307,31 +310,25 @@ test('ビューポート幅に応じてサイドバーを縦積みへ切り替�
   );
 });
 
-// スクロール領域をキーボードで到達できるようにするための属性。Chrome は
-// スクロールコンテナを自動でフォーカス可能にするが、Firefox / Safari はしない。
-const PANEL_CLASSES = ['board-quest-panel', 'board-minimap', 'board-details', 'board-canvas-settings-panel'];
-
-// className は他のクラスと同居する（例: "board-canvas-panel-overlay board-quest-panel"）
-// ため、完全一致ではなく空白区切りのトークンとして探す。
-function openingTagOf(source, className) {
-  const pattern = new RegExp(`<section[^>]*className="[^"]*\\b${className}\\b[^"]*"[^>]*>`);
+// className は他のクラスと同居するため、完全一致ではなく空白区切りのトークンとして探す。
+function openingTagOf(source, tagName, className) {
+  const pattern = new RegExp(`<${tagName}[^>]*className="[^"]*\\b${className}\\b[^"]*"[^>]*>`);
   const matched = source.match(pattern);
-  if (!matched) throw new Error(`className に "${className}" を含む section が見つかりません`);
+  if (!matched) throw new Error(`className に "${className}" を含む ${tagName} が見つかりません`);
   return matched[0];
 }
 
-test('オーバーレイパネルはキーボードで到達でき、名前を持つ', async () => {
-  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+test('詳細パネルとクエストサイドバーはキーボードで到達でき、名前を持つ', async () => {
+  const panelSource = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+  const sidebarSource = await readFile(path.join(root, QUEST_SIDEBAR_COMPONENT), 'utf8');
 
-  for (const className of PANEL_CLASSES) {
-    const tag = openingTagOf(source, className);
-    assert.match(tag, /tabIndex=\{0\}/, `${className} がキーボードフォーカスを受け取れません`);
-    assert.match(
-      tag,
-      /aria-labelledby="[^"]+"|aria-label=/,
-      `${className} のスクロール領域に読み上げ用の名前がありません`
-    );
-  }
+  const detailsTag = openingTagOf(panelSource, 'section', 'board-details');
+  assert.match(detailsTag, /tabIndex=\{0\}/, 'board-details がキーボードフォーカスを受け取れません');
+  assert.match(detailsTag, /aria-labelledby="[^"]+"|aria-label=/, 'board-details に読み上げ用の名前がありません');
+
+  const sidebarTag = openingTagOf(sidebarSource, 'aside', 'board-quest-sidebar');
+  assert.match(sidebarTag, /tabIndex=\{0\}/, 'board-quest-sidebar がキーボードフォーカスを受け取れません');
+  assert.match(sidebarTag, /aria-label=/, 'board-quest-sidebar に読み上げ用の名前がありません');
 });
 
 test('キャンバスのズームは初期表示だけで設定され、リセットUI がある', async () => {
@@ -342,21 +339,25 @@ test('キャンバスのズームは初期表示だけで設定され、リセ�
   assert.match(source, /t\('resetCamera'\)/, 'ズームリセット文言がローカライズされている必要があります');
 });
 
-test('レールの各トリガーはキャンバス上のパネルを1枚だけ開閉する', async () => {
+test('オーバーレイは詳細パネル1枚だけで、レール型のパネル切替は存在しない', async () => {
   const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
-  assert.match(source, /type ActivePanel = 'quests' \| 'minimap' \| 'details' \| 'settings' \| null;/);
-  assert.match(source, /function toggleActivePanel\(panel: ActivePanel\)/);
-  assert.match(source, /aria-pressed=\{activePanel === 'quests'\}/);
-  assert.match(source, /aria-pressed=\{activePanel === 'minimap'\}/);
-  assert.match(source, /aria-pressed=\{activePanel === 'details'\}/);
-  assert.match(source, /aria-pressed=\{activePanel === 'settings'\}/);
+  assert.match(source, /type ActivePanel = 'details' \| null;/);
+  assert.doesNotMatch(source, /board-canvas-rail/, '右端コマンドレールは廃止済み（issue #192）');
+  assert.doesNotMatch(source, /board-canvas-create-rail/, '左端の作成レールは廃止済み（issue #192）');
+  assert.doesNotMatch(source, /board-canvas-settings-panel/, '設定パネルは上部バーへ移設済み（issue #192）');
 });
 
-// オブジェクトを選択するたびに詳細パネルが割り込む挙動は、選択の主目的（移動・
-// 複製等）を毎回邪魔するというフィードバックにより廃止した。詳細パネルは
-// 右レールのボタンをユーザーが押したときだけ開く。選択が外れたときに（開いて
-// いれば）閉じる後始末だけは残す。
+test('ダブルクリック作成とラジアルメニューの intent がパネルに配線されている', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+
+  assert.match(source, /intent\.kind === 'radial-menu' \|\| intent\.kind === 'create-note'/, '入力層の intent を UI ハンドラへ委譲していない');
+  assert.match(source, /buildRadialMenuItems\(/, 'ラジアルメニュー項目はピュア関数で構築する');
+  assert.match(source, /createObject\('sticky', world\)/, '空白ダブルクリックはカーソル位置に付箋を作る');
+  assert.match(source, /eventId: 'radial_opened'/, 'ラジアルメニュー表示の KPI 追跡が必要');
+  assert.match(source, /data-obj-id=\{object\.id\}/, 'ヒットテスト用の data-obj-id が必要');
+});
+
 test('オブジェクト選択は詳細パネルを自動で開かない', async () => {
   const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
@@ -368,7 +369,7 @@ test('オブジェクト選択は詳細パネルを自動で開かない', async
   assert.doesNotMatch(
     selectionEffect[0],
     /setActivePanel\('details'\)/,
-    '選択のたびに詳細パネルを強制的に開いている（右レールのボタンを押したときだけ開くべき）'
+    '選択のたびに詳細パネルを強制的に開いている（ラジアルメニューのコメントからだけ開くべき）'
   );
   assert.match(
     selectionEffect[0],
@@ -377,35 +378,21 @@ test('オブジェクト選択は詳細パネルを自動で開かない', async
   );
 });
 
-// 左レールのオブジェクト作成ボタンはアイコンのみで、以前は aria-label/title に
-// バックエンドの生のcode（"sticky"等、英語）をそのまま出していた。オンボーディング
-// クエスト（例:「付箋を3枚作る」db/seeds.rb）は日本語のタイトルなので、
-// どのアイコンがどのクエストに対応するか分からないというフィードバックにより、
-// クエストと同じ日本語ラベルに揃えた。
-test('オブジェクト作成ボタンのラベルはクエスト文言と同じ日本語を使う（生のcodeを出さない）', async () => {
-  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+// ラジアルメニュー・盤面ラベルとも、バックエンドの生の code（"sticky" 等）を
+// そのまま表示せず、オンボーディングクエスト（例:「付箋を3枚作る」db/seeds.rb）と
+// 同じ日本語ラベル（objectType* キー）を経由することを検証する。
+test('ラジアルメニューの作成項目はクエスト文言と同じ日本語ラベルキーを使う', async () => {
+  const radialLibSource = await readFile(path.join(root, 'src/lib/radial-menu.ts'), 'utf8');
 
-  assert.match(source, /objectTypeSticky/, '付箋ボタンのラベルキーが無い');
-  assert.match(source, /objectTypeShape/);
-  assert.match(source, /objectTypeText/);
-  assert.match(source, /objectTypeConnector/);
-  assert.match(source, /objectTypeImage/);
-  assert.match(source, /objectTypeFrame/);
+  assert.match(radialLibSource, /objectTypeSticky/, '付箋のラベルキーが無い');
+  assert.match(radialLibSource, /objectTypeShape/);
+  assert.match(radialLibSource, /objectTypeText/);
+  assert.match(radialLibSource, /objectTypeFrame/);
 
-  const railButtons = source.match(
-    /boardState\.objectTypes\.map\(\(type\) => \{[\s\S]*?\n {8}\}\)\}/
-  );
-  assert.ok(railButtons, 'could not locate the object-type rail button mapping');
-  assert.doesNotMatch(
-    railButtons[0],
-    /aria-label=\{type\.code\}|title=\{type\.code\}/,
-    'aria-label/title にバックエンドの生のcode（英語）をそのまま出している'
-  );
+  const radialComponentSource = await readFile(path.join(root, RADIAL_MENU_COMPONENT), 'utf8');
+  assert.match(radialComponentSource, /t\(item\.labelKey as never\)/, 'ラベルはロケールを経由する');
 });
 
-// board-object-label（盤面上のオブジェクトそのものに出るラベル）も同じ理由で
-// 生のcodeをそのまま表示していた（"STICKY"のように英語のまま見えてしまい、
-// クエスト文言「付箋」と結び付かない）。可視テキストも日本語ラベルに揃える。
 test('盤面上のオブジェクトラベルも日本語（生のcodeを出さない）', async () => {
   const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
@@ -421,4 +408,27 @@ test('盤面上のオブジェクトラベルも日本語（生のcodeを出さ�
     /OBJECT_TYPE_LABEL_KEYS\[object\.objectTypeCode\]/,
     '日本語ラベルのマッピングを経由していない'
   );
+});
+
+test('上部バーはロール表示・演出強度・参加者アバターを持ち、日本語文言はロケール経由', async () => {
+  const source = await readFile(path.join(root, TOP_BAR_COMPONENT), 'utf8');
+
+  assert.match(source, /resolveRoleLabelKey\(roleCode\)/, 'ロール表示はラベルキー変換を経由する');
+  assert.match(source, /aria-pressed=\{intensity === code\}/, '演出強度はセグメントボタンで現在値を示す');
+  assert.match(source, /resolveAvatarRoster\(participants\)/, '参加者アバターは presence-avatar のピュア関数で整形する');
+  assert.match(source, /t\('backToBoardList'\)/, 'ロゴはボード一覧へ戻る導線を兼ねる');
+  // 日本語直書き（ハードコード）が無いこと。可視文字列はすべて t() を通す。
+  assert.doesNotMatch(source, />[^<>{}]*[぀-ヿ一-鿿][^<>{}]*</, '上部バーに日本語のハードコードがある');
+});
+
+test('クエストサイドバーは常設で、操作ヒント凡例とすべてスキップを持つ', async () => {
+  const source = await readFile(path.join(root, QUEST_SIDEBAR_COMPONENT), 'utf8');
+
+  assert.match(source, /t\('questEyebrow'\)/);
+  assert.match(source, /t\('questSkipAll'\)/);
+  assert.match(source, /t\('hintCreate'\)/);
+  assert.match(source, /t\('hintRadial'\)/);
+  assert.match(source, /t\('hintPan'\)/);
+  assert.match(source, /t\('hintZoom'\)/);
+  assert.doesNotMatch(source, />[^<>{}]*[぀-ヿ一-鿿][^<>{}]*</, 'サイドバーに日本語のハードコードがある');
 });

@@ -198,9 +198,10 @@ test('restore toast actions maintain keyboard focus during toggle', async () => 
     await sticky.waitFor();
     await sticky.click();
 
-    // 削除ボタンをクリックする（左ドックのレールボタンはアイコンのみで、
-    // aria-label で判別する。visible text は無い）
-    const deleteButton = page.locator('.board-canvas-create-rail button[aria-label="削除"]');
+    // 右クリックでラジアルメニューを開き、「削除」を選ぶ（issue #192 で
+    // 左レールの削除ボタンは廃止され、オブジェクト操作はラジアルメニューに集約）
+    await sticky.click({button: 'right'});
+    const deleteButton = page.locator('.board-radial-item', {hasText: '削除'});
     await deleteButton.waitFor();
     await deleteButton.click();
 

@@ -19,7 +19,7 @@ async function loadModule() {
   return moduleShim.exports;
 }
 
-const {resolveObjectColorHex, objectColorStyle} = await loadModule();
+const {resolveObjectColorHex, objectColorStyle, hexToRgbaString, pastelizeHex} = await loadModule();
 
 const palettes = [
   {id: 1, hex: '#f87171'},
@@ -50,8 +50,36 @@ test('resolveObjectColorHex rejects hex values that are not plain color literals
   assert.equal(resolveObjectColorHex([{id: 1, hex: 123}], 1), null);
 });
 
-test('objectColorStyle emits the CSS custom property only when the color resolves', () => {
-  assert.deepEqual(objectColorStyle(palettes, 2), {'--object-color': '#34d399'});
+test('objectColorStyle emits the CSS custom properties only when the color resolves', () => {
+  assert.equal(objectColorStyle(palettes, 2)['--object-color'], '#34d399');
   assert.deepEqual(objectColorStyle(palettes, 99), {});
   assert.deepEqual(objectColorStyle([], 1), {});
+});
+
+// ── issue #192: モック（app-ui/Questboard Prototype.dc.html）の塗りつぶし表現 ──
+
+test('hexToRgbaString は #RRGGBB / #RGB を rgba() に変換し、不正値は null', () => {
+  assert.equal(hexToRgbaString('#7b2fff', 0.55), 'rgba(123, 47, 255, 0.55)');
+  assert.equal(hexToRgbaString('#abc', 1), 'rgba(170, 187, 204, 1)');
+  assert.equal(hexToRgbaString('red', 0.5), null);
+  assert.equal(hexToRgbaString('#7b2fff; background: url(x)', 0.5), null);
+});
+
+test('pastelizeHex は白側へ寄せたパステル色（モックの pastel(hex, amt) 相当）を返す', () => {
+  // #7b2fff を 0.55 白寄せ： r=123+(255-123)*0.55=196(round), g=47+208*0.55=161, b=255
+  assert.equal(pastelizeHex('#7b2fff', 0.55), 'rgba(196, 161, 255, 0.95)');
+  // amount 0 は元色のまま（不透明度のみ 0.95）
+  assert.equal(pastelizeHex('#000000', 0), 'rgba(0, 0, 0, 0.95)');
+  assert.equal(pastelizeHex('not-a-color', 0.5), null);
+});
+
+test('objectColorStyle は塗りつぶし用のカスタムプロパティ一式を出す', () => {
+  const style = objectColorStyle(palettes, 2);
+  assert.equal(style['--object-color'], '#34d399');
+  assert.equal(style['--object-fill-soft'], pastelizeHex('#34d399', 0.55));
+  assert.equal(style['--object-border-soft'], hexToRgbaString('#34d399', 0.55));
+  assert.equal(style['--object-fill-faint'], hexToRgbaString('#34d399', 0.2));
+  assert.equal(style['--object-border-strong'], hexToRgbaString('#34d399', 0.65));
+  // 解決できない場合は従来どおり空（CSS 側の既定値に委ねる）
+  assert.deepEqual(objectColorStyle(palettes, 99), {});
 });
