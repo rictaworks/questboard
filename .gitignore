@@ -20,3 +20,7 @@
 /.playwright-mcp/
 /measure_tmp.mjs
 next-env.d.ts
+
+# Claudeが実機確認用にリポジトリ直下へ保存するPlaywrightスクリーンショット。
+# コード変更ではないため追跡しない（サブディレクトリの画像資産は対象外）。
+/*.png
