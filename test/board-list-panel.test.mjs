@@ -29,23 +29,35 @@ test('board list fetch effect actually runs in development instead of skipping u
 });
 
 // 初回アクセス時のレースコンディション防止:
-// board-list-panel.tsx は開発環境で awaitDevSession() を呼び、
+// board-list-panel.tsx は開発環境で establishDevSession() を自ら呼び、
 // dev/session 確立完了を待ってから /boards を叩くことを確認する。
-test('board list awaits dev session promise before fetching boards in development', async () => {
+//
+// かつては「待つだけで自分では確立を開始しない」受動的な awaitDevSession() を使って
+// いたが、それは AuthPanel が自分より先にマウントされて確立を開始しているはず、
+// という暗黙のマウント順序に依存していた（PR #195 reviewerレビュー指摘）。
+// AuthPanel を伴わない画面での再利用やコンポーネント順の入れ替えで壊れるため、
+// board-list-panel.tsx 自身が establishDevSession() を呼ぶ設計に変更した。
+test('board list actively establishes the dev session before fetching boards in development', async () => {
   const source = await readFile(path.join(root, 'src/components/board-list-panel.tsx'), 'utf8');
 
-  // awaitDevSession をインポートしていること
+  // establishDevSession をインポートしていること（受動的な awaitDevSession は使わない）
   assert.match(
     source,
-    /import\s*\{[^}]*awaitDevSession[^}]*\}\s*from\s*'@\/lib\/session-api'/,
-    'board-list-panel.tsx が awaitDevSession を session-api からインポートしていない'
+    /import\s*\{[^}]*establishDevSession[^}]*\}\s*from\s*'@\/lib\/session-api'/,
+    'board-list-panel.tsx が establishDevSession を session-api からインポートしていない'
+  );
+  assert.doesNotMatch(
+    source,
+    /awaitDevSession/,
+    'board-list-panel.tsx が受動的な awaitDevSession を使っている。' +
+      'AuthPanelのマウント順に依存せず、自分で establishDevSession() を呼ぶこと'
   );
 
-  // 開発環境分岐で awaitDevSession() を await していること
+  // 開発環境分岐で establishDevSession() を await していること
   assert.match(
     source,
-    /NEXT_PUBLIC_ENV === 'development'[\s\S]{0,200}await awaitDevSession\(\)/,
-    '開発環境で awaitDevSession() を await していない。dev/session 完了前に /boards を叩くレースコンディションが残る'
+    /NEXT_PUBLIC_ENV === 'development'[\s\S]{0,200}await establishDevSession\(/,
+    '開発環境で establishDevSession() を await していない。dev/session 完了前に /boards を叩くレースコンディションが残る'
   );
 });
 
@@ -57,8 +69,8 @@ test('board list shows error message on 401 instead of silently hiding the panel
   const source = await readFile(path.join(root, 'src/components/board-list-panel.tsx'), 'utf8');
 
   // /boards への fetch 後の 401 ハンドリングを対象にする（セッション確認の401とは別）
-  // boards fetch effect は awaitDevSession の後にある
-  const boardsFetchSection = source.match(/awaitDevSession\(\)[\s\S]*?response\.status === 401[\s\S]{0,700}/);
+  // boards fetch effect は establishDevSession の後にある
+  const boardsFetchSection = source.match(/establishDevSession\([\s\S]*?response\.status === 401[\s\S]{0,700}/);
   assert.ok(boardsFetchSection, '/boards fetch 後の 401 ハンドリングが見つからない');
 
   // 401ブランチでエラーメッセージをセットしていること
@@ -89,14 +101,17 @@ test('board list shows error message on 401 instead of silently hiding the panel
   );
 });
 
-// session-api.ts が module-level Promise を持ち、awaitDevSession() をエクスポートしていること。
-test('session-api exports awaitDevSession for dev race prevention', async () => {
+// session-api.ts が module-level Promise を持ち、establishDevSession() が
+// 「誰も呼んでいなければ自分で開始し、既に呼ばれていればその完了を待つ」という
+// べき等な単一のエントリーポイントであること（受動的な awaitDevSession は廃止済み）。
+test('session-api exposes a single idempotent establishDevSession entry point for dev race prevention', async () => {
   const source = await readFile(path.join(root, 'src/lib/session-api.ts'), 'utf8');
 
-  assert.match(
+  assert.doesNotMatch(
     source,
-    /export function awaitDevSession\(\)/,
-    'session-api.ts が awaitDevSession をエクスポートしていない'
+    /export function awaitDevSession/,
+    'session-api.ts に受動的な awaitDevSession が残っている。マウント順序に依存する' +
+      '設計に逆戻りしている'
   );
 
   // モジュールレベルの Promise 変数があること

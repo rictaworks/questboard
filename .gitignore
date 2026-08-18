@@ -11,6 +11,12 @@
 /.agents/
 /AGENTS.md
 /.next/
+# board-list-dev-session-race.playwright.test.mjs が NEXT_PUBLIC_ENV=development を
+# 焼き込んだ専用ビルドを作る先。scaffold.test.mjs の
+# 'production build omits development auth banner' が /.next/ 配下を再帰的に走査するため、
+# /.next/ の内側に置くと誤検知される。/.next/ の外側の独立ディレクトリに退避する
+# （next.config.ts の distDir 設定参照）。
+/.next-playwright-dev-session-race/
 /node_modules/
 /coverage/
 /.env.local

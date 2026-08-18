@@ -19,6 +19,12 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 const REMOVED_LOCALE_PREFIXES = ['ja', 'en', 'fr', 'zh', 'ru', 'es', 'ar'] as const;
 
 const nextConfig: NextConfig = {
+  // 既定は '.next'（Next標準）。board-list-dev-session-race.playwright.test.mjs のように
+  // NEXT_PUBLIC_ENV=development を焼き込んだ専用ビルドが必要なテストが、CI/ローカルの
+  // `node --test test/*.test.mjs` が共有する通常ビルド（NEXT_PUBLIC_ENV=production）の
+  // .next を上書きしないよう、テスト側だけ別ディレクトリに退避できるようにする
+  // （.gitignore・eslint.config.mjs に個別の除外設定がある）。
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   typedRoutes: true,
   async redirects() {
     // permanent: false（307）にする。308 はブラウザが恒久的にキャッシュするため、

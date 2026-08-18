@@ -7,7 +7,7 @@ import {useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
 import {readXAuthSettings} from '@/lib/x-auth';
-import {awaitDevSession} from '@/lib/session-api';
+import {establishDevSession} from '@/lib/session-api';
 
 type SessionState = {
   authenticated: boolean;
@@ -147,10 +147,13 @@ export default function BoardListPanel() {
         const {backendUrl} = readXAuthSettings();
 
         // 開発環境では establishDevSession の完了を待ってから /boards を叩く。
-        // auth-panel.tsx が POST /dev/session を発行する前に fetch が走ると 401 になる
-        // レースコンディションを防ぐ（awaitDevSession() は module-level Promise を返す）。
+        // 他のパネル（AuthPanel等）が既に確立を開始していればその完了を待ち、
+        // まだ誰も開始していなければここで自分から開始する（establishDevSession は
+        // モジュールレベルでキャッシュされ、べき等なので二重にPOSTは飛ばない）。
+        // マウント順序に依存しない：AuthPanel を伴わない画面でこのパネル単体が
+        // 使われても、POST /dev/session 完了前に /boards を叩く401レースは起きない。
         if (process.env.NEXT_PUBLIC_ENV === 'development') {
-          await awaitDevSession();
+          await establishDevSession(t('boardLoadError'));
         }
 
         if (abortController.signal.aborted) {

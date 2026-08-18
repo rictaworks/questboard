@@ -112,15 +112,19 @@ export async function requestManualRecheck(fallbackErrorMessage: string): Promis
 // src/backend/config/routes.rb・app/controllers/dev/session_controller.rb 参照）を
 // 実際に叩き、本物のセッションを確立する。
 //
-// モジュールレベルで Promise を保持し、確立は1回だけ行う。
-// board-list-panel.tsx 等の認証が必要なパネルは awaitDevSession() でこの Promise を
-// 待ってから API を叩くことで、初回アクセス時のレースコンディション
-//（dev/session 完了前に /boards を叩いて 401 になる）を防ぐ。
+// モジュールレベルで Promise を保持し、確立は1回だけ行う。認証が必要なパネル
+// （board-list-panel.tsx・board-invite-panel.tsx 等）はどこか1つが先に確立していれば
+// その完了を待ち、まだ誰も確立していなければ自分で確立を開始する（べき等なので
+// 複数パネルが同時に呼んでも POST /dev/session は1回しか飛ばない）。
+//
+// かつては「待つだけで自分では開始しない」受動的な awaitDevSession() を別に用意して
+// いたが、それは「他のコンポーネントが自分より先にマウントされ、既に確立を開始して
+// いるはず」という暗黙のマウント順序に依存する設計だった（board-list-panel.tsx は
+// page.tsx で AuthPanel より後に置かれているから成立していただけ）。AuthPanel を
+// 伴わない画面での再利用やコンポーネント順の入れ替えで容易に壊れるため廃止した。
+// 認証が必要な各パネルは establishDevSession() を直接、自分の呼び出しとして
+// 呼ぶこと（PR #195 reviewerレビュー対応）。
 let _devSessionPromise: Promise<SessionUser> | null = null;
-
-export function awaitDevSession(): Promise<SessionUser> | null {
-  return _devSessionPromise;
-}
 
 export async function establishDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
   if (_devSessionPromise !== null) {
