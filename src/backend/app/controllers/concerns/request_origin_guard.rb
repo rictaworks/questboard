@@ -26,9 +26,15 @@ module RequestOriginGuard
     origin = request.headers["Origin"].presence || request.headers["HTTP_ORIGIN"].presence
     return unless origin.present?
 
-    unless allowed_origins.include?(origin)
+    unless origin_allowed?(origin)
       render json: { error: I18n.t("api.errors.forbidden_origin") }, status: :forbidden
     end
+  end
+
+  def origin_allowed?(origin)
+    return production_allowed_origins.include?(origin) if Rails.env.production?
+
+    DevelopmentAllowedOrigins.allowed?(origin)
   end
 
   def verify_content_type!
@@ -46,11 +52,7 @@ module RequestOriginGuard
     end
   end
 
-  def allowed_origins
-    @allowed_origins ||= if Rails.env.production?
-      ENV.fetch("CORS_ALLOWED_ORIGINS", "").split(",").map(&:strip).reject(&:empty?)
-    else
-      [ "http://localhost:3000" ]
-    end
+  def production_allowed_origins
+    @production_allowed_origins ||= ENV.fetch("CORS_ALLOWED_ORIGINS", "").split(",").map(&:strip).reject(&:empty?)
   end
 end

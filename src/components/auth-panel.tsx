@@ -15,6 +15,7 @@ import {
   xAuthStorageKeys,
   readXAuthSettings
 } from "@/lib/x-auth";
+import {establishDevSession} from "@/lib/session-api";
 
 type SessionState = {
   authenticated: boolean;
@@ -33,7 +34,22 @@ export default function AuthPanel() {
 
   useEffect(() => {
     if (isDev) {
-      return;
+      // 見た目は最初から認証済みだが、実際のセッションCookieはまだ無い。これを張らないと、
+      // ボード作成のような書き込み系（RequestOriginGuard・ApplicationController#current_user
+      // がセッションクッキー頼み）が常に401になる（本番には存在しない開発専用エンドポイント。
+      // src/backend/app/controllers/dev/session_controller.rb 参照）。
+      let cancelled = false;
+
+      void establishDevSession(t("developmentSessionError")).catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+        setErrorMessage(error instanceof Error ? error.message : t("developmentSessionError"));
+      });
+
+      return () => {
+        cancelled = true;
+      };
     }
 
     const abortController = new AbortController();
@@ -149,6 +165,7 @@ export default function AuthPanel() {
           <FontAwesomeIcon icon={faUserCheck} />
           <span>{sessionState?.displayName ?? t("developmentDisplayName")}</span>
         </p>
+        {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
       </section>
     );
   }

@@ -10,6 +10,7 @@ import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
 import {resolveRoleLabelKey} from '@/lib/board-role-label';
 import {
+  establishDevSession,
   isPlanGated,
   MEMBER_PLAN_CODE,
   requestManualRecheck,
@@ -225,13 +226,17 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
   const authT = useTranslations('Auth');
   const [sessionState, setSessionState] = useState<SessionState | null>(() =>
     process.env.NEXT_PUBLIC_ENV === 'development'
-      // 開発環境は認証済みとして扱う。ゲート判定は「member 以外を塞ぐ」ので、
-      // プラン値も併せて与えないと開発環境が利用不可画面に落ちる。
+      // 開発環境は最初から認証済みとして見せる。ゲート判定は「member 以外を塞ぐ」ので、
+      // プラン値も併せて与えないと開発環境が利用不可画面に落ちる。xUserId は
+      // establishDevSession が本物のセッションを確立した時点で実際の値
+      // （dev/session_controller.rb の DEV_USER_X_ID）に上書きされる。それまでの
+      // 短い間もバックエンドの定数と同じ値にしておき、KPIイベントの
+      // userId不一致（422）を起こさない。
       ? {
           authenticated: true,
           displayName: authT('developmentDisplayName'),
           planCode: MEMBER_PLAN_CODE,
-          xUserId: 'development-x-user-id'
+          xUserId: 'dev-user'
         }
       : null
   );
@@ -251,7 +256,34 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
 
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_ENV === 'development') {
-      return;
+      // 見た目は最初から認証済みだが、実際のセッションCookieはまだ無い
+      // （auth-panel.tsx と同じ理由）。これを張らないと、KPIイベントの送信
+      // （board-canvas-panel.tsx の AnalyticsTracker）が本物のcurrent_userを
+      // 得られず、クエスト進捗が記録されない。
+      let cancelled = false;
+
+      void establishDevSession(authT('developmentSessionError'))
+        .then((session) => {
+          if (cancelled) {
+            return;
+          }
+          setSessionState({
+            authenticated: session.authenticated,
+            displayName: session.displayName,
+            planCode: session.planCode,
+            xUserId: session.xUserId
+          });
+        })
+        .catch((error: unknown) => {
+          if (cancelled) {
+            return;
+          }
+          setErrorMessage(error instanceof Error ? error.message : authT('developmentSessionError'));
+        });
+
+      return () => {
+        cancelled = true;
+      };
     }
 
     const abortController = new AbortController();
@@ -552,7 +584,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           key={boardData.board.shareToken}
           onReloadBoard={reloadBoard}
           onSignOut={() => void handleSignOut()}
-          userXUserId={sessionState.xUserId ?? 'development-x-user-id'}
+          userXUserId={sessionState.xUserId ?? 'dev-user'}
         />
       </>
     );

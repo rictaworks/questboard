@@ -104,3 +104,26 @@ export async function requestManualRecheck(fallbackErrorMessage: string): Promis
 
   return toSessionUser(await response.json() as SessionPayload);
 }
+
+// フロントの開発認証バイパス（auth-panel.tsx の isDev 分岐）は、見た目だけ認証済みに
+// 見せかけて実際のセッションCookieを張らないと、ボード作成のような書き込み系
+// （RequestOriginGuard・ApplicationController#current_user がセッションクッキー頼み）が
+// 常に401になる。バックエンドの開発専用エンドポイント（本番には存在しない。
+// src/backend/config/routes.rb・app/controllers/dev/session_controller.rb 参照）を
+// 実際に叩き、本物のセッションを確立する。
+export async function establishDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
+  const {backendUrl} = readXAuthSettings();
+  const response = await fetch(`${backendUrl}/dev/session`, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(fallbackErrorMessage);
+  }
+
+  return toSessionUser(await response.json() as SessionPayload);
+}

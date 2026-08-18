@@ -127,3 +127,46 @@ test('requestManualRecheck posts without a body the server does not read', async
     globalThis.fetch = originalFetch;
   }
 });
+
+// フロントの開発認証バイパス（auth-panel.tsx の isDev 分岐）は、見た目だけ認証済みに
+// 見せかけて実際のセッションCookieを張らないと、ボード作成のような書き込み系が
+// 常に401になる。ここでバックエンドの開発専用エンドポイント（POST /dev/session）を
+// 実際に叩き、本物のセッションを確立する。
+test('establishDevSession posts to the dev-only session endpoint and returns the session', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (url, init) => {
+    calls.push({url, init});
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {displayName: '開発ユーザー', planCode: 'member'}})
+    });
+  };
+
+  try {
+    const session = await sessionApi.establishDevSession('fallback');
+
+    assert.equal(session.authenticated, true);
+    assert.equal(session.displayName, '開発ユーザー');
+    assert.equal(session.planCode, 'member');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, `${BACKEND_URL}/dev/session`);
+    assert.equal(calls[0].init.method, 'POST');
+    assert.equal(calls[0].init.credentials, 'include');
+    assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('establishDevSession throws the caller-provided message when the endpoint fails', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => Promise.resolve({ok: false, status: 500, json: () => Promise.resolve({})});
+
+  try {
+    await assert.rejects(() => sessionApi.establishDevSession('fallback'), /fallback/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

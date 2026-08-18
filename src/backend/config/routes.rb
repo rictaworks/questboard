@@ -2,6 +2,15 @@ Rails.application.routes.draw do
   get "/healthz", to: "health#show"
   post "/client_errors", to: "client_errors#create"
 
+  # 開発専用のセッション発行。本番では routes.rb でルート自体を定義しないことに加え、
+  # app/controllers/dev/ を .dockerignore で本番イメージから物理的に除外している
+  # （見せかけの認証バイパス questboard/src/components/auth-panel.tsx と対）。
+  unless Rails.env.production?
+    namespace :dev do
+      post "/session", to: "session#create"
+    end
+  end
+
   namespace :admin do
     root to: "dashboard#show"
     resources :users, only: [ :index, :create ] do

@@ -12,14 +12,18 @@ const CANVAS_COMPONENT = 'src/components/board-canvas-panel.tsx';
 const SELECTOR = {
   boardShell: '.home-shell:has(.board-canvas-shell)',
   boardShellWithBanner: '.home-shell:has(.board-canvas-shell):has(.board-join-success)',
+  boardShellFallback: '.home-shell:has(.board-canvas-shell) .board-canvas-shell',
   canvasShell: '.board-canvas-shell',
-  canvasBody: '.board-canvas-body',
-  constrainedCanvasBody: '.home-shell:has(.board-canvas-shell) .board-canvas-body',
   stage: '.board-stage',
-  constrainedStage: '.home-shell:has(.board-canvas-shell) .board-stage',
-  sidebar: '.board-sidebar',
-  sidebarPanels: '.board-details, .board-quest-panel',
+  titleBar: '.board-canvas-title-bar',
+  createRail: '.board-canvas-create-rail',
+  rail: '.board-canvas-rail',
+  railButton: '.board-canvas-rail-button',
+  panelOverlay: '.board-canvas-panel-overlay',
+  detailsAndQuest: '.board-details, .board-quest-panel',
+  minimap: '.board-minimap',
   minimapSurface: '.board-minimap-surface',
+  railUserMenuPanel: '.board-canvas-rail .board-user-menu-panel',
   userMenu: '.board-user-menu',
   userMenuTrigger: '.board-user-menu-trigger',
   userMenuAvatar: '.board-user-menu-avatar',
@@ -28,23 +32,11 @@ const SELECTOR = {
   boardFooter: 'body:has(.board-canvas-shell) .site-footer',
   footerDisclosure: '.site-footer-disclosure',
   footerTrigger: '.site-footer-trigger',
-  footerPanel: '.site-footer-disclosure[open] > .site-footer-panel'
+  footerPanel: '.site-footer-disclosure[open] > .site-footer-panel',
+  toasts: '.board-toasts'
 };
-// 高さ制約を解除してよいのはモバイル幅の 1 分岐だけ。ここを増やすと
-// デスクトップの低いビューポートでキャンバスが潰れる（Issue #94 の回帰）。
-const MOBILE_MEDIA = '(max-width: 960px)';
-// サイドバー各パネルの下限。ビューポートが低いと 1 行分まで潰れて実質操作
-// できなくなるため、下限を割ったらサイドバーごとスクロールさせる。
-const PANEL_MIN_HEIGHT = '8rem';
-// ミニマップ盤面は、縦幅が十分にある通常表示では俯瞰性を優先して固定下限を
-// 保つ。幅に追従する可変化（aspect-ratio）は、入れ子スクロールが実際に問題
-// になる低いビューポート（LOW_HEIGHT_MEDIA）だけに限定する。
-const MINIMAP_SURFACE_MIN_HEIGHT = '10rem';
-const MINIMAP_ASPECT_RATIO = '5 / 1';
-// 縦が窮屈なときだけ、クエストと詳細パネルの下限を少し緩める。
-const LOW_HEIGHT_MEDIA = '(max-height: 820px)';
-// 高さ制約を外すモバイル分岐でステージに戻す最低高さ。
-const STAGE_MIN_HEIGHT = '36rem';
+// レールボタン（2.5rem）の手前で止める、ヘッダー／パネルオーバーレイ共通の右端計算式。
+const RAIL_CLEARANCE = "calc(var(--space-4) + 2.5rem + var(--space-3))";
 
 // セレクタ抽出は直前の文字（`}` `;` または先頭）を手がかりにするため、
 // コメントが残っているとその手がかりが崩れる。解析前に必ず剥がす。
@@ -171,8 +163,8 @@ function assertDeclaration(index, selector, property, expected) {
   assert.equal(actual, expected, `${selector} の ${property} が想定と異なります（実際: ${actual ?? 'なし'}）`);
 }
 
-test('ボードキャンバスはビューポートに収まり、サイドバーの各パネルが個別にスクロールする', async () => {
-  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+test('ボードキャンバスは常設サイドバーを持たず、キャンバスが常に全面を占める', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
   const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.boardShell, 'height', '100%');
@@ -182,102 +174,153 @@ test('ボードキャンバスはビューポートに収まり、サイドバ�
   assertDeclaration(rules, SELECTOR.boardShell, 'padding', 'var(--space-4)');
   assertDeclaration(rules, SELECTOR.boardShell, 'overflow', 'hidden');
   assertDeclaration(rules, SELECTOR.boardShell, 'grid-template-rows', 'minmax(0, 1fr)');
-  // `* { box-sizing: border-box }` が全体に効いているので再指定しない。
-  // 冗長な宣言をテストで固定すると、後から消せなくなる。
-  assert.equal(
-    declarationsOf(rules, SELECTOR.boardShell).has('box-sizing'),
-    false,
-    'box-sizing はグローバルの `*` 指定と重複するため書かない'
-  );
 
   assertDeclaration(rules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto minmax(0, 1fr)');
 
+  // :has() 非対応環境向けフォールバック。対応環境ではこの直後の規則が 0 に上書きする。
+  assertDeclaration(rules, SELECTOR.canvasShell, 'min-height', '36rem');
+  assertDeclaration(rules, SELECTOR.boardShellFallback, 'min-height', '0');
+
+  // キャンバスは .board-canvas-shell いっぱいに絶対配置で広がる（常設サイドバーが無い）。
+  assertDeclaration(rules, SELECTOR.canvasShell, 'position', 'relative');
   assertDeclaration(rules, SELECTOR.canvasShell, 'height', '100%');
-  assertDeclaration(rules, SELECTOR.canvasShell, 'grid-template-rows', 'auto minmax(0, 1fr)');
-
-  assertDeclaration(rules, SELECTOR.canvasBody, 'min-height', STAGE_MIN_HEIGHT);
-  assertDeclaration(rules, SELECTOR.constrainedCanvasBody, 'min-height', '0');
-  assertDeclaration(rules, SELECTOR.stage, 'min-height', STAGE_MIN_HEIGHT);
-  assertDeclaration(rules, SELECTOR.constrainedStage, 'min-height', '0');
-  assertDeclaration(rules, SELECTOR.sidebar, 'min-height', '0');
-
-  assertDeclaration(rules, SELECTOR.sidebarPanels, 'overflow', 'auto');
-  // overscroll-behavior: contain は付けない。.board-stage はパネルの祖先ではなく
-  // 兄弟なのでキャンバスへは元々連鎖せず、逆にパネル末端から .board-sidebar への
-  // ホイール伝播を止めてしまい、サイドバーがスクロールできなくなる。
+  assertDeclaration(rules, SELECTOR.canvasShell, 'overflow', 'hidden');
+  assertDeclaration(rules, SELECTOR.stage, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.stage, 'inset', '0');
+  // .board-stage 自身に min-height は無い（高さは .board-canvas-shell 側が保証する）。
   assert.equal(
-    declarationsOf(rules, SELECTOR.sidebarPanels).has('overscroll-behavior'),
+    declarationsOf(rules, SELECTOR.stage).has('min-height'),
     false,
-    'overscroll-behavior はサイドバーへのスクロール伝播を止めるため指定しない'
+    '.board-stage は絶対配置で親いっぱいに広がるため min-height を持たない'
+  );
+});
+
+test('タイトルバーは画面上部に隙間なく全幅で固定され、作成レールはそれとは独立してキャンバスの上に浮かぶ', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  // app-ui/ のモック（Questboard Prototype.dc.html）どおり、タイトルバーは画面上部に
+  // 隙間なく全幅で固定する。以前はここにオブジェクト作成ボタンまで含めていたため、
+  // キャンバス上部の広い帯を丸ごとクリック不可にしていたが、ボタン群は独立した
+  // .board-canvas-create-rail に分離したので同じ問題は再発しない
+  // （board-canvas-panel.tsx）。
+  assertDeclaration(rules, SELECTOR.titleBar, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.titleBar, 'top', '0');
+  assertDeclaration(rules, SELECTOR.titleBar, 'left', '0');
+  assertDeclaration(rules, SELECTOR.titleBar, 'right', '0');
+  assertDeclaration(rules, SELECTOR.titleBar, 'display', 'flex');
+
+  assertDeclaration(rules, SELECTOR.createRail, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.createRail, 'left', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.createRail, 'bottom', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.createRail, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.createRail, 'flex-direction', 'column');
+
+  assertDeclaration(rules, SELECTOR.rail, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.rail, 'top', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.rail, 'right', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.rail, 'bottom', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.rail, 'display', 'flex');
+  assertDeclaration(rules, SELECTOR.rail, 'flex-direction', 'column');
+
+  assertDeclaration(rules, SELECTOR.railButton, 'width', '2.5rem');
+  assertDeclaration(rules, SELECTOR.railButton, 'height', '2.5rem');
+  assertDeclaration(rules, SELECTOR.railButton, 'border-radius', '999px');
+
+  // レール内のユーザーメニューはアイコン専用トリガーの寸法に揃え、
+  // ポップオーバーはレールの内側（左）へ開く。
+  assertDeclaration(rules, SELECTOR.railUserMenuPanel, 'right', 'calc(100% + var(--space-2))');
+  assertDeclaration(rules, SELECTOR.railUserMenuPanel, 'bottom', '0');
+});
+
+test('選択中の1枚だけがオーバーレイパネルとしてキャンバスの上に開く', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
+
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'position', 'absolute');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'top', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'right', RAIL_CLEARANCE);
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'bottom', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.panelOverlay, 'width', '22rem');
+
+  // パネル自身は overlay 側が高さを確定させるため min-height を持たず、
+  // クエスト／詳細パネルは overflow: auto で内部スクロールする。
+  assertDeclaration(rules, SELECTOR.detailsAndQuest, 'overflow', 'auto');
+  assert.equal(
+    declarationsOf(rules, SELECTOR.detailsAndQuest).has('min-height'),
+    false,
+    'パネルの高さは .board-canvas-panel-overlay の top/bottom が決めるため min-height は不要'
+  );
+
+  // ミニマップだけは俯瞰性を優先してスクロールさせず、盤面は使える高さいっぱいに広がる。
+  assertDeclaration(rules, SELECTOR.minimap, 'overflow', 'hidden');
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimap).has('min-height'),
+    false,
+    'ミニマップの高さも overlay 側が決めるため min-height は不要'
+  );
+  assertDeclaration(rules, SELECTOR.minimapSurface, 'height', '100%');
+  assert.equal(
+    declarationsOf(rules, SELECTOR.minimapSurface).has('aspect-ratio'),
+    false,
+    '盤面は常に親グリッド行いっぱいに広がるため aspect-ratio 切り替えは不要'
   );
 
   assertDeclaration(rules, SELECTOR.userMenu, 'position', 'relative');
   assertDeclaration(rules, SELECTOR.userMenu, 'margin-left', 'auto');
   assertDeclaration(rules, SELECTOR.userMenuTrigger, 'display', 'inline-flex');
-  assertDeclaration(rules, SELECTOR.userMenuTrigger, 'align-items', 'center');
   assertDeclaration(rules, SELECTOR.userMenuAvatar, 'width', '2rem');
-  assertDeclaration(rules, SELECTOR.userMenuAvatar, 'height', '2rem');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'position', 'absolute');
   assertDeclaration(rules, SELECTOR.userMenuPanel, 'top', 'calc(100% + var(--space-2))');
+});
+
+test('フッターはボード編集画面ではコマンドレールの列へ視覚的に統合される', async () => {
+  const {topLevel} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+  const rules = indexRules(topLevel);
 
   assertDeclaration(rules, SELECTOR.footer, 'padding', 'var(--space-3) var(--space-4)');
-  assertDeclaration(rules, SELECTOR.boardFooter, 'padding', 'var(--space-2) var(--space-4)');
+  assertDeclaration(rules, SELECTOR.boardFooter, 'position', 'fixed');
+  assertDeclaration(rules, SELECTOR.boardFooter, 'right', 'calc(var(--space-4) * 2)');
+  assertDeclaration(rules, SELECTOR.boardFooter, 'bottom', 'calc(var(--space-4) * 2)');
   assertDeclaration(rules, SELECTOR.footerDisclosure, 'display', 'grid');
   assertDeclaration(rules, SELECTOR.footerTrigger, 'display', 'inline-flex');
   assertDeclaration(rules, SELECTOR.footerPanel, 'display', 'grid');
+
+  // トーストは右下のレール／フッターと重ならないよう左下に置く。
+  assertDeclaration(rules, SELECTOR.toasts, 'position', 'fixed');
+  assertDeclaration(rules, SELECTOR.toasts, 'left', 'var(--space-4)');
+  assertDeclaration(rules, SELECTOR.toasts, 'bottom', 'var(--space-4)');
 });
 
-test('パネルは下限高さを持ち、収まらない場合はサイドバーごとスクロールする', async () => {
-  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
-  const rules = indexRules(topLevel);
+test('ビューポート幅に応じてサイドバーを縦積みへ切り替える分岐はもう存在しない', async () => {
+  const {mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
 
-  // 下限が無いと、低いビューポートで各パネルが 1 行分（約 50px）まで潰れ、
-  // `overflow: hidden` の .home-shell 内なので逃げ道が無くなる。
-  assertDeclaration(rules, SELECTOR.sidebarPanels, 'min-height', PANEL_MIN_HEIGHT);
-  // 下限の合計がサイドバーを超えたときの受け皿。
-  assertDeclaration(rules, SELECTOR.sidebar, 'overflow', 'auto');
-
-  // 通常表示（縦幅が十分にある）では、ミニマップ盤面は俯瞰性を優先して高さを
-  // 固定し、幅に追従する aspect-ratio はまだ効かせない。
-  assertDeclaration(rules, SELECTOR.minimapSurface, 'height', MINIMAP_SURFACE_MIN_HEIGHT);
-  assert.equal(
-    declarationsOf(rules, SELECTOR.minimapSurface).has('min-height'),
-    false,
-    '通常表示では高さ固定とするため、min-height は指定しません'
+  // キャンバスは常に絶対配置の全面表示、パネルは常にオーバーレイなので、
+  // モバイル専用に高さ・レイアウトを作り直す分岐はもう不要（issue #183）。
+  const boardCanvasMediaQueries = [...mediaBlocks.entries()].filter(([, block]) => (
+    /\.board-canvas-shell|\.board-sidebar|\.board-stage|\.board-canvas-body/.test(block)
+  ));
+  assert.deepEqual(
+    boardCanvasMediaQueries.map(([condition]) => condition),
+    [],
+    `ボードキャンバス関連のメディアクエリ分岐が残っています: ${boardCanvasMediaQueries.map(([condition]) => condition).join(' / ')}`
   );
-  assert.equal(
-    declarationsOf(rules, SELECTOR.minimapSurface).has('aspect-ratio'),
-    false,
-    '通常表示では固定高さを使うため、aspect-ratio はまだ指定しません'
-  );
-  // 親パネル .board-minimap も、通常表示の固定高盤面をクリップせずに収められる
-  // 最小高さを確保する。
-  assertDeclaration(rules, '.board-minimap', 'min-height', '15rem');
-
-  const lowHeight = mediaBlocks.get(LOW_HEIGHT_MEDIA);
-  assert.ok(lowHeight, `${LOW_HEIGHT_MEDIA} のメディアクエリが見つかりません`);
-  const lowHeightRules = indexRules(lowHeight);
-  assertDeclaration(lowHeightRules, SELECTOR.sidebarPanels, 'min-height', '5.5rem');
-  assertDeclaration(lowHeightRules, '.board-minimap', 'min-height', '5.5rem');
-
-  // 低いビューポートでは、固定下限がサイドバー全体の入れ子スクロールを
-  // 引き起こすため、ここでだけ幅に追従する可変盤面へ切り替える。
-  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'min-height', '0');
-  assertDeclaration(lowHeightRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
 });
 
 // スクロール領域をキーボードで到達できるようにするための属性。Chrome は
 // スクロールコンテナを自動でフォーカス可能にするが、Firefox / Safari はしない。
-const PANEL_CLASSES = ['board-quest-panel', 'board-minimap', 'board-details'];
+const PANEL_CLASSES = ['board-quest-panel', 'board-minimap', 'board-details', 'board-canvas-settings-panel'];
 
+// className は他のクラスと同居する（例: "board-canvas-panel-overlay board-quest-panel"）
+// ため、完全一致ではなく空白区切りのトークンとして探す。
 function openingTagOf(source, className) {
-  const pattern = new RegExp(`<section[^>]*className="${className}"[^>]*>`);
+  const pattern = new RegExp(`<section[^>]*className="[^"]*\\b${className}\\b[^"]*"[^>]*>`);
   const matched = source.match(pattern);
-  if (!matched) throw new Error(`className="${className}" の section が見つかりません`);
+  if (!matched) throw new Error(`className に "${className}" を含む section が見つかりません`);
   return matched[0];
 }
 
-test('スクロールするサイドバーパネルはキーボードで到達でき、名前を持つ', async () => {
+test('オーバーレイパネルはキーボードで到達でき、名前を持つ', async () => {
   const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
   for (const className of PANEL_CLASSES) {
@@ -299,40 +342,83 @@ test('キャンバスのズームは初期表示だけで設定され、リセ�
   assert.match(source, /t\('resetCamera'\)/, 'ズームリセット文言がローカライズされている必要があります');
 });
 
-test('高さ制約の解除はモバイル幅の分岐だけに限定され、そこでは .board-stage の最低高さが戻る', async () => {
-  const {topLevel, mediaBlocks} = splitTopLevelAndMedia(await readStylesheet(STYLESHEET));
+test('レールの各トリガーはキャンバス上のパネルを1枚だけ開閉する', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
-  // .board-scene は position: absolute; inset: 0 なので .board-stage には内在高さがない。
-  // 100dvh 制約が効いている文脈だけで min-height を 0 にし、非対応環境では
-  // 既定の最低高さを残しておく。
-  assertDeclaration(indexRules(topLevel), SELECTOR.stage, 'min-height', STAGE_MIN_HEIGHT);
-  assertDeclaration(indexRules(topLevel), SELECTOR.constrainedStage, 'min-height', '0');
+  assert.match(source, /type ActivePanel = 'quests' \| 'minimap' \| 'details' \| 'settings' \| null;/);
+  assert.match(source, /function toggleActivePanel\(panel: ActivePanel\)/);
+  assert.match(source, /aria-pressed=\{activePanel === 'quests'\}/);
+  assert.match(source, /aria-pressed=\{activePanel === 'minimap'\}/);
+  assert.match(source, /aria-pressed=\{activePanel === 'details'\}/);
+  assert.match(source, /aria-pressed=\{activePanel === 'settings'\}/);
+});
 
-  const releasingMedia = [...mediaBlocks.entries()]
-    .filter(([, block]) => indexRules(block).has(selectorKey(SELECTOR.boardShell)))
-    .map(([condition]) => condition);
-  assert.deepEqual(
-    releasingMedia,
-    [MOBILE_MEDIA],
-    `高さ制約を解除してよいのは ${MOBILE_MEDIA} だけです（実際: ${releasingMedia.join(' / ') || 'なし'}）`
+// オブジェクトを選択するたびに詳細パネルが割り込む挙動は、選択の主目的（移動・
+// 複製等）を毎回邪魔するというフィードバックにより廃止した。詳細パネルは
+// 右レールのボタンをユーザーが押したときだけ開く。選択が外れたときに（開いて
+// いれば）閉じる後始末だけは残す。
+test('オブジェクト選択は詳細パネルを自動で開かない', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+
+  const selectionEffect = source.match(
+    /if \(selectedObjectId !== prevSelectedObjectId\) \{[\s\S]*?\n {2}\}/
   );
+  assert.ok(selectionEffect, 'could not locate the selection-tracking block in board-canvas-panel.tsx');
 
-  const mobile = mediaBlocks.get(MOBILE_MEDIA);
-  assert.ok(mobile, `${MOBILE_MEDIA} のメディアクエリが見つかりません`);
-  const mobileRules = indexRules(mobile);
+  assert.doesNotMatch(
+    selectionEffect[0],
+    /setActivePanel\('details'\)/,
+    '選択のたびに詳細パネルを強制的に開いている（右レールのボタンを押したときだけ開くべき）'
+  );
+  assert.match(
+    selectionEffect[0],
+    /selectedObjectId == null[\s\S]*?setActivePanel\(\(current\) => \(current === 'details' \? null : current\)\)/,
+    '選択が外れたときに、開いていた詳細パネルを閉じる後始末が無い'
+  );
+});
 
-  assertDeclaration(mobileRules, SELECTOR.boardShell, 'height', 'auto');
-  assertDeclaration(mobileRules, SELECTOR.boardShell, 'overflow', 'visible');
+// 左レールのオブジェクト作成ボタンはアイコンのみで、以前は aria-label/title に
+// バックエンドの生のcode（"sticky"等、英語）をそのまま出していた。オンボーディング
+// クエスト（例:「付箋を3枚作る」db/seeds.rb）は日本語のタイトルなので、
+// どのアイコンがどのクエストに対応するか分からないというフィードバックにより、
+// クエストと同じ日本語ラベルに揃えた。
+test('オブジェクト作成ボタンのラベルはクエスト文言と同じ日本語を使う（生のcodeを出さない）', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
 
-  // メディアクエリは詳細度を上げない。バナー版（:has が 1 つ多い）を書き漏らすと
-  // トップレベルの `auto minmax(0, 1fr)` が勝ち、この宣言は死ぬ。
-  assertDeclaration(mobileRules, SELECTOR.boardShell, 'grid-template-rows', 'auto');
-  assertDeclaration(mobileRules, SELECTOR.boardShellWithBanner, 'grid-template-rows', 'auto');
+  assert.match(source, /objectTypeSticky/, '付箋ボタンのラベルキーが無い');
+  assert.match(source, /objectTypeShape/);
+  assert.match(source, /objectTypeText/);
+  assert.match(source, /objectTypeConnector/);
+  assert.match(source, /objectTypeImage/);
+  assert.match(source, /objectTypeFrame/);
 
-  assertDeclaration(mobileRules, SELECTOR.constrainedStage, 'min-height', STAGE_MIN_HEIGHT);
+  const railButtons = source.match(
+    /boardState\.objectTypes\.map\(\(type\) => \{[\s\S]*?\n {8}\}\)\}/
+  );
+  assert.ok(railButtons, 'could not locate the object-type rail button mapping');
+  assert.doesNotMatch(
+    railButtons[0],
+    /aria-label=\{type\.code\}|title=\{type\.code\}/,
+    'aria-label/title にバックエンドの生のcode（英語）をそのまま出している'
+  );
+});
 
-  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'min-height', '0');
-  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'height', 'auto');
-  assertDeclaration(mobileRules, SELECTOR.minimapSurface, 'aspect-ratio', MINIMAP_ASPECT_RATIO);
-  assertDeclaration(mobileRules, '.board-minimap', 'min-height', 'auto');
+// board-object-label（盤面上のオブジェクトそのものに出るラベル）も同じ理由で
+// 生のcodeをそのまま表示していた（"STICKY"のように英語のまま見えてしまい、
+// クエスト文言「付箋」と結び付かない）。可視テキストも日本語ラベルに揃える。
+test('盤面上のオブジェクトラベルも日本語（生のcodeを出さない）', async () => {
+  const source = await readFile(path.join(root, CANVAS_COMPONENT), 'utf8');
+
+  const label = source.match(/<div className="board-object-label">[\s\S]*?<\/div>/);
+  assert.ok(label, 'could not locate board-object-label in board-canvas-panel.tsx');
+  assert.doesNotMatch(
+    label[0],
+    /\{object\.objectTypeCode\}/,
+    '盤面上のラベルが生のcode（object.objectTypeCode）をそのまま表示している'
+  );
+  assert.match(
+    label[0],
+    /OBJECT_TYPE_LABEL_KEYS\[object\.objectTypeCode\]/,
+    '日本語ラベルのマッピングを経由していない'
+  );
 });

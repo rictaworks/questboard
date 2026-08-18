@@ -1,3 +1,4 @@
+import {resolveBackendUrl} from '@/lib/backend-url';
 import {sanitizeClientErrorUrl} from '@/lib/sentry-sanitizer';
 import {sentryEnabled} from '@/lib/sentry-config';
 
@@ -77,7 +78,7 @@ function sendToBackend(payload: {
   line?: number | null;
   column?: number | null;
 }): Promise<boolean> {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
   if (!backendUrl) {
     return Promise.resolve(false);
   }

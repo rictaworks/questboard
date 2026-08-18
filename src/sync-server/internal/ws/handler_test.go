@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
+	"github.com/rictaworks/questboard/src/sync-server/internal/originmatch"
 	"github.com/rictaworks/questboard/src/sync-server/internal/sharding"
 	"github.com/rictaworks/questboard/src/sync-server/internal/ws"
 )
@@ -337,6 +338,60 @@ func TestDisallowedOriginIsRejectedBeforeAuthentication(t *testing.T) {
 
 	if calls := atomic.LoadInt32(&authenticator.calls); calls != 0 {
 		t.Fatalf("authenticator.Authenticate called %d times, want 0 — origin must be rejected before any backend authentication request", calls)
+	}
+}
+
+// SetDevelopmentOriginPattern と対になる。フロントの動的backend URL解決
+// （src/lib/backend-url.ts）・Railsの development_allowed_origins.rb と同じ問題：
+// Codespacesの転送URL越しに実ブラウザで開いたフロントのOriginは、Sync-server自身の
+// 転送ドメインとは別（ポートごとに別サブドメイン）なので、静的な許可リストにも
+// 同一Hostフォールバックにも一致しない。
+func TestDevelopmentOriginPatternAllowsCodespacesForwardedOriginButNotOthers(t *testing.T) {
+	t.Parallel()
+
+	router, err := sharding.NewRouter(2)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+
+	pattern, err := originmatch.DevelopmentPattern("curly-journey-gxq7gpgxwwj73j6w", "app.github.dev")
+	if err != nil {
+		t.Fatalf("DevelopmentPattern() error = %v", err)
+	}
+
+	handler := ws.NewHandler(router, nil)
+	handler.SetDevelopmentOriginPattern(pattern)
+	handler.SetAuthenticator(allowAllAuthenticator{})
+	handler.SetAuthorizer(allowAllAuthorizer{})
+	handler.SetStore(noopStore{})
+
+	engine := gin.New()
+	engine.GET("/ws", handler.ServeHTTP)
+	httpServer := httptest.NewServer(engine)
+	t.Cleanup(httpServer.Close)
+
+	requestWithOrigin := func(origin string) *http.Response {
+		req, err := http.NewRequest(http.MethodGet, httpServer.URL+"/ws?boardId=board-1", nil)
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+		req.Header.Set("Origin", origin)
+		req.Header.Set("Authorization", "Bearer test-token")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("Do() error = %v", err)
+		}
+		t.Cleanup(func() { resp.Body.Close() })
+		return resp
+	}
+
+	if resp := requestWithOrigin("https://curly-journey-gxq7gpgxwwj73j6w-3100.app.github.dev"); resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("status = %d, want the Codespaces-forwarded origin to be allowed (not %d)", resp.StatusCode, http.StatusForbidden)
+	}
+
+	if resp := requestWithOrigin("https://someone-elses-codespace-3100.app.github.dev"); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d — a different codespace's forwarded origin must still be rejected", resp.StatusCode, http.StatusForbidden)
 	}
 }
 

@@ -40,6 +40,11 @@
 # Ignore development files
 /.devcontainer
 
+# Ignore the development-only session bypass endpoint. Never shipped to production —
+# also gated by `unless Rails.env.production?` in config/routes.rb, but excluding the
+# file itself means the class can't be loaded at all even if that check were ever broken.
+/app/controllers/dev/
+
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*

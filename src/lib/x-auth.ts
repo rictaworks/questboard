@@ -1,3 +1,5 @@
+import {resolveBackendUrl} from "@/lib/backend-url";
+
 const AUTH_ENDPOINT = "https://x.com/i/oauth2/authorize";
 
 export const xAuthStorageKeys = {
@@ -7,7 +9,7 @@ export const xAuthStorageKeys = {
 } as const;
 
 export function readXAuthSettings() {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrl = resolveBackendUrl(process.env.NEXT_PUBLIC_BACKEND_URL);
   const clientId = process.env.NEXT_PUBLIC_X_CLIENT_ID;
   const redirectUri = process.env.NEXT_PUBLIC_X_REDIRECT_URI;
   const recaptchaSiteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
