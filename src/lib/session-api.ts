@@ -129,7 +129,7 @@ export async function establishDevSession(fallbackErrorMessage: string): Promise
 
   const {backendUrl} = readXAuthSettings();
 
-  _devSessionPromise = (async () => {
+  const sessionPromise: Promise<SessionUser> = (async () => {
     const response = await fetch(`${backendUrl}/dev/session`, {
       credentials: "include",
       headers: {
@@ -145,7 +145,19 @@ export async function establishDevSession(fallbackErrorMessage: string): Promise
     return toSessionUser(await response.json() as SessionPayload);
   })();
 
-  return _devSessionPromise;
+  _devSessionPromise = sessionPromise;
+
+  try {
+    return await sessionPromise;
+  } catch (error) {
+    // 一時的な失敗（500・通信断など）でreject済みPromiseを恒久的にキャッシュしない。
+    // 次回呼び出しで再試行できるよう、まだ自分が張った参照であればキャッシュを戻す
+    // （自分の後に別の呼び出しが新しいPromiseを張っていた場合はそちらを壊さない）。
+    if (_devSessionPromise === sessionPromise) {
+      _devSessionPromise = null;
+    }
+    throw error;
+  }
 }
 
 // テスト用: モジュール状態をリセットする

@@ -163,7 +163,18 @@ export default function BoardListPanel() {
         });
 
         if (response.status === 401) {
-          setErrorMessage(t('boardLoadError'));
+          // 開発環境ではパネルを維持したままエラー表示に留める（無言で消すと状況が
+          // 把握できない）。本番環境ではセッション失効を検知したことになるため、
+          // 認証状態と既取得の一覧データを両方リセットする。放置すると失効後も
+          // ボード名などが画面に残り続ける（サーバー側の認可迂回にはならないが、
+          // UI状態の回帰になる）。
+          if (process.env.NEXT_PUBLIC_ENV === 'development') {
+            setErrorMessage(t('boardLoadError'));
+            return;
+          }
+
+          setBoardList(null);
+          setSessionState({authenticated: false});
           return;
         }
 

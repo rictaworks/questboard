@@ -50,27 +50,42 @@ test('board list awaits dev session promise before fetching boards in developmen
 });
 
 // 401 を受け取ってもパネルが無言で消えず、エラーメッセージを表示することを確認する。
+// ただし本番環境では、セッション失効を検知した後もボード名などの既取得データが
+// 画面に残り続けないよう、セッション状態と一覧データをリセットする必要がある
+// （開発環境のみ、パネルを維持したままエラー表示に留める）。
 test('board list shows error message on 401 instead of silently hiding the panel', async () => {
   const source = await readFile(path.join(root, 'src/components/board-list-panel.tsx'), 'utf8');
 
   // /boards への fetch 後の 401 ハンドリングを対象にする（セッション確認の401とは別）
   // boards fetch effect は awaitDevSession の後にある
-  const boardsFetchSection = source.match(/awaitDevSession\(\)[\s\S]*?response\.status === 401[\s\S]{0,300}/);
+  const boardsFetchSection = source.match(/awaitDevSession\(\)[\s\S]*?response\.status === 401[\s\S]{0,700}/);
   assert.ok(boardsFetchSection, '/boards fetch 後の 401 ハンドリングが見つからない');
-
-  // 401ブランチで setSessionState({authenticated: false}) を呼んでいないこと
-  // (これを呼ぶとパネルがnullを返して無言で消える)
-  assert.doesNotMatch(
-    boardsFetchSection[0],
-    /setSessionState\(\{authenticated: false\}\)/,
-    '401 で setSessionState({authenticated: false}) を呼んでいる。パネルが無言で消える'
-  );
 
   // 401ブランチでエラーメッセージをセットしていること
   assert.match(
     boardsFetchSection[0],
     /setErrorMessage\(/,
     '401 でエラーメッセージをセットしていない。利用者が状況を把握できない'
+  );
+
+  // 開発環境では setSessionState({authenticated: false}) を呼ばないこと
+  // (これを呼ぶとパネルがnullを返して無言で消える。開発環境ではエラー表示に留める)
+  assert.match(
+    boardsFetchSection[0],
+    /NEXT_PUBLIC_ENV === 'development'[\s\S]{0,120}setErrorMessage\([\s\S]{0,40}return;/,
+    '開発環境の401分岐でエラー表示のうえ早期returnしていない'
+  );
+
+  // 本番環境では、失効したセッションと既取得の一覧データを両方リセットすること
+  assert.match(
+    boardsFetchSection[0],
+    /setBoardList\(null\)/,
+    '本番の401でsetBoardList(null)を呼んでいない。失効後も既取得のボード名が画面に残る'
+  );
+  assert.match(
+    boardsFetchSection[0],
+    /setSessionState\(\{authenticated: false\}\)/,
+    '本番の401でsetSessionState({authenticated: false})を呼んでいない。失効を検知できない'
   );
 });
 

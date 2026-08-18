@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import test from 'node:test';
+import test, {beforeEach} from 'node:test';
 import * as ts from 'typescript';
 
 const root = process.cwd();
@@ -25,6 +25,13 @@ async function loadModule(relativePath, mocks = {}) {
 
 const sessionApi = await loadModule('src/lib/session-api.ts', {
   '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+});
+
+// establishDevSession はモジュールレベルの Promise をキャッシュするため、あるテストで
+// 確立した状態が次のテストに漏れる（前のテストが成功していると、失敗系テストで
+// fetch が呼ばれないまま解決済みPromiseが返ってしまう）。テストごとに状態を分離する。
+beforeEach(() => {
+  sessionApi._resetDevSessionForTesting();
 });
 
 // フロントのゲート判定は、サーバーの ApplicationController#require_feature_plan!
@@ -166,6 +173,36 @@ test('establishDevSession throws the caller-provided message when the endpoint f
 
   try {
     await assert.rejects(() => sessionApi.establishDevSession('fallback'), /fallback/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 最初の /dev/session が一時的な500や通信エラーで失敗しても、reject済みPromiseを
+// 恒久的にキャッシュしてはならない。次回呼び出し（例: AuthPanel の再マウント）で
+// 再試行できることを確認する。
+test('establishDevSession retries after a transient failure instead of caching the rejection', async () => {
+  const originalFetch = globalThis.fetch;
+  let callCount = 0;
+  globalThis.fetch = () => {
+    callCount += 1;
+    if (callCount === 1) {
+      return Promise.resolve({ok: false, status: 500, json: () => Promise.resolve({})});
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {planCode: 'member'}})
+    });
+  };
+
+  try {
+    await assert.rejects(() => sessionApi.establishDevSession('fallback'), /fallback/);
+
+    const session = await sessionApi.establishDevSession('fallback');
+
+    assert.equal(session.authenticated, true);
+    assert.equal(callCount, 2, '1回目の失敗後、2回目の呼び出しで再度fetchが実行されていない');
   } finally {
     globalThis.fetch = originalFetch;
   }
