@@ -111,19 +111,44 @@ export async function requestManualRecheck(fallbackErrorMessage: string): Promis
 // 常に401になる。バックエンドの開発専用エンドポイント（本番には存在しない。
 // src/backend/config/routes.rb・app/controllers/dev/session_controller.rb 参照）を
 // 実際に叩き、本物のセッションを確立する。
-export async function establishDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
-  const {backendUrl} = readXAuthSettings();
-  const response = await fetch(`${backendUrl}/dev/session`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    method: "POST"
-  });
+//
+// モジュールレベルで Promise を保持し、確立は1回だけ行う。
+// board-list-panel.tsx 等の認証が必要なパネルは awaitDevSession() でこの Promise を
+// 待ってから API を叩くことで、初回アクセス時のレースコンディション
+//（dev/session 完了前に /boards を叩いて 401 になる）を防ぐ。
+let _devSessionPromise: Promise<SessionUser> | null = null;
 
-  if (!response.ok) {
-    throw new Error(fallbackErrorMessage);
+export function awaitDevSession(): Promise<SessionUser> | null {
+  return _devSessionPromise;
+}
+
+export async function establishDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
+  if (_devSessionPromise !== null) {
+    return _devSessionPromise;
   }
 
-  return toSessionUser(await response.json() as SessionPayload);
+  const {backendUrl} = readXAuthSettings();
+
+  _devSessionPromise = (async () => {
+    const response = await fetch(`${backendUrl}/dev/session`, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error(fallbackErrorMessage);
+    }
+
+    return toSessionUser(await response.json() as SessionPayload);
+  })();
+
+  return _devSessionPromise;
+}
+
+// テスト用: モジュール状態をリセットする
+export function _resetDevSessionForTesting(): void {
+  _devSessionPromise = null;
 }
