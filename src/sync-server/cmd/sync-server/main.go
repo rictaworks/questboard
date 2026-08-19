@@ -16,22 +16,12 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
-type developmentAuthenticator struct{}
-
-func (developmentAuthenticator) Authenticate(ctx context.Context, boardID string, token string) (*ws.AuthContext, error) {
-	return &ws.AuthContext{UserID: "dev-user", Role: "owner", DisplayName: "Dev User"}, nil
-}
-
-type developmentAuthorizer struct{}
-
-func (developmentAuthorizer) Allow(ctx context.Context, auth *ws.AuthContext, op ws.Op) (bool, error) {
-	return true, nil
-}
-
-type developmentStore struct{}
-
-func (developmentStore) SaveConfirmedOp(ctx context.Context, op ws.Op) (ws.Op, bool, error) {
-	return op, false, nil
+// railsWiring は認証・認可・永続化の3点を Rails 連携で束ねて返す。
+// 環境を問わずこの配線を使う：以前は非本番で no-op のストア・認証が配線されており、
+// WS 経由の op（移動・色変更・削除・テキスト編集）が一切 Rails に永続化されず、
+// リロードで削除が復活する／KPIイベント・クエストが進まない不具合があった（issue #197）。
+func railsWiring(backendURL string) (ws.Authenticator, ws.Authorizer, ws.Store) {
+	return ws.NewRailsAPIClient(backendURL), ws.RailsAuthorizer{}, ws.NewRailsStore(backendURL)
 }
 
 func main() {
@@ -59,15 +49,10 @@ func main() {
 		wsHandler.SetDevelopmentOriginPattern(developmentPattern)
 	}
 
-	if cfg.Env == "production" {
-		wsHandler.SetAuthenticator(ws.NewRailsAPIClient(cfg.BackendURL))
-		wsHandler.SetAuthorizer(ws.RailsAuthorizer{})
-		wsHandler.SetStore(ws.NewRailsStore(cfg.BackendURL))
-	} else {
-		wsHandler.SetAuthenticator(developmentAuthenticator{})
-		wsHandler.SetAuthorizer(developmentAuthorizer{})
-		wsHandler.SetStore(developmentStore{})
-	}
+	authenticator, authorizer, store := railsWiring(cfg.BackendURL)
+	wsHandler.SetAuthenticator(authenticator)
+	wsHandler.SetAuthorizer(authorizer)
+	wsHandler.SetStore(store)
 
 	app, err := server.New(cfg, wsHandler)
 	if err != nil {

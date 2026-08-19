@@ -147,3 +147,31 @@ func TestFromEnvCodespacesSettings(t *testing.T) {
 		t.Fatalf("FromEnv() CodespacesForwardingDomain = %q, want app.github.dev", cfg.CodespacesForwardingDomain)
 	}
 }
+
+// BackendURL の既定値は Rails backend（開発ポート3001）。かつての既定値 3000 は
+// フロント（Next.js）を指しており、環境変数の設定漏れ時に WS 認証・op 永続化が
+// すべて 404 になる誤配線だった（issue #197）。
+func TestFromEnvBackendURLDefaultsToRailsDevPort(t *testing.T) {
+	t.Setenv("SYNC_SERVER_ENV", "development")
+	t.Setenv("SYNC_SERVER_BACKEND_URL", "")
+
+	cfg, err := config.FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v, want nil", err)
+	}
+
+	if cfg.BackendURL != "http://localhost:3001" {
+		t.Fatalf("FromEnv() BackendURL = %q, want http://localhost:3001", cfg.BackendURL)
+	}
+
+	t.Setenv("SYNC_SERVER_BACKEND_URL", "https://backend.example.com")
+
+	cfg, err = config.FromEnv()
+	if err != nil {
+		t.Fatalf("FromEnv() error = %v, want nil", err)
+	}
+
+	if cfg.BackendURL != "https://backend.example.com" {
+		t.Fatalf("FromEnv() BackendURL = %q, want https://backend.example.com", cfg.BackendURL)
+	}
+}
