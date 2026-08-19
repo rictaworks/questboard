@@ -9,6 +9,7 @@ export type BoardAction =
   | 'restore'
   | 'duplicate'
   | 'recolor'
+  | 'edit_text'
   | 'lock'
   | 'unlock';
 
@@ -17,7 +18,7 @@ export interface BoardObjectLockState {
   lockedByUserId?: number | null;
 }
 
-export type BoardRealtimeObjectProperty = 'geometry' | 'color' | 'deleted_at';
+export type BoardRealtimeObjectProperty = 'geometry' | 'color' | 'deleted_at' | 'text_crdt';
 
 export function resolveBoardActionForObjectMutation(
   property: BoardRealtimeObjectProperty,
@@ -25,6 +26,12 @@ export function resolveBoardActionForObjectMutation(
 ): Exclude<BoardAction, 'view' | 'create' | 'duplicate' | 'lock' | 'unlock'> {
   if (property === 'deleted_at') {
     return value.restore === true ? 'restore' : 'delete';
+  }
+
+  if (property === 'text_crdt') {
+    // バックエンドの PermissionService は text_crdt を edit_object（editor 以上・
+    // ロック中はロック保持者のみ）として扱う。フロントも同じ契約に合わせる
+    return 'edit_text';
   }
 
   return property === 'geometry' ? 'move' : 'recolor';

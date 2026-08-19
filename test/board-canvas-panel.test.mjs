@@ -59,6 +59,20 @@ test('object corner handles follow the mock layout (issue #198)', async () => {
   assert.match(css, /\.board-object-action-resize \{ right: -0\.6rem; bottom: -0\.6rem; \}/);
 });
 
+// issue #199: テキスト・付箋のインライン編集。本文はプレーンテキストとして描画し
+// HTML を解釈しない（XSS対策・TM.md T6）。編集は text_crdt op（diffToOps）経由で
+// 永続化される。危険な HTML 挿入 API に置き換えられないことを固定する。
+test('sticky and text objects support inline text editing via text_crdt ops (issue #199)', async () => {
+  const source = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
+
+  assert.match(source, /data-text-editable=/, 'dblclick編集の対象マーカー（data-text-editable）が無い');
+  assert.match(source, /textFromCrdt\(object\.textCrdt\)/, '本文が textCrdt から描画されていない');
+  assert.match(source, /diffToOps\(/, '編集の確定が最小差分 op になっていない');
+  assert.match(source, /'text_crdt', revision > 0 \? \{ops, ref_revision: revision\} : \{ops\}/, 'ref_revision の追従が無い（OT が壊れる）');
+  assert.doesNotMatch(source, /dangerouslySetInnerHTML/, '本文描画に HTML 挿入が使われている（XSS リスク）');
+  assert.match(source, /canPerformBoardAction\(roleCode, 'edit_text'/, 'テキスト編集が F7 権限で制御されていない');
+});
+
 test('board canvas panel keeps board reload and board switch safety guards in place', async () => {
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
   const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');

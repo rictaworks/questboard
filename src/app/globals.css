@@ -1122,6 +1122,41 @@ a {
   pointer-events: none;
 }
 
+/* テキスト・付箋の本文とインライン編集（issue #199） */
+.board-object-text {
+  position: absolute;
+  inset: 1.4rem 0.6rem 0.6rem;
+  overflow: hidden;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: inherit;
+  pointer-events: none;
+}
+
+.board-object-sticky .board-object-text {
+  color: rgba(36, 20, 54, 0.9);
+}
+
+.board-object-text-editor {
+  position: absolute;
+  inset: 1.4rem 0.6rem 0.6rem;
+  border: 1px dashed var(--color-purple-light, #a78bfa);
+  border-radius: 6px;
+  padding: 0.2rem 0.3rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  resize: none;
+}
+
+.board-object-sticky .board-object-text-editor {
+  color: rgba(36, 20, 54, 0.9);
+}
+
 /* フレームだけはモックどおり上辺に浮き出すラベルチップにする */
 .board-object-frame .board-object-label {
   top: -0.7rem;

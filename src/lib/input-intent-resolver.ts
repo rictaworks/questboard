@@ -217,6 +217,12 @@ export function resolveCanvasIntent(
       return {kind: 'edit-text'};
     }
 
+    // オブジェクト本体のダブルクリックも、data-text-editable が立っていれば
+    // インライン編集に入る（テキスト・付箋。issue #199）
+    if (input.hitTarget.kind === 'object' && input.hitTarget.textEditable === true) {
+      return {kind: 'edit-text'};
+    }
+
     if (input.hitTarget.kind === 'blank') {
       return {kind: 'create-note'};
     }

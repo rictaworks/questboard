@@ -1,4 +1,5 @@
 import {resolveBackendUrl} from "@/lib/backend-url";
+import {composeCrdt, type TextCrdtDiffOp, type TextCrdtState} from "@/lib/text-crdt";
 
 export interface BoardCanvasObjectLike {
   id: number;
@@ -8,6 +9,8 @@ export interface BoardCanvasObjectLike {
   locked: boolean;
   lockedByUserId?: number | null;
   lockOriginObjectId?: number | null;
+  textCrdt?: TextCrdtState;
+  textCrdtRevision?: number | null;
 }
 
 export interface BoardCanvasDataLike {
@@ -168,7 +171,7 @@ export function parseRealtimeMessage(raw: string): BoardRealtimeOp | BoardPresen
 }
 
 export function applyRealtimeOp<T extends BoardCanvasDataLike>(boardData: T, op: BoardRealtimeOp): T {
-  if (op.property !== 'geometry' && op.property !== 'color' && op.property !== 'deleted_at') {
+  if (op.property !== 'geometry' && op.property !== 'color' && op.property !== 'deleted_at' && op.property !== 'text_crdt') {
     return boardData;
   }
 
@@ -190,6 +193,22 @@ export function applyRealtimeOp<T extends BoardCanvasDataLike>(boardData: T, op:
       return {
         ...object,
         colorId: numberValue(opValue['color_id']) ?? object.colorId,
+      };
+    }
+
+    if (op.property === 'text_crdt') {
+      // value.ops は差分（retain/delete/insert）。ローカルの run リストへ合成し、
+      // ack/broadcast が運ぶ revision（そのopのObjectOp id）で ref_revision の
+      // 追従先を更新する（次の編集の OT 基準になる。issue #199）
+      const diffOps = Array.isArray(opValue['ops']) ? (opValue['ops'] as TextCrdtDiffOp[]) : [];
+      if (diffOps.length === 0) {
+        return object;
+      }
+
+      return {
+        ...object,
+        textCrdt: composeCrdt(object.textCrdt, diffOps),
+        textCrdtRevision: numberValue(opValue['revision']) ?? object.textCrdtRevision ?? null,
       };
     }
 
