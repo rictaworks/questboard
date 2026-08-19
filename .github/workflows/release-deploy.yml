@@ -1,0 +1,71 @@
+name: Release Deploy
+
+# GitHub Release の発行（published）をトリガーに本番へ自動デプロイする（2026-08-19 導入）。
+# main へのマージだけでは本番は動かない。リリースと決めたら Release を切る。
+#
+# 設置先: .github/workflows/release-deploy.yml
+#
+# 必要な Secrets（register-secrets.py で登録）:
+#   RAILWAY_TOKEN      … questboard プロジェクトスコープのトークン（アカウント全体には効かない）
+#   VERCEL_TOKEN       … Vercel アカウントトークン
+#   VERCEL_ORG_ID      … team_…（.vercel/project.json の orgId）
+#   VERCEL_PROJECT_ID  … prj_…（同 projectId）
+#
+# バックエンドのマイグレーションは Railway 側の起動時に bin/docker-entrypoint が
+# `rails db:prepare` を実行するため、このワークフローでは何もしない。
+# フロントは新APIを前提にビルドされることがあるため、backend / sync-server の
+# デプロイ成功後に Vercel をデプロイする。
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: release-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-backend:
+    name: Railway / backend (Rails)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: npm install -g @railway/cli
+      - name: Deploy backend to Railway
+        run: railway up --service backend --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  deploy-sync-server:
+    name: Railway / sync-server (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: npm install -g @railway/cli
+      - name: Deploy sync-server to Railway
+        run: railway up --service sync-server --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+  deploy-frontend:
+    name: Vercel / frontend (Next.js)
+    needs: [deploy-backend, deploy-sync-server]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: npm install -g vercel
+      - name: Deploy frontend to Vercel (remote build)
+        run: vercel deploy --prod --yes --token="$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
