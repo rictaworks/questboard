@@ -2,6 +2,11 @@ class BoardObject < ApplicationRecord
   self.table_name = "objects"
   TOMBSTONE_RETENTION = 30.days
 
+  # 図形オブジェクトの形状（issue #200）。NULL は従来どおりの四角として描画する。
+  # フロントは shapeKind を CSS クラス（board-object-shape--<kind>）へそのまま展開する
+  # ため、この許可リスト以外の値を通さないこと。
+  SHAPE_KINDS = %w[rectangle ellipse triangle].freeze
+
   belongs_to :board, touch: true
   belongs_to :object_type
   belongs_to :color_palette, foreign_key: :color_id
@@ -13,6 +18,7 @@ class BoardObject < ApplicationRecord
   scope :tombstones, -> { where.not(deleted_at: nil) }
   scope :purgeable_tombstones, ->(now = Time.current) { tombstones.where(arel_table[:deleted_at].lteq(now - TOMBSTONE_RETENTION)) }
 
+  validates :shape_kind, inclusion: { in: SHAPE_KINDS }, allow_nil: true
   validate :parent_frame_must_belong_to_same_board
 
   def active_locks_in_chain

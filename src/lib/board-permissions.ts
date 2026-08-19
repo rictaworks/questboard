@@ -9,6 +9,7 @@ export type BoardAction =
   | 'restore'
   | 'duplicate'
   | 'recolor'
+  | 'reshape'
   | 'edit_text'
   | 'lock'
   | 'unlock';

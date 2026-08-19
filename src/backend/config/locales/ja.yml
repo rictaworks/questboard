@@ -87,6 +87,7 @@ ja:
         color_palette: "カラーパレット"
         object_type: "オブジェクト種別"
         parent_frame_id: "親フレーム"
+        shape_kind: "形状"
       comment:
         body: "コメント"
       event_def:

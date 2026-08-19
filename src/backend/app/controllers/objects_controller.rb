@@ -16,6 +16,7 @@ class ObjectsController < ApplicationController
   class ImplausibleLamportJumpError < StandardError; end
   class ReservedClientIdError < StandardError; end
   class OutdatedReferenceError < StandardError; end
+  class InvalidShapeKindError < StandardError; end
 
   OP_PROPERTY_ACTIONS = {
     "geometry" => :edit_object,
@@ -74,12 +75,33 @@ class ObjectsController < ApplicationController
         color_palette: default_color_palette_for(object_type),
         parent_frame_id: create_params[:parent_frame_id],
         geometry: create_geometry,
+        shape_kind: create_shape_kind(object_type),
         deleted_at: nil
       )
       record_object_kpi_event!(board, object, "object_created_#{object.object_type.code}")
     end
 
     render json: serialize_object(object), status: :created
+  end
+
+  # 図形オブジェクトの形状変更（issue #200）。geometry/color と違い op 経路は持たない
+  # （OT の対象になる同時編集プロパティではない）ため、単純なカラム更新に留める。
+  # 他クライアントへの反映はボード再読込時（recolor 等の legacy 系 REST と同じ扱い）。
+  def reshape
+    object = find_authorized_object!(:edit_object)
+    return if performed?
+
+    unless object.object_type.code == "shape"
+      raise InvalidShapeKindError, "shape_kind can only be set on shape objects"
+    end
+
+    raw = params.require(:shape_kind)
+    unless BoardObject::SHAPE_KINDS.include?(raw)
+      raise InvalidShapeKindError, "shape_kind must be one of #{BoardObject::SHAPE_KINDS.join(', ')}"
+    end
+
+    object.update!(shape_kind: raw)
+    render json: serialize_object(object)
   end
 
   def move
@@ -423,6 +445,7 @@ class ObjectsController < ApplicationController
       colorId: object.color_id,
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
+      shapeKind: object.shape_kind,
       textCrdt: object.text_crdt,
       # The revision a client must echo back as ref_revision on its first text_crdt op
       # after loading this snapshot — 0 means no text_crdt history exists yet, which
@@ -473,7 +496,23 @@ class ObjectsController < ApplicationController
   end
 
   def create_params
-    params.permit(:object_type_code, :parent_frame_id, :color_id, geometry: %i[x y w h rotation])
+    params.permit(:object_type_code, :parent_frame_id, :color_id, :shape_kind, geometry: %i[x y w h rotation])
+  end
+
+  # 図形オブジェクトの形状（issue #200）。shape 以外の object_type では常に nil。
+  # 許可リスト外の値はモデルの inclusion バリデーションではなくここで 422 に落とす
+  # （create! の RecordInvalid でも結果は同じだが、エラーメッセージを明確にする）。
+  def create_shape_kind(object_type)
+    return nil unless object_type.code == "shape"
+
+    raw = create_params[:shape_kind].presence
+    return nil if raw.nil?
+
+    unless BoardObject::SHAPE_KINDS.include?(raw)
+      raise InvalidShapeKindError, "shape_kind must be one of #{BoardObject::SHAPE_KINDS.join(', ')}"
+    end
+
+    raw
   end
 
   def geometry_params

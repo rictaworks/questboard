@@ -1122,6 +1122,48 @@ a {
   pointer-events: none;
 }
 
+/* 図形の形状（issue #200）。未指定（rectangle）は従来どおりの角丸矩形 */
+.board-object-shape--ellipse {
+  border-radius: 50%;
+}
+
+.board-object-shape--triangle {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  border: 0;
+}
+
+/* 詳細パネルの形状ピッカー（issue #200） */
+.board-shape-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.board-shape-picker-heading {
+  width: 100%;
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.board-shape-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.2));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+}
+
+.board-shape-swatch.is-active {
+  border-color: var(--color-purple-light, #a78bfa);
+  background: rgba(123, 47, 255, 0.3);
+}
+
 /* テキスト・付箋の本文とインライン編集（issue #199） */
 .board-object-text {
   position: absolute;

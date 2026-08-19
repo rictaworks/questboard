@@ -1,6 +1,6 @@
 "use client";
 
-import {faComment, faCompress, faLock, faRotateRight, faStar, faUpRightAndDownLeftFromCenter, faXmark} from '@fortawesome/free-solid-svg-icons';
+import {faCaretUp, faCircle, faComment, faCompress, faLock, faRotateRight, faSquare, faStar, faUpRightAndDownLeftFromCenter, faXmark} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
@@ -87,6 +87,9 @@ export interface BoardCanvasObject {
   lockedAt?: string | null;
   lockOriginObjectId?: number | null;
   commentCount?: number | null;
+  // 図形オブジェクトの形状（issue #200）。null/未指定は四角。サーバー側の許可リスト
+  // （BoardObject::SHAPE_KINDS）で検証済みの値のみが届く
+  shapeKind?: string | null;
   textCrdt?: TextCrdtState;
   textCrdtRevision?: number | null;
 }
@@ -1411,7 +1414,7 @@ export default function BoardCanvasPanel({
 
   async function mutateLegacyObject(
     objectId: number,
-    action: 'duplicate' | 'lock' | 'unlock',
+    action: 'duplicate' | 'lock' | 'unlock' | 'reshape',
     payload: Record<string, unknown> = {}
   ) {
     const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
@@ -1808,7 +1811,7 @@ export default function BoardCanvasPanel({
             >
             {visibleObjects.map((object) => (
               <article
-                className={`board-object board-object-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''} ${object.locked && object.lockedByUserId !== currentUserId ? 'is-locked' : ''}`}
+                className={`board-object board-object-${object.objectTypeCode} ${object.objectTypeCode === 'shape' && object.shapeKind ? `board-object-shape--${object.shapeKind}` : ''} ${selection.includes(object.id) ? 'is-selected' : ''} ${object.locked && object.lockedByUserId !== currentUserId ? 'is-locked' : ''}`}
                 data-obj-id={object.id}
                 data-text-editable={object.objectTypeCode === 'sticky' || object.objectTypeCode === 'text' ? 'true' : undefined}
                 key={object.id}
@@ -1980,6 +1983,28 @@ export default function BoardCanvasPanel({
             </button>
           </div>
           <p>{t(OBJECT_TYPE_LABEL_KEYS[selectedObject.objectTypeCode] ?? 'objectTypeShape')}</p>
+          {selectedObject.objectTypeCode === 'shape' ? (
+            <div className="board-shape-picker" role="group" aria-label={t('shapeHeading')}>
+              <p className="board-shape-picker-heading">{t('shapeHeading')}</p>
+              {([
+                {kind: 'rectangle', icon: faSquare, labelKey: 'shapeRectangle'},
+                {kind: 'ellipse', icon: faCircle, labelKey: 'shapeEllipse'},
+                {kind: 'triangle', icon: faCaretUp, labelKey: 'shapeTriangle'}
+              ] as const).map(({kind, icon, labelKey}) => (
+                <button
+                  aria-label={t(labelKey)}
+                  className={`board-shape-swatch ${(selectedObject.shapeKind ?? 'rectangle') === kind ? 'is-active' : ''}`}
+                  disabled={!canPerformBoardAction(roleCode, 'reshape', objectToLockState(selectedObject), currentUserId)}
+                  key={kind}
+                  onClick={() => void mutateLegacyObject(selectedObject.id, 'reshape', {shape_kind: kind})}
+                  title={t(labelKey)}
+                  type="button"
+                >
+                  <FontAwesomeIcon icon={icon} />
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div className="board-color-grid">
             {boardState.colorPalettes.map((color) => (
               <button
@@ -2083,7 +2108,7 @@ function objectToLockState(object: BoardCanvasObject | null): BoardObjectLockSta
 function buildMutationRequest(
   shareToken: string,
   objectId: number,
-  action: 'move' | 'resize' | 'rotate' | 'duplicate' | 'color' | 'delete' | 'lock' | 'unlock'
+  action: 'move' | 'resize' | 'rotate' | 'duplicate' | 'color' | 'delete' | 'lock' | 'unlock' | 'reshape'
 ): {url: string; method: 'POST' | 'PATCH' | 'DELETE'; headers?: Record<string, string>} {
   const prefix = `/boards/${encodeURIComponent(shareToken)}/objects/${objectId}`;
 
@@ -2098,6 +2123,8 @@ function buildMutationRequest(
       return {url: `${prefix}/duplicate`, method: 'POST', headers: {'Content-Type': 'application/json'}};
     case 'color':
       return {url: `${prefix}/color`, method: 'PATCH', headers: {'Content-Type': 'application/json'}};
+    case 'reshape':
+      return {url: `${prefix}/shape`, method: 'PATCH', headers: {'Content-Type': 'application/json'}};
     default:
       return {url: `${prefix}/${action}`, method: 'PATCH', headers: {'Content-Type': 'application/json'}};
   }
