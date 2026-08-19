@@ -133,3 +133,59 @@ test('legal page renders the shared footer and policy links', async () => {
     await context.close();
   }
 });
+
+// issue #209: 使い方ページ。認証不要で表示でき、主要操作のセクションが揃い、
+// フッターから /guide へのリンクが存在することを検証する。
+test('guide page renders usage sections and is linked from the footer', async () => {
+  const context = await browser.newContext({locale: 'ja-JP'});
+  const page = await context.newPage();
+
+  try {
+    await page.goto(`${resolvedBaseUrl}/guide`, {waitUntil: 'domcontentloaded'});
+    await page.locator('main.legal-page').waitFor();
+
+    for (const sectionId of ['board', 'create', 'text', 'handles', 'shape', 'delete', 'camera', 'quests']) {
+      await assert.doesNotReject(async () => page.locator(`#${sectionId}`).waitFor(), `#${sectionId} セクションが無い`);
+    }
+    await assert.doesNotReject(async () => page.getByRole('heading', {name: '使い方'}).waitFor());
+
+    const footer = page.locator('footer.site-footer');
+    await footer.locator('summary.site-footer-trigger').click();
+    await assert.doesNotReject(async () => footer.locator('a[href="/guide"]').waitFor());
+    await assert.doesNotReject(async () => footer.locator('a[href="/updates"]').waitFor());
+  } finally {
+    await context.close();
+  }
+});
+
+// issue #210: 更新履歴ページ。v1.0.0 の内容が利用者向け表現で掲載され、
+// 認証不要で表示できることを検証する。
+test('updates page renders the v1.0.0 release notes', async () => {
+  const context = await browser.newContext({locale: 'ja-JP'});
+  const page = await context.newPage();
+
+  try {
+    await page.goto(`${resolvedBaseUrl}/updates`, {waitUntil: 'domcontentloaded'});
+    await page.locator('main.legal-page').waitFor();
+
+    await assert.doesNotReject(async () => page.getByRole('heading', {name: '更新履歴'}).waitFor());
+    await assert.doesNotReject(async () => page.locator('#v1-0-0').waitFor());
+    await assert.doesNotReject(async () => page.getByText('v1.0.0').first().waitFor());
+    await assert.doesNotReject(async () => page.getByText('セキュリティ修正').waitFor());
+  } finally {
+    await context.close();
+  }
+});
+
+// issue #209: トップページに未ログインでも読める使い方ページへの導線があることを検証する。
+test('home page links to the guide page', async () => {
+  const context = await browser.newContext({locale: 'ja-JP'});
+  const page = await context.newPage();
+
+  try {
+    await page.goto(`${resolvedBaseUrl}/`, {waitUntil: 'domcontentloaded'});
+    await assert.doesNotReject(async () => page.locator('.home-guide-link a[href="/guide"]').waitFor());
+  } finally {
+    await context.close();
+  }
+});
