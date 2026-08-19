@@ -174,6 +174,23 @@ RSpec.describe PermissionService do
       expect(service.authorize(:commenter, :delete_comment, other_comment_state)).to be(false)
     end
 
+    it "allows editors to mutate only their own comments" do
+      other_comment_state = unlocked_state.merge(comment_author_id: 99)
+
+      expect(service.authorize(:editor, :create_comment, unlocked_state)).to be(true)
+      expect(service.authorize(:editor, :edit_comment, unlocked_state)).to be(true)
+      expect(service.authorize(:editor, :delete_comment, unlocked_state)).to be(true)
+      expect(service.authorize(:editor, :edit_comment, other_comment_state)).to be(false)
+      expect(service.authorize(:editor, :delete_comment, other_comment_state)).to be(false)
+    end
+
+    it "allows owners to mutate other members' comments" do
+      other_comment_state = unlocked_state.merge(comment_author_id: 99)
+
+      expect(service.authorize(:owner, :edit_comment, other_comment_state)).to be(true)
+      expect(service.authorize(:owner, :delete_comment, other_comment_state)).to be(true)
+    end
+
     it "accepts only the target_state keys used by the current callers" do
       current_lock_state = {
         locked: true,

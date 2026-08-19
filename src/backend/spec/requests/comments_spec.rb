@@ -162,7 +162,7 @@ RSpec.describe "Comments", type: :request do
     expect(response).to have_http_status(:forbidden)
   end
 
-  it "allows commenters to mutate only their own comments while editors can manage all comments" do
+  it "allows commenters and editors to mutate only their own comments" do
     board_payload = create_board
     share_token = board_payload.fetch("board").fetch("shareToken")
 
@@ -178,28 +178,48 @@ RSpec.describe "Comments", type: :request do
     object_id = object_payload.fetch("id")
 
     sign_in(commenter)
-    own_comment = create_comment(share_token:, object_id:, body: "Commenter body")
+    commenter_comment = create_comment(share_token:, object_id:, body: "Commenter body")
 
     sign_in(editor)
     editor_comment = create_comment(share_token:, object_id:, body: "Editor body")
 
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", params: { body: "Updated own body" }, as: :json
-    expect(response).to have_http_status(:ok)
-    expect(JSON.parse(response.body).fetch("body")).to eq("Updated own body")
+    # editor は他人（commenter）のコメントを編集・削除できない（issue #189）
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", params: { body: "Blocked update by editor" }, as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(Comment.find(commenter_comment.fetch("id")).body).to eq("Commenter body")
 
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", as: :json
+    expect(response).to have_http_status(:forbidden)
+    expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_present
+
+    # editor は自分のコメントは編集できる
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: { body: "Updated editor body" }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("body")).to eq("Updated editor body")
+
+    # commenter は他人（editor）のコメントを編集・削除できない
     sign_in(commenter)
-    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: { body: "Blocked update" }, as: :json
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", params: { body: "Blocked update by commenter" }, as: :json
     expect(response).to have_http_status(:forbidden)
 
-    sign_in(editor)
-    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{own_comment.fetch('id')}", as: :json
-    expect(response).to have_http_status(:no_content)
-    expect(Comment.find_by(id: own_comment.fetch("id"))).to be_nil
-
-    sign_in(commenter)
     delete "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", as: :json
     expect(response).to have_http_status(:forbidden)
     expect(Comment.find_by(id: editor_comment.fetch("id"))).to be_present
+
+    # commenter は自分のコメントは編集・削除できる
+    patch "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", params: { body: "Updated own body" }, as: :json
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body).fetch("body")).to eq("Updated own body")
+
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{commenter_comment.fetch('id')}", as: :json
+    expect(response).to have_http_status(:no_content)
+    expect(Comment.find_by(id: commenter_comment.fetch("id"))).to be_nil
+
+    # editor は自分のコメントは削除できる
+    sign_in(editor)
+    delete "/boards/#{share_token}/objects/#{object_id}/comments/#{editor_comment.fetch('id')}", as: :json
+    expect(response).to have_http_status(:no_content)
+    expect(Comment.find_by(id: editor_comment.fetch("id"))).to be_nil
   end
 
   it "hides comment data from viewers" do

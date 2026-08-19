@@ -2229,7 +2229,11 @@ function BoardComments({
   }
 
   function canEditComment(comment: BoardCanvasComment) {
-    return roleCode === 'owner' || roleCode === 'editor' || (roleCode === 'commenter' && comment.userId === currentUserId);
+    // editor / commenter は自分のコメントのみ編集・削除できる（バックエンドの PermissionService と同一の契約）
+    return (
+      roleCode === 'owner' ||
+      ((roleCode === 'editor' || roleCode === 'commenter') && comment.userId === currentUserId)
+    );
   }
 
   return (
