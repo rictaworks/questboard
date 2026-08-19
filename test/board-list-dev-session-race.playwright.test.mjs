@@ -6,11 +6,17 @@ import test, {after, before} from 'node:test';
 import {chromium} from 'playwright';
 
 const root = process.cwd();
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? null;
 
+// board-canvas-playwright.test.mjs / board-layout-fixture.test.mjs は
+// PLAYWRIGHT_BASE_URL（CIが共有の production ビルドサーバーを起動して渡す）を見て、
+// 設定されていればそれを再利用する。このテストは NEXT_PUBLIC_ENV=development を
+// 焼き込んだ専用ビルドが前提のため、PLAYWRIGHT_BASE_URL を絶対に読んではならない
+// （読んでしまうと共有の production サーバーに繋いでしまい、isDev分岐が無効になって
+// /dev/session も /boards も一切飛ばず、page.waitForResponse がタイムアウトする。
+// CI実測で確認済み）。常に自前の development ビルドを起動する。
 let browser = null;
 let server = null;
-let resolvedBaseUrl = BASE_URL;
+let resolvedBaseUrl = null;
 
 async function reserveFreePort() {
   const {createServer} = await import('node:net');
