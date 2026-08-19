@@ -833,19 +833,21 @@ export default function BoardCanvasPanel({
    }, 33);
   }, [sendPresence]);
 
+  // 戻り値は op を実際に送出したかどうか。呼び出し側（削除トースト等）が
+  // 「権限拒否・対象消失で送っていないのに送ったことにする」のを防ぐ（issue #182）。
   const sendObjectRealtimeOp = useCallback((
     objectId: number,
     property: BoardRealtimeObjectProperty,
     value: Record<string, unknown>
-  ) => {
+  ): boolean => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
    if (!object) {
-     return;
+     return false;
    }
 
    if (!canPerformBoardAction(roleCode, resolveBoardActionForObjectMutation(property, value), objectToLockState(object), currentUserId)) {
      enqueueToast(t('permissionDenied'));
-     return;
+     return false;
    }
 
    const op: BoardRealtimeOp = {
@@ -859,6 +861,7 @@ export default function BoardCanvasPanel({
 
    recordRealtimeOp(op);
    queueRealtimeOp(op);
+   return true;
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
   const restoreDeletedObject = useCallback((objectId: number) => {
@@ -1522,9 +1525,21 @@ export default function BoardCanvasPanel({
       case 'unlock':
         toggleLock(object);
         break;
-      case 'delete':
-        sendObjectRealtimeOp(object.id, 'deleted_at', {});
+      case 'delete': {
+        // 削除の取り消し手段はこのトーストだけ（PR #173）。issue #192 の作り直しで
+        // 一度消失した（issue #182）ため、削除経路を変えるときは必ずセットで移す。
+        const deleted = sendObjectRealtimeOp(object.id, 'deleted_at', {});
+        if (deleted) {
+          enqueueToast(t('objectDeleted'), {
+            actionDisabled: !canPerformBoardAction(roleCode, 'restore', objectToLockState(object), currentUserId),
+            actionLabel: t('restoreAction'),
+            dismissAfterMs: 15000,
+            requiresRestoreConfirmation: true,
+            onAction: () => restoreDeletedObject(object.id)
+          });
+        }
         break;
+      }
       case 'comment':
         setSelection([object.id]);
         setActivePanel('details');

@@ -114,6 +114,7 @@
     "resetCamera": "表示をリセット",
     "duplicate": "複製",
     "delete": "削除",
+    "objectDeleted": "オブジェクトを削除しました",
     "objectTypeSticky": "付箋",
     "objectTypeShape": "図形",
     "objectTypeText": "テキスト",
