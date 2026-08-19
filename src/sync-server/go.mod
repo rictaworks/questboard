@@ -1,6 +1,8 @@
 module github.com/rictaworks/questboard/src/sync-server
 
-go 1.25.0
+// go ディレクティブは stdlib の最低要求バージョンとして脆弱性照合に使われる（osv-scanner）。
+// 1.25.0 のままだと修正済みの stdlib 脆弱性を抱えた宣言になるため、パッチ版を宣言する。
+go 1.25.13
 
 require (
 	github.com/gin-gonic/gin v1.10.1

@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # 依存脆弱性は「コードが変わらなくても」新規公表で増える。PR・push だけの実行では
+  # 更新の無い期間に検知できないため、日次でも走らせる（v1.0.0 で20件を溜めた反省）。
+  schedule:
+    - cron: "0 21 * * *" # 06:00 JST
 
 jobs:
   frontend-lint:
@@ -40,7 +44,7 @@ jobs:
           cache: npm
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
           cache-dependency-path: src/sync-server/go.sum
       - run: npm install -g npm@11
       - run: npm ci
@@ -76,7 +80,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
           cache-dependency-path: src/sync-server/go.sum
       - run: go test ./tools/... ./src/sync-server/...
 
@@ -87,7 +91,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
           cache-dependency-path: src/sync-server/go.sum
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -159,3 +163,31 @@ jobs:
           bundler-cache: true
           working-directory: src/backend
       - run: bundle exec brakeman --no-pager
+
+  # 依存関係（npm / RubyGems / Go）の既知脆弱性を osv.dev と照合する。
+  # PR・push に加えて日次でも走る（on.schedule 参照）。検出があればジョブを落とし、
+  # 「修正版が公表済みの脆弱性を放置したままリリースする」状態を作らない。
+  dependency-scan:
+    name: Security / Dependency scan (osv-scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install osv-scanner
+        run: |
+          curl -sSfL -o /usr/local/bin/osv-scanner \
+            https://github.com/google/osv-scanner/releases/download/v2.2.4/osv-scanner_linux_amd64
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner --version
+      # 3エコシステム4ファイルを1回で走査する。--lockfile は「実際に解決される
+      # 固定バージョン」を見るため、マニフェストのバージョン範囲指定より精度が高い。
+      # Go は2モジュール構成（ルートの tools/ と src/sync-server）なので両方を指定する。
+      # go.mod の go ディレクティブは stdlib の要求バージョンとして照合されるため、
+      # 古い宣言のままだと修正済みの stdlib 脆弱性を抱えた状態として検出される。
+      # （--recursive でのディレクトリ走査は node_modules まで舐めて遅いので使わない）
+      - name: Scan dependencies (npm / RubyGems / Go)
+        run: |
+          osv-scanner scan \
+            --lockfile package-lock.json \
+            --lockfile src/backend/Gemfile.lock \
+            --lockfile go.mod \
+            --lockfile src/sync-server/go.mod

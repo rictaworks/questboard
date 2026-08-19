@@ -1,0 +1,48 @@
+version: 2
+
+# osv-scanner（CI の Security / Dependency scan）が「検知」を担い、
+# Dependabot が「更新 PR の作成」を担う。両輪で、脆弱性を溜めずに回す。
+# セキュリティ更新の PR は open-pull-requests-limit に関係なく作成される。
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      # 個別 PR が乱立すると確認しきれないため、通常更新はまとめる。
+      # セキュリティ更新は Dependabot が別途 PR を立てる。
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bundler
+    directory: /src/backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    groups:
+      bundler-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /src/sync-server
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+
+  # CI で使う action 自体も更新対象にする（サプライチェーンの一部であるため）
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 3
