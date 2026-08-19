@@ -10,6 +10,13 @@ import {getTranslations} from 'next-intl/server';
 // GitHub Release は開発者向け、本ページが利用者向けの情報源という分担にする。
 const RELEASES = [
   {
+    id: 'v1-0-1',
+    versionKey: 'v101Version',
+    dateKey: 'v101Date',
+    headingKey: 'v101Heading',
+    itemKeys: ['v101Item1', 'v101Item2', 'v101Item3'],
+  },
+  {
     id: 'v1-0-0',
     versionKey: 'v100Version',
     dateKey: 'v100Date',
