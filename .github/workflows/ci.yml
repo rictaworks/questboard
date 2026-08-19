@@ -14,6 +14,7 @@ jobs:
   frontend-lint:
     name: Frontend / ESLint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -27,6 +28,10 @@ jobs:
   frontend-test:
     name: Frontend / build & test (node --test)
     runs-on: ubuntu-latest
+    # 既定の6時間まで走らせない。Playwright のブラウザ導入が断続的にハングする事象が
+    # 2026-08-19 に2回発生し（PR #201・#223）、いずれも手動キャンセルが必要だった。
+    # 上限を切っておけば、ハングしても短時間で失敗として表面化する。
+    timeout-minutes: 25
     env:
       NEXT_PUBLIC_BACKEND_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_ENV: production
@@ -48,7 +53,28 @@ jobs:
           cache-dependency-path: src/sync-server/go.sum
       - run: npm install -g npm@11
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # Playwright のブラウザ本体はキャッシュする。毎回ダウンロードするとハングの機会が
+      # 増えるうえ、CI 時間も伸びるため（上記 timeout-minutes のコメント参照）。
+      # キャッシュキーは実際に解決された playwright のバージョンに紐づける。
+      - name: Resolve Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./node_modules/playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+      # キャッシュが無いときだけブラウザ本体を取得する。
+      - name: Install Playwright browser (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
+      # ブラウザ本体はキャッシュから復元されるが、OS パッケージ（apt）はキャッシュ対象外の
+      # ため毎回入れる必要がある。
+      - name: Install Playwright system dependencies (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 10
+        run: npx playwright install-deps chromium
       - run: npm run build
       - name: Start frontend and run Playwright layout tests
         env:
@@ -76,6 +102,7 @@ jobs:
   go-test:
     name: Go / go test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -87,6 +114,7 @@ jobs:
   go-lint:
     name: Go / golangci-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -100,6 +128,7 @@ jobs:
   backend-rspec:
     name: Backend / RSpec
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:16
@@ -137,6 +166,7 @@ jobs:
   backend-rubocop:
     name: Backend / RuboCop
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: src/backend
@@ -152,6 +182,7 @@ jobs:
   backend-brakeman:
     name: Backend / Brakeman (security)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: src/backend
@@ -170,6 +201,7 @@ jobs:
   dependency-scan:
     name: Security / Dependency scan (osv-scanner)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - name: Install osv-scanner
