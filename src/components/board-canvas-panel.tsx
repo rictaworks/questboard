@@ -148,6 +148,9 @@ type ToastItem = {
   actionDisabled?: boolean;
   dismissAfterMs?: number;
   requiresRestoreConfirmation?: boolean;
+  // 復元トーストの対象オブジェクト。同じオブジェクトへの復元トーストが
+  // 削除経路（ローカル）と restoreSuggested（サーバー）から二重に出るのを防ぐ
+  restoreObjectId?: number;
   onAction?: () => void;
 };
 
@@ -246,6 +249,11 @@ export default function BoardCanvasPanel({
   const uiIntentHandlerRef = useRef<(intent: CanvasIntent, event: Event) => void>(() => {});
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // WS メッセージハンドラ（effect 内・toasts 非依存）から表示中トーストを参照するための鏡
+  const toastsRef = useRef<ToastItem[]>([]);
+  useEffect(() => {
+    toastsRef.current = toasts;
+  }, [toasts]);
   const [boardState, setBoardState] = useState(boardData);
   const [prevBoardData, setPrevBoardData] = useState(boardData);
   if (boardData !== prevBoardData) {
@@ -833,19 +841,21 @@ export default function BoardCanvasPanel({
    }, 33);
   }, [sendPresence]);
 
+  // 戻り値は op を実際に送出したかどうか。呼び出し側（削除トースト等）が
+  // 「権限拒否・対象消失で送っていないのに送ったことにする」のを防ぐ（issue #182）。
   const sendObjectRealtimeOp = useCallback((
     objectId: number,
     property: BoardRealtimeObjectProperty,
     value: Record<string, unknown>
-  ) => {
+  ): boolean => {
    const object = boardStateRef.current.objects.find((entry) => entry.id === objectId);
    if (!object) {
-     return;
+     return false;
    }
 
    if (!canPerformBoardAction(roleCode, resolveBoardActionForObjectMutation(property, value), objectToLockState(object), currentUserId)) {
      enqueueToast(t('permissionDenied'));
-     return;
+     return false;
    }
 
    const op: BoardRealtimeOp = {
@@ -859,6 +869,7 @@ export default function BoardCanvasPanel({
 
    recordRealtimeOp(op);
    queueRealtimeOp(op);
+   return true;
   }, [currentUserId, enqueueToast, queueRealtimeOp, recordRealtimeOp, roleCode, t]);
 
   const restoreDeletedObject = useCallback((objectId: number) => {
@@ -984,8 +995,16 @@ export default function BoardCanvasPanel({
          if ('restoreSuggested' in message) {
            const restoreMessage = message as BoardRestoreSuggestion;
            prunePendingOps((pending) => pending.objectId === restoreMessage.objectId);
+
+           // 同じオブジェクトの復元トーストが既に出ている場合（自分の削除直後の
+           // ローカルトースト等）は二重表示しない（issue #182）
+           if (toastsRef.current.some((toast) => toast.restoreObjectId === Number(restoreMessage.objectId))) {
+             return;
+           }
+
            const restoreObject = boardStateRef.current.objects.find((entry) => entry.id === Number(restoreMessage.objectId));
            enqueueToast(restoreMessage.error, {
+             restoreObjectId: Number(restoreMessage.objectId),
              actionLabel: t('restoreAction'),
              actionDisabled: restoreObject == null || !canPerformBoardAction(
                roleCode,
@@ -1522,9 +1541,22 @@ export default function BoardCanvasPanel({
       case 'unlock':
         toggleLock(object);
         break;
-      case 'delete':
-        sendObjectRealtimeOp(object.id, 'deleted_at', {});
+      case 'delete': {
+        // 削除の取り消し手段はこのトーストだけ（PR #173）。issue #192 の作り直しで
+        // 一度消失した（issue #182）ため、削除経路を変えるときは必ずセットで移す。
+        const deleted = sendObjectRealtimeOp(object.id, 'deleted_at', {});
+        if (deleted) {
+          enqueueToast(t('objectDeleted'), {
+            actionDisabled: !canPerformBoardAction(roleCode, 'restore', objectToLockState(object), currentUserId),
+            actionLabel: t('restoreAction'),
+            dismissAfterMs: 15000,
+            requiresRestoreConfirmation: true,
+            restoreObjectId: object.id,
+            onAction: () => restoreDeletedObject(object.id)
+          });
+        }
         break;
+      }
       case 'comment':
         setSelection([object.id]);
         setActivePanel('details');

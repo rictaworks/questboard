@@ -18,6 +18,22 @@ test('restore toast uses an accessible confirmation flow instead of the F7 gate'
   assert.doesNotMatch(source, /\b(confirm|alert|prompt)\s*\(/);
 });
 
+// issue #182: PR #173 の「削除→復元ボタン付きトースト」は issue #192 のボード画面
+// 作り直しで削除経路（ラジアルメニュー）ごと消失し、削除の取り消し手段が UI から
+// 完全に失われていた。削除の実行時にトーストを出すこと・op を送っていないのに
+// トーストだけ出ることがないよう戻り値で分岐することを退行防止として固定する。
+test('deleting an object enqueues the restore toast (issue #182 regression)', async () => {
+  const source = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
+
+  assert.match(source, /enqueueToast\(t\('objectDeleted'\)/, '削除時に復元トーストが出ていない（issue #182 の再発）');
+  assert.match(
+    source,
+    /const deleted = sendObjectRealtimeOp\([^)]*'deleted_at'/,
+    '削除 op の送出結果を確認せずにトーストを出している（権限拒否時にも復元トーストが出てしまう）'
+  );
+  assert.match(source, /onAction: \(\) => restoreDeletedObject\(/, '復元ボタンが restoreDeletedObject に接続されていない');
+});
+
 test('board canvas panel keeps board reload and board switch safety guards in place', async () => {
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
   const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
