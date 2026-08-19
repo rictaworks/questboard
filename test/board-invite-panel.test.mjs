@@ -45,6 +45,7 @@ async function loadModule() {
 
     if (specifier === '@/lib/session-api') {
       return {
+        ensureDevSession: async () => ({authenticated: true, xUserId: 'dev-user'}),
         establishDevSession: async () => ({authenticated: true, xUserId: 'dev-user'}),
         isPlanGated: (session) => session?.planCode !== 'member',
         resolveFollowTargetHandle: () => ({errorMessage: null, followTargetHandle: 'rictaworks'}),
@@ -214,11 +215,12 @@ test('board error banner announces the error message with role="alert"', () => {
 // （'development-x-user-id'）を渡していたため、実際に発行される開発用セッション
 // （dev/session_controller.rb の DEV_USER_X_ID = 'dev-user'）と一致せず、
 // KPIイベント送信（AnalyticsTracker）が毎回 422 で拒否されていた
-// （オンボーディングクエストの進捗が記録されない不具合）。establishDevSession を
-// 実際に呼び、本物のセッションから得た xUserId を使うことを退行防止として固定する。
+// （オンボーディングクエストの進捗が記録されない不具合）。dev セッションを
+// 実際に確立し、本物のセッションから得た xUserId を使うことを退行防止として固定する。
+// issue #194 以降は共有版の ensureDevSession（POST /dev/session を1回に束ねる）を使う。
 test('development bypass establishes a real backend session and does not use the stale placeholder x user id', async () => {
   const source = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');
 
-  assert.match(source, /establishDevSession/);
+  assert.match(source, /ensureDevSession/);
   assert.doesNotMatch(source, /development-x-user-id/, 'バックエンドの実際の値と一致しない固定プレースホルダーが残っている');
 });

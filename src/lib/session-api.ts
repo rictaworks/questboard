@@ -127,3 +127,37 @@ export async function establishDevSession(fallbackErrorMessage: string): Promise
 
   return toSessionUser(await response.json() as SessionPayload);
 }
+
+// 開発環境かどうか。NEXT_PUBLIC_ 変数はビルド時にインライン化されるため、
+// ここを参照する側は自前で process.env を見ずにこのフラグを使う
+// （effect の中に環境分岐リテラルを増やさないための集約でもある）。
+export const isDevEnvironment = process.env.NEXT_PUBLIC_ENV === "development";
+
+// issue #194: 初回アクセスでは auth-panel・board-list-panel・board-invite-panel が
+// 同時にマウントされ、establishDevSession が Cookie を張り終わる前に認証必須API
+// （/boards 等）への fetch が走って 401 になるレースがあった。Promise をモジュール
+// レベルで共有して POST /dev/session を1回に束ね、認証が必要な fetch はこの解決を
+// 待ってから実行する。失敗時は null へ戻し、次の呼び出しで再試行できるようにする。
+let devSessionPromise: Promise<SessionUser> | null = null;
+
+export function ensureDevSession(fallbackErrorMessage: string): Promise<SessionUser> {
+  if (!devSessionPromise) {
+    devSessionPromise = establishDevSession(fallbackErrorMessage).catch((error: unknown) => {
+      devSessionPromise = null;
+      throw error;
+    });
+  }
+
+  return devSessionPromise;
+}
+
+// 開発環境でだけ dev セッションの確立を待つ。本番では X ログインが Cookie を
+// 張っているため何もしない。認証必須の fetch を行う effect はこれを await してから
+// リクエストを送る（issue #194 のレース防止の入口）。
+export async function waitForDevSession(fallbackErrorMessage: string): Promise<void> {
+  if (!isDevEnvironment) {
+    return;
+  }
+
+  await ensureDevSession(fallbackErrorMessage);
+}
