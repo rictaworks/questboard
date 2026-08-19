@@ -239,6 +239,26 @@ a {
   font-size: 1.2rem;
 }
 
+/* 使い方・更新履歴ページ（issue #209 / #210）。ページ本体は legal-page の
+   スタイルを共用し、ここは固有分だけを足す */
+.updates-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: var(--space-1);
+  color: rgba(247, 244, 255, 0.9);
+}
+
+.home-guide-link {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.home-guide-link a {
+  color: var(--color-purple-light, #a78bfa);
+  text-decoration: underline;
+}
+
 .dev-auth-banner,
 .auth-panel {
   padding: var(--space-5);

@@ -1,5 +1,6 @@
 import {NextIntlClientProvider} from 'next-intl';
 import {getTranslations} from 'next-intl/server';
+import Link from 'next/link';
 
 import AuthPanel from '@/components/auth-panel';
 import BoardCreatePanel from '@/components/board-create-panel';
@@ -17,6 +18,11 @@ export default async function HomePage() {
   return (
     <main className="home-shell">
       <h1 className="home-title">{t('title')}</h1>
+      {/* 未ログインでも読める使い方ページへの導線（issue #209）。
+          製品紹介を置かない方針（Issue #99）は維持し、リンク1行に留める */}
+      <p className="home-guide-link">
+        <Link href="/guide">{t('guideLink')}</Link>
+      </p>
 
       <NextIntlClientProvider messages={messages}>
         <section className="auth-section" aria-labelledby="auth-heading">

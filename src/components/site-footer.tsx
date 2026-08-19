@@ -16,6 +16,12 @@ export default async function SiteFooter() {
           <nav aria-label={t('navLabel')}>
             <ul className="site-footer-links">
               <li>
+                <Link href="/guide">{t('guide')}</Link>
+              </li>
+              <li>
+                <Link href="/updates">{t('updates')}</Link>
+              </li>
+              <li>
                 <Link href="/legal#privacy-policy">{t('privacyPolicy')}</Link>
               </li>
               <li>
