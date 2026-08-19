@@ -32,27 +32,30 @@
 
 ## AI分担
 
-1次実装はGithub Copilot、セキュリティレビューはCodexが担当する。
+設計から実装・レビュー・テストまで Claude（Claude Code）が一貫して担当する（2026-08-19 更新。モデルは変わるので担当モデル名は参考値）。
 
 ### AI 役割分担
 
-| フェーズ | 担当モデル |
+| フェーズ | 担当 |
 |---|---|
-| 設計 | Claude Fable |
-| 初回Issue 発行 | Claude Opus |
-| 1次実装 | GitHub Copilot GPT5.4mini |
-| セキュリティレビュー | Codex GPT5.6sol |
-| 修正 | Antigravity 3.5 Flash |
-| コードレビュー(reviewer) | Claude Sonnet |
-| テスト作成・実行 | Claude Sonnet |
+| 設計 | Claude（参考: Fable 5） |
+| Issue 発行 | Claude（参考: Fable 5） |
+| 実装 | Claude（参考: Fable 5） |
+| セキュリティレビュー | Claude（参考: Fable 5） |
+| 修正 | Claude（参考: Fable 5） |
+| コードレビュー(reviewer) | Claude（参考: Fable 5） |
+| テスト作成・実行 | Claude（参考: Fable 5） |
+| ユーザーテスト | **AI が開発環境・本番環境でそれぞれ実施**（ブラウザツールで実操作） |
+| 本番での動作確認・評価 | **人間**（人力はこれのみ） |
 
 PRに投稿するときはフッターにモデル名を記載すること。
 
 ### リリースフロー
 
-1. 各 Issue を上記役割分担で実装・レビュー・マージする
-2. **全 Issue 完了後**にユーザーテスト（実機確認）を実施する
-3. **リリース後**に code-review スキル（Claude Sonnet）を実施する
+1. 各 Issue を AI が実装・レビュー・マージする（ユーザーテストは開発環境で AI がその都度実施）
+2. リリース（本番デプロイ）後に AI が**本番環境でもユーザーテスト**を実施する
+3. 人間は**本番環境での動作確認と評価のみ**行う
+4. **リリース後**に code-review スキルを実施する
 
 ## サブエージェント
 
