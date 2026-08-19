@@ -30,7 +30,11 @@ export default async function UpdatesPage() {
         {RELEASES.map((release) => (
           <section className="legal-section" id={release.id} key={release.id}>
             <h2>
-              {t(release.versionKey)}（{t(release.dateKey)}） — {t(release.headingKey)}
+              {t('versionLine', {
+                version: t(release.versionKey),
+                date: t(release.dateKey),
+                heading: t(release.headingKey),
+              })}
             </h2>
             <ul className="updates-list">
               {release.itemKeys.map((itemKey) => (

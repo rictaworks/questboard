@@ -46,6 +46,7 @@
   "Updates": {
     "title": "更新履歴",
     "intro": "Questboard の主な更新内容を新しい順に掲載します。",
+    "versionLine": "{version}（{date}） — {heading}",
     "v100Version": "v1.0.0",
     "v100Date": "2026年8月19日",
     "v100Heading": "最初の正式リリース",
