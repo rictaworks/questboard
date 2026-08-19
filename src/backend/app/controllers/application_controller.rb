@@ -99,6 +99,7 @@ class ApplicationController < ActionController::API
   rescue_from "KpiEventsController::KpiEventValidationError", with: :render_unprocessable_message
   rescue_from "ObjectsController::UnsupportedOpPropertyError", "ObjectsController::InvalidOpValueError",
               "ObjectsController::ImplausibleLamportJumpError", "ObjectsController::ReservedClientIdError",
+              "ObjectsController::InvalidShapeKindError",
               with: :render_unprocessable_message
   rescue_from "ObjectsController::StaleOpError", "ObjectsController::ConflictingOpError",
               "ObjectsController::DeletedObjectEditError", "ObjectsController::OutdatedReferenceError",

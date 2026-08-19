@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_19_050000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -117,6 +117,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_16_061900) do
     t.jsonb "geometry", default: {}, null: false
     t.integer "object_type_id", null: false
     t.bigint "parent_frame_id"
+    t.string "shape_kind"
     t.jsonb "text_crdt", default: {}, null: false
     t.bigint "text_crdt_revision", default: 0, null: false
     t.index ["board_id"], name: "index_objects_on_board_id"

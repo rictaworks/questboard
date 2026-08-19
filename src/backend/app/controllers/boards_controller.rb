@@ -235,6 +235,7 @@ class BoardsController < ApplicationController
       colorId: object.color_id,
       parentFrameId: object.parent_frame_id,
       geometry: object.geometry,
+      shapeKind: object.shape_kind,
       textCrdt: object.text_crdt,
       # Read straight off the already-loaded row (no extra query, no N+1) — see
       # ObjectsController#serialize_object for why this must be the persisted column rather

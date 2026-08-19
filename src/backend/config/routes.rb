@@ -37,6 +37,7 @@ Rails.application.routes.draw do
   patch "/boards/:share_token/objects/:id/rotate", to: "objects#rotate"
   post "/boards/:share_token/objects/:id/duplicate", to: "objects#duplicate"
   patch "/boards/:share_token/objects/:id/color", to: "objects#recolor"
+  patch "/boards/:share_token/objects/:id/shape", to: "objects#reshape"
   post "/boards/:share_token/objects/:id/lock", to: "objects#lock"
   delete "/boards/:share_token/objects/:id/lock", to: "objects#unlock"
   post "/boards/:share_token/objects/:id/ops", to: "objects#apply_op"

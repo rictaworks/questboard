@@ -73,6 +73,21 @@ test('sticky and text objects support inline text editing via text_crdt ops (iss
   assert.match(source, /canPerformBoardAction\(roleCode, 'edit_text'/, 'テキスト編集が F7 権限で制御されていない');
 });
 
+// issue #200: 図形オブジェクトの形状選択。shapeKind はサーバーの許可リスト
+// （rectangle/ellipse/triangle）で検証済みの値だけが届き、CSS クラスへ展開される。
+// 詳細パネルのピッカーは FontAwesome アイコン（絵文字禁止）で、F7 権限で無効化される。
+test('shape objects support kind selection and shape-specific rendering (issue #200)', async () => {
+  const source = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
+  const css = await readFile(path.join(root, 'src/app/globals.css'), 'utf8');
+
+  assert.match(source, /board-object-shape--\$\{object\.shapeKind\}/, '形状の CSS クラスがオブジェクト描画に反映されていない');
+  assert.match(source, /board-shape-swatch/, '詳細パネルの形状ピッカーが無い');
+  assert.match(source, /mutateLegacyObject\(selectedObject\.id, 'reshape', \{shape_kind: kind\}\)/, '形状変更が PATCH /shape 経由になっていない');
+  assert.match(source, /canPerformBoardAction\(roleCode, 'reshape'/, '形状変更が F7 権限で制御されていない');
+  assert.match(css, /\.board-object-shape--ellipse/, '丸の描画スタイルが無い');
+  assert.match(css, /\.board-object-shape--triangle/, '三角の描画スタイルが無い');
+});
+
 test('board canvas panel keeps board reload and board switch safety guards in place', async () => {
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
   const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');

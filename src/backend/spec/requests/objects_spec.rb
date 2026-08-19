@@ -693,4 +693,103 @@ RSpec.describe "Objects", type: :request do
     expect(response).to have_http_status(:unprocessable_content)
     expect(JSON.parse(response.body)).to eq("error" => "Lamport時刻は整数で入力してください")
   end
+
+  # issue #200: 図形オブジェクトの形状（shape_kind）
+  describe "shape kinds" do
+    it "creates a shape with a chosen kind and persists it" do
+      board_payload = create_board
+      share_token = board_payload.fetch("board").fetch("shareToken")
+
+      join_board(share_token:, user: editor, role_code: "editor")
+      sign_in(editor)
+
+      post "/boards/#{share_token}/objects", params: {
+        object_type_code: "shape",
+        shape_kind: "ellipse",
+        geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+      }, as: :json
+
+      expect(response).to have_http_status(:created)
+      payload = JSON.parse(response.body)
+      expect(payload.fetch("shapeKind")).to eq("ellipse")
+
+      get "/boards/#{share_token}", as: :json
+      reloaded = JSON.parse(response.body).fetch("objects").find { |entry| entry.fetch("id") == payload.fetch("id") }
+      expect(reloaded.fetch("shapeKind")).to eq("ellipse")
+    end
+
+    it "rejects unknown shape kinds at creation" do
+      board_payload = create_board
+      share_token = board_payload.fetch("board").fetch("shareToken")
+
+      sign_in(owner)
+      post "/boards/#{share_token}/objects", params: {
+        object_type_code: "shape",
+        shape_kind: "hexagon",
+        geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+      }, as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it "ignores shape_kind for non-shape object types" do
+      board_payload = create_board
+      share_token = board_payload.fetch("board").fetch("shareToken")
+
+      sign_in(owner)
+      post "/boards/#{share_token}/objects", params: {
+        object_type_code: "sticky",
+        shape_kind: "ellipse",
+        geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+      }, as: :json
+
+      expect(response).to have_http_status(:created)
+      expect(JSON.parse(response.body).fetch("shapeKind")).to be_nil
+    end
+
+    it "changes the shape kind via PATCH /shape and denies viewers" do
+      board_payload = create_board
+      share_token = board_payload.fetch("board").fetch("shareToken")
+
+      join_board(share_token:, user: editor, role_code: "editor")
+      join_board(share_token:, user: viewer, role_code: "viewer")
+
+      sign_in(editor)
+      object_payload = create_object(
+        share_token:,
+        object_type_code: "shape",
+        geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+      )
+      object_id = object_payload.fetch("id")
+      expect(object_payload.fetch("shapeKind")).to be_nil
+
+      patch "/boards/#{share_token}/objects/#{object_id}/shape", params: { shape_kind: "triangle" }, as: :json
+      expect(response).to have_http_status(:ok)
+      expect(JSON.parse(response.body).fetch("shapeKind")).to eq("triangle")
+      expect(BoardObject.find(object_id).shape_kind).to eq("triangle")
+
+      patch "/boards/#{share_token}/objects/#{object_id}/shape", params: { shape_kind: "hexagon" }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+
+      sign_in(viewer)
+      patch "/boards/#{share_token}/objects/#{object_id}/shape", params: { shape_kind: "ellipse" }, as: :json
+      expect(response).to have_http_status(:forbidden)
+      expect(BoardObject.find(object_id).shape_kind).to eq("triangle")
+    end
+
+    it "rejects shape changes on non-shape objects" do
+      board_payload = create_board
+      share_token = board_payload.fetch("board").fetch("shareToken")
+
+      sign_in(owner)
+      object_payload = create_object(
+        share_token:,
+        object_type_code: "sticky",
+        geometry: { x: 1, y: 2, w: 3, h: 4, rotation: 0 }
+      )
+
+      patch "/boards/#{share_token}/objects/#{object_payload.fetch('id')}/shape", params: { shape_kind: "ellipse" }, as: :json
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+  end
 end
