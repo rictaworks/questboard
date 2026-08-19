@@ -64,17 +64,16 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
-      # キャッシュが無いときだけブラウザ本体を取得する。
-      - name: Install Playwright browser (cache miss)
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      # --with-deps を付けない。ハングの原因は「ブラウザのダウンロード」ではなく
+      # --with-deps が走らせる apt-get update で、archive.ubuntu.com への接続が
+      # 詰まることだった（2026-08-19 に PR #201 / #223 / main CI の3回発生。
+      # main CI のログでミラー応答の停止を確認）。
+      # ubuntu-24.04 ランナーには Chromium の実行に必要な共有ライブラリが同梱されて
+      # いるため apt は不要。仮に不足していればブラウザ起動時に明確なエラーで落ちるので、
+      # 見逃しにはならない。キャッシュがあればこのステップはほぼ即時に終わる。
+      - name: Install Playwright browser
         timeout-minutes: 10
-        run: npx playwright install --with-deps chromium
-      # ブラウザ本体はキャッシュから復元されるが、OS パッケージ（apt）はキャッシュ対象外の
-      # ため毎回入れる必要がある。
-      - name: Install Playwright system dependencies (cache hit)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        timeout-minutes: 10
-        run: npx playwright install-deps chromium
+        run: npx playwright install chromium
       - run: npm run build
       - name: Start frontend and run Playwright layout tests
         env:
