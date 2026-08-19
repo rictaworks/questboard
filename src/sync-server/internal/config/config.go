@@ -21,9 +21,10 @@ type Config struct {
 }
 
 // validEnvironments enumerates the only values SYNC_SERVER_ENV may take. Unknown values
-// must fail startup rather than silently falling back to the permissive development
-// authenticator/authorizer/store (see cmd/sync-server/main.go), which would let
-// unauthenticated clients broadcast arbitrary operations in a misconfigured deployment.
+// must fail startup rather than being silently coerced: SYNC_SERVER_ENV controls the
+// development-only origin relaxation (see cmd/sync-server/main.go), which must never
+// activate in a misconfigured production deployment. Authentication/authorization/
+// persistence are Rails-backed in every environment (issue #197).
 var validEnvironments = map[string]struct{}{
 	"development": {},
 	"production":  {},
@@ -61,7 +62,9 @@ func FromEnv() (Config, error) {
 		RedisURL:           strings.TrimSpace(os.Getenv("SYNC_SERVER_REDIS_URL")),
 		RedisChannelPrefix: envOrDefault("SYNC_SERVER_REDIS_CHANNEL_PREFIX", "questboard:sync"),
 		Env:                env,
-		BackendURL:         envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3000"),
+		// 既定値は Rails backend の開発ポート。3000 はフロント（Next.js）で、
+		// op の永続化・WS 認証がすべて 404 になる誤配線だった（issue #197）
+		BackendURL: envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3001"),
 		// フロント（src/lib/backend-url.ts）・Rails（development_allowed_origins.rb）と
 		// 同じ変数名を使い回す。Codespaces自身がCODESPACE_NAMEを設定し、
 		// CODESPACES_FORWARDING_DOMAINは.envで明示する（本番には設定しない）。
