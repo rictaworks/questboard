@@ -148,6 +148,9 @@ type ToastItem = {
   actionDisabled?: boolean;
   dismissAfterMs?: number;
   requiresRestoreConfirmation?: boolean;
+  // 復元トーストの対象オブジェクト。同じオブジェクトへの復元トーストが
+  // 削除経路（ローカル）と restoreSuggested（サーバー）から二重に出るのを防ぐ
+  restoreObjectId?: number;
   onAction?: () => void;
 };
 
@@ -246,6 +249,11 @@ export default function BoardCanvasPanel({
   const uiIntentHandlerRef = useRef<(intent: CanvasIntent, event: Event) => void>(() => {});
   const [previewGeometry, setPreviewGeometry] = useState<Record<number, BoardCanvasObject['geometry']>>({});
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // WS メッセージハンドラ（effect 内・toasts 非依存）から表示中トーストを参照するための鏡
+  const toastsRef = useRef<ToastItem[]>([]);
+  useEffect(() => {
+    toastsRef.current = toasts;
+  }, [toasts]);
   const [boardState, setBoardState] = useState(boardData);
   const [prevBoardData, setPrevBoardData] = useState(boardData);
   if (boardData !== prevBoardData) {
@@ -987,8 +995,16 @@ export default function BoardCanvasPanel({
          if ('restoreSuggested' in message) {
            const restoreMessage = message as BoardRestoreSuggestion;
            prunePendingOps((pending) => pending.objectId === restoreMessage.objectId);
+
+           // 同じオブジェクトの復元トーストが既に出ている場合（自分の削除直後の
+           // ローカルトースト等）は二重表示しない（issue #182）
+           if (toastsRef.current.some((toast) => toast.restoreObjectId === Number(restoreMessage.objectId))) {
+             return;
+           }
+
            const restoreObject = boardStateRef.current.objects.find((entry) => entry.id === Number(restoreMessage.objectId));
            enqueueToast(restoreMessage.error, {
+             restoreObjectId: Number(restoreMessage.objectId),
              actionLabel: t('restoreAction'),
              actionDisabled: restoreObject == null || !canPerformBoardAction(
                roleCode,
@@ -1535,6 +1551,7 @@ export default function BoardCanvasPanel({
             actionLabel: t('restoreAction'),
             dismissAfterMs: 15000,
             requiresRestoreConfirmation: true,
+            restoreObjectId: object.id,
             onAction: () => restoreDeletedObject(object.id)
           });
         }
