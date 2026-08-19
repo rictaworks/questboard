@@ -127,7 +127,9 @@ export default async function BoardLayoutFixturePage() {
                     style={{left: '40px', top: '48px', width: '220px', height: '140px'}}
                   >
                     <div className="board-object-label">{fixtureT('sticky')}</div>
-                    <span className="comment-badge">{fixtureT('badgeCount')}</span>
+                    <span className="board-object-action board-object-action-comment">
+                      <span className="board-object-action-count">{fixtureT('badgeCount')}</span>
+                    </span>
                   </article>
                   <article
                     className="board-object board-object-shape"
