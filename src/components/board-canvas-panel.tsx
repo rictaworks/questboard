@@ -1,6 +1,6 @@
 "use client";
 
-import {faComment, faCompress, faLock, faPenToSquare, faRotateRight, faStar, faXmark} from '@fortawesome/free-solid-svg-icons';
+import {faComment, faCompress, faLock, faRotateRight, faStar, faUpRightAndDownLeftFromCenter, faXmark} from '@fortawesome/free-solid-svg-icons';
 import {FontAwesomeIcon} from '@fortawesome/react-fontawesome';
 import {useQuery, useQueryClient} from '@tanstack/react-query';
 import {useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent} from 'react';
@@ -1713,21 +1713,41 @@ export default function BoardCanvasPanel({
                 <div className="board-object-label">
                   {t(OBJECT_TYPE_LABEL_KEYS[object.objectTypeCode] ?? 'objectTypeShape')}
                 </div>
-                {canViewComments && (object.commentCount ?? 0) > 0 ? (
-                  <span className="comment-badge">
-                    <FontAwesomeIcon icon={faComment} />
-                    <span>{object.commentCount}</span>
-                  </span>
-                ) : null}
-                {object.locked ? (
-                  <span className="lock-badge">
+                {/* 四隅の操作ハンドル（issue #198・モック準拠）：
+                    左上=ロック・右上=回転・右下=サイズ変更・左下=コメント。
+                    ロック状態とコメント件数は選択中でなくても分かるよう、
+                    該当するハンドルだけは非選択時も表示する。 */}
+                {selection.includes(object.id) || object.locked ? (
+                  <button
+                    aria-label={object.locked ? (object.lockedByUserId === currentUserId ? t('lockedByYou') : t('lockedByOther')) : t('radialLock')}
+                    className={`board-object-action board-object-action-lock ${object.locked ? 'is-active' : ''}`}
+                    disabled={!canPerformBoardAction(roleCode, object.locked ? 'unlock' : 'lock', objectToLockState(object), currentUserId)}
+                    onClick={() => toggleLock(object)}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    title={object.locked ? (object.lockedByUserId === currentUserId ? t('lockedByYou') : t('lockedByOther')) : t('radialLock')}
+                    type="button"
+                  >
                     <FontAwesomeIcon icon={faLock} />
-                    <span>{object.lockedByUserId === currentUserId ? t('lockedByYou') : t('lockedByOther')}</span>
-                  </span>
+                  </button>
                 ) : null}
-                {/* 色・ロックはラジアルメニューへ移設（issue #192）。オブジェクト上に
-                    残すのはドラッグ操作が必要な回転・リサイズのハンドルだけで、
-                    モックと同じく選択中のみ表示する。 */}
+                {canViewComments && (selection.includes(object.id) || (object.commentCount ?? 0) > 0) ? (
+                  <button
+                    aria-label={t('commentsHeading')}
+                    className="board-object-action board-object-action-comment"
+                    onClick={() => {
+                      setSelection([object.id]);
+                      setActivePanel('details');
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    title={t('commentsHeading')}
+                    type="button"
+                  >
+                    <FontAwesomeIcon icon={faComment} />
+                    {(object.commentCount ?? 0) > 0 ? (
+                      <span className="board-object-action-count">{object.commentCount}</span>
+                    ) : null}
+                  </button>
+                ) : null}
                 {selection.includes(object.id) ? (
                   <>
                     <button
@@ -1744,7 +1764,7 @@ export default function BoardCanvasPanel({
                       onPointerDown={(event) => handleResizePointerDown(object, event)}
                       type="button"
                     >
-                      <FontAwesomeIcon icon={faPenToSquare} />
+                      <FontAwesomeIcon icon={faUpRightAndDownLeftFromCenter} />
                     </button>
                   </>
                 ) : null}

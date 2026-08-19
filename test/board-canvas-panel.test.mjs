@@ -34,6 +34,31 @@ test('deleting an object enqueues the restore toast (issue #182 regression)', as
   assert.match(source, /onAction: \(\) => restoreDeletedObject\(/, '復元ボタンが restoreDeletedObject に接続されていない');
 });
 
+// issue #198: オブジェクトの操作ハンドルはモック準拠で四隅に割り当てる
+// （左上=ロック・右上=回転・右下=サイズ変更・左下=コメント）。ロック・コメントを
+// オブジェクト内部のピル（lock-badge / comment-badge）で出す旧UIに戻さないこと、
+// サイズ変更のアイコンが編集アイコン（faPenToSquare）でないことを固定する。
+test('object corner handles follow the mock layout (issue #198)', async () => {
+  const source = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
+  const css = await readFile(path.join(root, 'src/app/globals.css'), 'utf8');
+
+  assert.match(source, /board-object-action-lock/, '左上のロックハンドルが無い');
+  assert.match(source, /board-object-action-comment/, '左下のコメントハンドルが無い');
+  assert.match(source, /faUpRightAndDownLeftFromCenter/, 'サイズ変更ハンドルのアイコンがリサイズ系でない');
+  assert.doesNotMatch(source, /faPenToSquare/, 'サイズ変更に編集アイコンが使われている（機能と不一致）');
+  assert.doesNotMatch(source, /className="comment-badge"/, 'コメント件数がオブジェクト内部のピル表示に戻っている');
+  assert.doesNotMatch(source, /className="lock-badge"/, 'ロック状態がオブジェクト内部のピル表示に戻っている');
+
+  // ロックハンドルは F7 権限（lock/unlock）で無効化される
+  assert.match(source, /object\.locked \? 'unlock' : 'lock', objectToLockState\(object\)/);
+
+  // CSS の四隅割り当て
+  assert.match(css, /\.board-object-action-lock \{ left: -0\.6rem; top: -0\.6rem; \}/);
+  assert.match(css, /\.board-object-action-comment \{ left: -0\.6rem; bottom: -0\.6rem; \}/);
+  assert.match(css, /\.board-object-action-rotate \{ top: -0\.6rem; right: -0\.6rem; \}/);
+  assert.match(css, /\.board-object-action-resize \{ right: -0\.6rem; bottom: -0\.6rem; \}/);
+});
+
 test('board canvas panel keeps board reload and board switch safety guards in place', async () => {
   const panelSource = await readFile(path.join(root, 'src/components/board-canvas-panel.tsx'), 'utf8');
   const inviteSource = await readFile(path.join(root, 'src/components/board-invite-panel.tsx'), 'utf8');

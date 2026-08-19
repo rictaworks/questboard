@@ -1148,8 +1148,6 @@ a {
   fill: none;
 }
 
-.lock-badge,
-.comment-badge,
 .board-object-action,
 .board-color-swatch,
 .board-minimap-surface {
@@ -1158,24 +1156,8 @@ a {
   justify-content: center;
 }
 
-.lock-badge {
-  gap: var(--space-1);
-  width: fit-content;
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(250, 204, 21, 0.2);
-  font-size: 0.75rem;
-}
-
-.comment-badge {
-  gap: var(--space-1);
-  width: fit-content;
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(147, 197, 253, 0.2);
-  font-size: 0.75rem;
-}
-
+/* 四隅ハンドル（issue #198）：左上=ロック・右上=回転・右下=サイズ変更・左下=コメント。
+   旧 lock-badge / comment-badge（オブジェクト内部のピル表示）はハンドルへ統合して廃止。 */
 .board-object-action {
   position: absolute;
   width: 1.6rem;
@@ -1186,9 +1168,29 @@ a {
   color: inherit;
 }
 
+.board-object-action.is-active {
+  background: rgba(250, 204, 21, 0.55);
+  color: #1f2937;
+}
+
+.board-object-action-count {
+  position: absolute;
+  top: -0.45rem;
+  right: -0.45rem;
+  min-width: 1rem;
+  height: 1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: rgba(147, 197, 253, 0.9);
+  color: #1f2937;
+  font-size: 0.65rem;
+  line-height: 1rem;
+  text-align: center;
+}
+
 .board-object-action-rotate { top: -0.6rem; right: -0.6rem; }
 .board-object-action-resize { right: -0.6rem; bottom: -0.6rem; }
-.board-object-action-color { left: -0.6rem; bottom: -0.6rem; }
+.board-object-action-comment { left: -0.6rem; bottom: -0.6rem; }
 .board-object-action-lock { left: -0.6rem; top: -0.6rem; }
 
 .selection-marquee {
