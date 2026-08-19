@@ -147,7 +147,8 @@ test('guide page renders usage sections and is linked from the footer', async ()
     for (const sectionId of ['board', 'create', 'text', 'handles', 'shape', 'delete', 'camera', 'quests']) {
       await assert.doesNotReject(async () => page.locator(`#${sectionId}`).waitFor(), `#${sectionId} セクションが無い`);
     }
-    await assert.doesNotReject(async () => page.getByRole('heading', {name: '使い方'}).waitFor());
+    // exact 指定。将来セクション見出しに「使い方」を含む文言が入っても衝突しないようにする
+    await assert.doesNotReject(async () => page.getByRole('heading', {name: '使い方', exact: true}).waitFor());
 
     const footer = page.locator('footer.site-footer');
     await footer.locator('summary.site-footer-trigger').click();
@@ -160,7 +161,7 @@ test('guide page renders usage sections and is linked from the footer', async ()
 
 // issue #210: 更新履歴ページ。v1.0.0 の内容が利用者向け表現で掲載され、
 // 認証不要で表示できることを検証する。
-test('updates page renders the v1.0.0 release notes', async () => {
+test('updates page renders release notes newest first', async () => {
   const context = await browser.newContext({locale: 'ja-JP'});
   const page = await context.newPage();
 
@@ -168,10 +169,21 @@ test('updates page renders the v1.0.0 release notes', async () => {
     await page.goto(`${resolvedBaseUrl}/updates`, {waitUntil: 'domcontentloaded'});
     await page.locator('main.legal-page').waitFor();
 
-    await assert.doesNotReject(async () => page.getByRole('heading', {name: '更新履歴'}).waitFor());
+    // ページ見出し（h1）は exact 指定にする。バージョン見出し（h2）にも「更新履歴」の
+    // 語が入りうるため（例: v1.0.1「更新履歴ページの追加」）、部分一致だと衝突する。
+    await assert.doesNotReject(async () => page.getByRole('heading', {name: '更新履歴', exact: true}).waitFor());
+
+    // 初版 v1.0.0 のエントリと、その内容が載っていること
     await assert.doesNotReject(async () => page.locator('#v1-0-0').waitFor());
-    await assert.doesNotReject(async () => page.getByText('v1.0.0').first().waitFor());
-    await assert.doesNotReject(async () => page.getByText('セキュリティ修正').waitFor());
+    await assert.doesNotReject(async () => page.locator('#v1-0-0').getByText('セキュリティ修正').waitFor());
+
+    // 新しい順に並ぶこと。バージョン見出しは追加のたびに増えるため、
+    // 個別のバージョン名ではなく「先頭が最新である」構造を検証する。
+    const sectionIds = await page.locator('main.legal-page .legal-section').evaluateAll(
+      (nodes) => nodes.map((node) => node.id)
+    );
+    assert.ok(sectionIds.length >= 1, '更新履歴のエントリが1件も無い');
+    assert.equal(sectionIds.at(-1), 'v1-0-0', '最も古いエントリは初版 v1.0.0 であるべき');
   } finally {
     await context.close();
   }
