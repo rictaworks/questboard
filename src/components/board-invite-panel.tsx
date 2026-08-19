@@ -10,7 +10,7 @@ import BoardCanvasPanel, {type BoardCanvasData} from '@/components/board-canvas-
 import PlanUnavailablePanel from '@/components/plan-unavailable-panel';
 import {resolveRoleLabelKey} from '@/lib/board-role-label';
 import {
-  establishDevSession,
+  ensureDevSession,
   isPlanGated,
   MEMBER_PLAN_CODE,
   requestManualRecheck,
@@ -260,9 +260,10 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       // （auth-panel.tsx と同じ理由）。これを張らないと、KPIイベントの送信
       // （board-canvas-panel.tsx の AnalyticsTracker）が本物のcurrent_userを
       // 得られず、クエスト進捗が記録されない。
+      // ensureDevSession は POST /dev/session をモジュールレベルで1回に束ねる（issue #194）。
       let cancelled = false;
 
-      void establishDevSession(authT('developmentSessionError'))
+      void ensureDevSession(authT('developmentSessionError'))
         .then((session) => {
           if (cancelled) {
             return;

@@ -170,3 +170,134 @@ test('establishDevSession throws the caller-provided message when the endpoint f
     globalThis.fetch = originalFetch;
   }
 });
+
+// issue #194: 初回アクセスでは auth-panel・board-list-panel・board-invite-panel が
+// 同時にマウントされ、devセッション確立前に認証必須APIへ fetch が走って 401 になる
+// レースがあった。ensureDevSession が POST /dev/session をモジュールレベルで
+// 1回に束ねる（single-flight）ことを固定する。
+test('ensureDevSession shares a single in-flight dev session across concurrent callers', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+  });
+
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {displayName: '開発ユーザー'}})
+    });
+  };
+
+  try {
+    const [first, second] = await Promise.all([
+      api.ensureDevSession('fallback'),
+      api.ensureDevSession('fallback')
+    ]);
+    const third = await api.ensureDevSession('fallback');
+
+    assert.equal(calls, 1, 'POST /dev/session は全呼び出しで1回に束ねられる');
+    assert.equal(first.authenticated, true);
+    assert.equal(second.authenticated, true);
+    assert.equal(third.authenticated, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// 失敗した Promise をキャッシュし続けると、一度の一時的な失敗（バックエンド起動前など）で
+// 以後の認証必須 fetch がすべて巻き添えになる。失敗時は次の呼び出しで再試行する。
+test('ensureDevSession retries after a failure instead of caching the rejection', async () => {
+  const api = await loadModule('src/lib/session-api.ts', {
+    '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+  });
+
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = () => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ok: false, status: 500, json: () => Promise.resolve({})});
+    }
+    return Promise.resolve({
+      ok: true,
+      status: 201,
+      json: () => Promise.resolve({authenticated: true, user: {displayName: '開発ユーザー'}})
+    });
+  };
+
+  try {
+    await assert.rejects(() => api.ensureDevSession('fallback'), /fallback/);
+
+    const session = await api.ensureDevSession('fallback');
+
+    assert.equal(session.authenticated, true);
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+// waitForDevSession は認証必須 fetch の入口。開発環境では共有 dev セッションの解決を
+// 待ち、本番ではリクエストを1つも発行せず即座に解決する（本番挙動を変えない）。
+test('waitForDevSession issues no request outside development', async () => {
+  const originalEnv = process.env.NEXT_PUBLIC_ENV;
+  process.env.NEXT_PUBLIC_ENV = 'production';
+
+  try {
+    const api = await loadModule('src/lib/session-api.ts', {
+      '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+    });
+
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () => {
+      calls += 1;
+      return Promise.resolve({ok: true, status: 201, json: () => Promise.resolve({})});
+    };
+
+    try {
+      await api.waitForDevSession('fallback');
+      assert.equal(calls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  } finally {
+    process.env.NEXT_PUBLIC_ENV = originalEnv;
+  }
+});
+
+test('waitForDevSession waits for the shared dev session in development', async () => {
+  const originalEnv = process.env.NEXT_PUBLIC_ENV;
+  process.env.NEXT_PUBLIC_ENV = 'development';
+
+  try {
+    const api = await loadModule('src/lib/session-api.ts', {
+      '@/lib/x-auth': {readXAuthSettings: () => ({backendUrl: BACKEND_URL})}
+    });
+
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = () => {
+      calls += 1;
+      return Promise.resolve({
+        ok: true,
+        status: 201,
+        json: () => Promise.resolve({authenticated: true, user: {displayName: '開発ユーザー'}})
+      });
+    };
+
+    try {
+      await api.waitForDevSession('fallback');
+      await api.waitForDevSession('fallback');
+
+      assert.equal(calls, 1, 'ensureDevSession と同じ共有 Promise を待つため POST は1回');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  } finally {
+    process.env.NEXT_PUBLIC_ENV = originalEnv;
+  }
+});

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {useEffect, useState} from 'react';
 import {useTranslations} from 'next-intl';
 
+import {isDevEnvironment, waitForDevSession} from '@/lib/session-api';
 import {readXAuthSettings} from '@/lib/x-auth';
 
 type SessionState = {
@@ -143,6 +144,10 @@ export default function BoardListPanel() {
 
     void (async () => {
       try {
+        // 初回アクセスの 401 レース対策（issue #194）：dev セッション Cookie の確立を
+        // 待ってから認証必須APIを叩く。本番では即座に解決される。
+        await waitForDevSession(t('boardLoadError'));
+
         const {backendUrl} = readXAuthSettings();
         const response = await fetch(`${backendUrl}/boards?page=${page}&per_page=10`, {
           credentials: 'include',
@@ -150,6 +155,13 @@ export default function BoardListPanel() {
         });
 
         if (response.status === 401) {
+          // 本番の 401 は「未ログイン」なのでパネルを隠す（Xログインパネル側が出る）。
+          // 開発では dev セッション確立後の 401 は異常であり、無言でパネルが消えると
+          // 追跡不能になるため、エラー表示に倒す（issue #194 受け入れ要件）。
+          if (isDevEnvironment) {
+            throw new Error(t('boardLoadError'));
+          }
+
           setSessionState({authenticated: false});
           return;
         }
