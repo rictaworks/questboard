@@ -11,8 +11,8 @@ async function read(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8');
 }
 
-async function loadBoardRealtimeModule(mocks = {}) {
-  const source = await read('src/lib/board-realtime.ts');
+async function loadTranspiledModule(relativePath, mocks = {}) {
+  const source = await read(relativePath);
   const {outputText} = ts.transpileModule(source, {
     compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020},
   });
@@ -23,6 +23,17 @@ async function loadBoardRealtimeModule(mocks = {}) {
 
   new Function('module', 'exports', 'require', outputText)(moduleShim, moduleShim.exports, mockRequire);
   return moduleShim.exports;
+}
+
+// board-realtime は text_crdt の合成（issue #199）で実モジュールに依存するため、
+// モックではなく本物を読み込んで渡す
+const textCrdtModule = await loadTranspiledModule('src/lib/text-crdt.ts');
+
+async function loadBoardRealtimeModule(mocks = {}) {
+  return loadTranspiledModule('src/lib/board-realtime.ts', {
+    '@/lib/text-crdt': textCrdtModule,
+    ...mocks,
+  });
 }
 
 const realtime = await loadBoardRealtimeModule({

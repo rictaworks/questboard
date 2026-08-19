@@ -32,6 +32,7 @@ import {
   type BoardRestoreSuggestion,
   type BoardResyncRequired
 } from '@/lib/board-realtime';
+import {diffToOps, textFromCrdt, type TextCrdtState} from '@/lib/text-crdt';
 import {readXAuthSettings} from '@/lib/x-auth';
 import {useQuestCelebrations} from '@/hooks/use-quest-celebrations';
 import {FEEDBACK_INTENSITY_MASTERS, type FeedbackIntensityCode} from '@/lib/feedback-director';
@@ -86,6 +87,8 @@ export interface BoardCanvasObject {
   lockedAt?: string | null;
   lockOriginObjectId?: number | null;
   commentCount?: number | null;
+  textCrdt?: TextCrdtState;
+  textCrdtRevision?: number | null;
 }
 
 export interface BoardCanvasComment {
@@ -237,6 +240,8 @@ export default function BoardCanvasPanel({
   const [viewport, setViewport] = useState({width: 0, height: 0});
   const [cameraState, setCameraState] = useState<CameraState>(createCameraState);
   const [selection, setSelection] = useState<number[]>([]);
+  // テキスト・付箋のインライン編集状態（issue #199）。draft はコミットまでローカル
+  const [textEditing, setTextEditing] = useState<{objectId: number; draft: string} | null>(null);
   const [interaction, setInteraction] = useState<Interaction>(null);
   // 右端のコマンドレールで開いているオーバーレイパネル。同時に開くのは1枚のみ。
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
@@ -564,11 +569,12 @@ export default function BoardCanvasPanel({
 
     const controller = new CanvasInputController({
       onIntent(intent, event) {
-        // ラジアルメニュー（右クリック/長押し）と空白ダブルクリック作成は
-        // UI 層のハンドラへ委譲する（issue #192）。ref 経由なのは、この effect が
-        // 依存配列 [] でマウント時に固定されるのに対し、ハンドラ側は最新の
-        // role・カメラ・オブジェクト一覧を参照する必要があるため。
-        if (intent.kind === 'radial-menu' || intent.kind === 'create-note') {
+        // ラジアルメニュー（右クリック/長押し）・空白ダブルクリック作成・
+        // テキストのインライン編集（issue #199）は UI 層のハンドラへ委譲する
+        // （issue #192）。ref 経由なのは、この effect が依存配列 [] でマウント時に
+        // 固定されるのに対し、ハンドラ側は最新の role・カメラ・オブジェクト一覧を
+        // 参照する必要があるため。
+        if (intent.kind === 'radial-menu' || intent.kind === 'create-note' || intent.kind === 'edit-text') {
           uiIntentHandlerRef.current(intent, event);
           return;
         }
@@ -1068,6 +1074,63 @@ export default function BoardCanvasPanel({
            return;
          }
 
+         // text_crdt の差分は相対的（retain/delete/insert）で、geometry のような絶対値と
+         // 違い二重適用・順序入れ替えが即データ破壊になるため、汎用経路より先に扱う
+         // （issue #199）：
+         // - 自分の op のサーバー echo（value.revision あり）は送信時に適用済みなので
+         //   本文へ再適用せず、revision の追従（次の編集の ref_revision）だけ行う。
+         //   ただしサーバーの OT 変換で ops が送信時から変わっていた場合は、ローカル
+         //   本文が既にズレているため再読込で真実へ戻す。
+         // - 他クライアントの text op が届いたとき、同じオブジェクトへの未確定ローカル
+         //   編集があればクライアント側では合成できない（OT はサーバー側のみ）ので再読込。
+         if (message.property === 'text_crdt') {
+           const textOp = message as BoardRealtimeOp;
+           const textOpValue = (textOp.value ?? {}) as {ops?: unknown; revision?: unknown};
+           const isOwnEcho = textOp.clientId === clientIdRef.current && typeof textOpValue.revision === 'number';
+
+           if (isOwnEcho) {
+             const sent = pendingOpsRef.current.find((pending) => (
+               pending.objectId === textOp.objectId
+               && pending.property === 'text_crdt'
+               && pending.lamport_ts === textOp.lamport_ts
+               && pending.clientId === textOp.clientId
+             ));
+             const sentOps = (sent?.value as {ops?: unknown} | undefined)?.ops;
+             const transformed = JSON.stringify(sentOps ?? null) !== JSON.stringify(textOpValue.ops ?? null);
+
+             lamportRef.current = Math.max(lamportRef.current, textOp.lamport_ts);
+             setBoardState((current) => ({
+               ...current,
+               objects: current.objects.map((object) => (
+                 String(object.id) === textOp.objectId
+                   ? {...object, textCrdtRevision: textOpValue.revision as number}
+                   : object
+               )),
+             }));
+             prunePendingOps((pending) => (
+               pending.objectId === textOp.objectId
+               && pending.property === 'text_crdt'
+               && pending.lamport_ts === textOp.lamport_ts
+               && pending.clientId === textOp.clientId
+             ));
+
+             if (transformed) {
+               reloadBoardWithBackoff();
+             }
+             return;
+           }
+
+           if (textOp.clientId !== clientIdRef.current) {
+             const hasPendingTextEdit = pendingOpsRef.current.some((pending) => (
+               pending.objectId === textOp.objectId && pending.property === 'text_crdt'
+             ));
+             if (hasPendingTextEdit) {
+               reloadBoardWithBackoff();
+               return;
+             }
+           }
+         }
+
          recordRealtimeOp(message as BoardRealtimeOp);
        };
 
@@ -1434,7 +1497,7 @@ export default function BoardCanvasPanel({
   // effect（依存配列 []）内のクロージャから最新の state を参照するため、
   // uiIntentHandlerRef 経由で毎レンダー差し替える。
   function handleUiIntent(intent: CanvasIntent, event: Event) {
-    if (intent.kind !== 'radial-menu' && intent.kind !== 'create-note') {
+    if (intent.kind !== 'radial-menu' && intent.kind !== 'create-note' && intent.kind !== 'edit-text') {
       return;
     }
 
@@ -1442,6 +1505,25 @@ export default function BoardCanvasPanel({
     const targetElement = event.target as Element | null;
     // ミニマップ等のキャンバス上の UI 部品では作成もメニューも発動させない。
     if (targetElement?.closest('button, a, [data-ui-chrome]')) {
+      return;
+    }
+
+    if (intent.kind === 'edit-text') {
+      // テキスト・付箋のダブルクリック → インライン編集（issue #199）
+      const hitTarget = resolveHitTargetFromElement(targetElement);
+      const editObjectId = hitTarget.kind !== 'blank' && hitTarget.objectId != null ? Number(hitTarget.objectId) : null;
+      const editObject = editObjectId != null ? objectsRef.current.find((entry) => entry.id === editObjectId) ?? null : null;
+      if (!editObject) {
+        return;
+      }
+
+      if (!canPerformBoardAction(roleCode, 'edit_text', objectToLockState(editObject), currentUserId)) {
+        enqueueToast(t('permissionDenied'));
+        return;
+      }
+
+      setSelection([editObject.id]);
+      setTextEditing({objectId: editObject.id, draft: textFromCrdt(editObject.textCrdt)});
       return;
     }
 
@@ -1572,6 +1654,29 @@ export default function BoardCanvasPanel({
     }
 
     void mutateLegacyObject(object.id, object.locked ? 'unlock' : 'lock');
+  }
+
+  // インライン編集の確定（issue #199）。現在の本文との最小差分を text_crdt op として
+  // 送る。ref_revision はボード読込時 or 直前の ack が運んだ ObjectOp id（0 = 履歴なし）。
+  function commitTextEditing() {
+    const editing = textEditing;
+    if (!editing) {
+      return;
+    }
+    setTextEditing(null);
+
+    const object = boardStateRef.current.objects.find((entry) => entry.id === editing.objectId);
+    if (!object) {
+      return;
+    }
+
+    const ops = diffToOps(textFromCrdt(object.textCrdt), editing.draft);
+    if (ops.length === 0) {
+      return;
+    }
+
+    const revision = object.textCrdtRevision ?? 0;
+    sendObjectRealtimeOp(object.id, 'text_crdt', revision > 0 ? {ops, ref_revision: revision} : {ops});
   }
 
   function focusMinimap(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -1705,6 +1810,7 @@ export default function BoardCanvasPanel({
               <article
                 className={`board-object board-object-${object.objectTypeCode} ${selection.includes(object.id) ? 'is-selected' : ''} ${object.locked && object.lockedByUserId !== currentUserId ? 'is-locked' : ''}`}
                 data-obj-id={object.id}
+                data-text-editable={object.objectTypeCode === 'sticky' || object.objectTypeCode === 'text' ? 'true' : undefined}
                 key={object.id}
                 style={{...objectStyle(object.geometry), ...objectColorStyle(boardState.colorPalettes, object.colorId)} as CSSProperties}
                 onPointerDown={(event) => handleObjectPointerDown(object, event)}
@@ -1713,6 +1819,33 @@ export default function BoardCanvasPanel({
                 <div className="board-object-label">
                   {t(OBJECT_TYPE_LABEL_KEYS[object.objectTypeCode] ?? 'objectTypeShape')}
                 </div>
+                {/* テキスト・付箋の本文（issue #199）。プレーンテキストとして描画し、
+                    HTML は解釈しない（XSS対策・TM.md T6）。ダブルクリックで編集。 */}
+                {object.objectTypeCode === 'sticky' || object.objectTypeCode === 'text' ? (
+                  textEditing?.objectId === object.id ? (
+                    <textarea
+                      aria-label={t('textEditorLabel')}
+                      autoFocus
+                      className="board-object-text-editor"
+                      value={textEditing.draft}
+                      onBlur={commitTextEditing}
+                      onChange={(event) => {
+                        const draft = event.target.value;
+                        setTextEditing((current) => (current && current.objectId === object.id ? {...current, draft} : current));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault();
+                          setTextEditing(null);
+                        }
+                        event.stopPropagation();
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    />
+                  ) : (
+                    <div className="board-object-text">{textFromCrdt(object.textCrdt)}</div>
+                  )
+                ) : null}
                 {/* 四隅の操作ハンドル（issue #198・モック準拠）：
                     左上=ロック・右上=回転・右下=サイズ変更・左下=コメント。
                     ロック状態とコメント件数は選択中でなくても分かるよう、
