@@ -7,6 +7,8 @@
 - Rails `/healthz`: ヘルスチェックエンドポイント（`health#show`）
 - Gin `/healthz`: ヘルスチェックエンドポイント
 - Gin `/metrics`: Prometheus 形式でメトリクスを公開する（`sync_server_websocket_connections`、`sync_server_sync_operation_duration_seconds` 等。`src/sync-server/internal/ws/metrics.go`）
+  - **`SYNC_SERVER_METRICS_TOKEN` が必須（Bearer 認証）**。scrape 側は `Authorization: Bearer <token>` を付ける。本番では未設定だと sync-server が起動しない（issue #229）
+  - `/healthz` は外形監視から叩くため認証なしのまま
 - Rails / Next.js の未捕捉例外は Sentry と連携している（`SENTRY_DSN` 設定時）。`POST /client_errors` は Sentry 未設定時のみの補助経路として実装されている
 
 ## 死活監視・障害通知（設定済み）

@@ -16,6 +16,7 @@ type Config struct {
 	RedisChannelPrefix         string
 	Env                        string
 	BackendURL                 string
+	MetricsToken               string
 	CodespaceName              string
 	CodespacesForwardingDomain string
 }
@@ -65,6 +66,9 @@ func FromEnv() (Config, error) {
 		// 既定値は Rails backend の開発ポート。3000 はフロント（Next.js）で、
 		// op の永続化・WS 認証がすべて 404 になる誤配線だった（issue #197）
 		BackendURL: envOrDefault("SYNC_SERVER_BACKEND_URL", "http://localhost:3001"),
+		// /metrics の共有トークン。未設定なら認証なしで公開されるため、
+		// 本番では server.New が起動時に拒否する（issue #229）
+		MetricsToken: strings.TrimSpace(os.Getenv("SYNC_SERVER_METRICS_TOKEN")),
 		// フロント（src/lib/backend-url.ts）・Rails（development_allowed_origins.rb）と
 		// 同じ変数名を使い回す。Codespaces自身がCODESPACE_NAMEを設定し、
 		// CODESPACES_FORWARDING_DOMAINは.envで明示する（本番には設定しない）。

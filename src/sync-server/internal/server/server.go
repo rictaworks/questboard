@@ -24,6 +24,12 @@ func New(cfg config.Config, wsHandler *ws.Handler) (*Server, error) {
 		if err := wsHandler.ValidateConfigForProduction(); err != nil {
 			return nil, fmt.Errorf("production config validation: %w", err)
 		}
+
+		// 未設定だと metricsAuth が素通しになり、公開ドメイン上の /metrics が
+		// 誰でも読める状態に戻る。黙って起動させず設定ミスとして落とす（issue #229）
+		if cfg.MetricsToken == "" {
+			return nil, fmt.Errorf("production config validation: SYNC_SERVER_METRICS_TOKEN is required")
+		}
 	}
 
 	wsHandler.SetNodeID(cfg.NodeID)
@@ -38,7 +44,7 @@ func New(cfg config.Config, wsHandler *ws.Handler) (*Server, error) {
 	engine := gin.New()
 	engine.Use(gin.Recovery())
 	engine.GET("/healthz", healthHandler)
-	engine.GET("/metrics", gin.WrapH(wsHandler.MetricsHandler()))
+	engine.GET("/metrics", metricsAuth(cfg.MetricsToken), gin.WrapH(wsHandler.MetricsHandler()))
 	engine.GET("/ws", wsHandler.ServeHTTP)
 
 	httpServer := &http.Server{

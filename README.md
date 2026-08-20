@@ -57,6 +57,9 @@ Development と test の Rails backend は PostgreSQL を使う。ローカル�
   - `X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES` は手動再判定のクールダウン（分。既定15）。正の整数以外を設定すると起動時に例外になる
   - `ADMIN_BASIC_AUTH_USERNAME`/`ADMIN_BASIC_AUTH_PASSWORD` は `/admin` 配下のBasic認証情報。テスト環境のみ既定値`admin`/`secret`が自動設定される（`config/initializers/admin_auth.rb`）。development/production では未設定のまま起動すると例外になるため、`.env`で必ず設定すること（リポジトリにはコミットしない）
   - `SYNC_SERVER_REDIS_URL`/`SYNC_SERVER_REDIS_CHANNEL_PREFIX`/`SYNC_SERVER_REDIS_POOL_SIZE` はRailsからGo sync-serverへ同期opをRedis経由でリレーする設定
+- Sync server env: `SYNC_SERVER_ENV`, `SYNC_SERVER_ADDR`/`PORT`, `SYNC_SERVER_ALLOWED_ORIGINS`, `SYNC_SERVER_BACKEND_URL`, `SYNC_SERVER_SHARD_COUNT`, `SYNC_SERVER_NODE_ID`, `SYNC_SERVER_REDIS_URL`, `SYNC_SERVER_REDIS_CHANNEL_PREFIX`, `SYNC_SERVER_METRICS_TOKEN`
+  - `SYNC_SERVER_METRICS_TOKEN` は `/metrics` を守る共有トークン。設定すると `Authorization: Bearer <token>` を要求し、一致しなければ 401 を返す。**`SYNC_SERVER_ENV=production` では必須で、未設定だと起動時に失敗する**（未設定のまま公開ドメインに出ると誰でも読める。issue #229）。development では未設定を許容する
+  - `/healthz` は外形監視から叩くため認証をかけない
 - Development mode treats the app as already authenticated; this branch is not present in production builds
 
 ## Localization
