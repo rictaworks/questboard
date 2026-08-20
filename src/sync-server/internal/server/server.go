@@ -43,6 +43,7 @@ func New(cfg config.Config, wsHandler *ws.Handler) (*Server, error) {
 
 	engine := gin.New()
 	engine.Use(gin.Recovery())
+	engine.Use(securityHeaders(cfg.Env))
 	engine.GET("/healthz", healthHandler)
 	engine.GET("/metrics", metricsAuth(cfg.MetricsToken), gin.WrapH(wsHandler.MetricsHandler()))
 	engine.GET("/ws", wsHandler.ServeHTTP)

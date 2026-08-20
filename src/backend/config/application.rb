@@ -61,6 +61,10 @@ module Backend
     config.middleware.use ActionDispatch::Cookies
     config.middleware.use ActionDispatch::Session::CookieStore, config.session_options
     config.middleware.use ActionDispatch::Flash
+    # config.api_only = true は CSP のミドルウェアも既定スタックから除外する。
+    # config/initializers/content_security_policy.rb で方針を定義しても、
+    # これが無いと応答にヘッダが載らない（issue #240）
+    config.middleware.use ActionDispatch::ContentSecurityPolicy::Middleware
     config.middleware.insert_before ActionDispatch::Cookies, RequestBodySizeLimiter
   end
 end

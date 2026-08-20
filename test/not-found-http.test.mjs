@@ -171,6 +171,39 @@ function readRemovedLocalePrefixes() {
   return [...declaration[1].matchAll(/'([^']+)'/g)].map(([, locale]) => locale);
 }
 
+// セキュリティヘッダは実際の応答でしか確かめられない。next.config.ts の
+// headers() が正しい形で書かれていても、経路の指定を誤れば付かない経路が出る。
+// ここは既に `next start` を起動しているので、その応答で直接見る（issue #240）。
+//
+// get() は本文と行き先を返すヘルパーでヘッダを返さないため、ここでは fetch を直に使う。
+async function headersOf(pathname) {
+  const response = await fetch(`${baseUrl}${pathname}`, {redirect: 'manual'});
+
+  // 本文を読み切らないと接続が滞留し、以後のテストが待たされることがある
+  await response.text();
+
+  return response.headers;
+}
+
+test('セキュリティヘッダが応答に付く', async () => {
+  const headers = await headersOf('/');
+
+  assert.equal(headers.get('x-frame-options'), 'DENY');
+  assert.equal(headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
+  assert.match(headers.get('content-security-policy') ?? '', /frame-ancestors 'none'/);
+});
+
+// 画面以外の経路にも付くこと。source を '/:path*' にしている意図を固定する
+test('API 経路にもセキュリティヘッダが付く', async () => {
+  const headers = await headersOf(
+    `${INSTANCE_PROBE_PATH}?instance=${encodeURIComponent(instanceId)}`
+  );
+
+  assert.equal(headers.get('x-frame-options'), 'DENY');
+  assert.equal(headers.get('x-content-type-options'), 'nosniff');
+});
+
 async function get(pathname, headers = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {headers, redirect: 'manual'});
   const body = await response.text();
