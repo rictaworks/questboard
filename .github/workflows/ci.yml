@@ -10,6 +10,11 @@ on:
   schedule:
     - cron: "0 21 * * *" # 06:00 JST
   workflow_dispatch:
+    inputs:
+      alert_drill:
+        description: "通知経路の試験。閾値を超えていなくてもジョブを失敗させ、Slack 通知を発火させる"
+        type: boolean
+        default: false
 
 jobs:
   frontend-lint:
@@ -247,6 +252,12 @@ jobs:
         run: |
           set -o pipefail
           node scripts/check-sync-metrics.mjs 2>&1 | tee metrics-check.log
+          # 通知経路そのものを試験するための逃げ道。閾値超過を待たずに発火を確認できる。
+          # 監視は「設定した」だけでは動いている保証にならないため、いつでも試せる形にしておく
+          if [ "${{ inputs.alert_drill }}" = "true" ]; then
+            echo "alert_drill が指定されたため、通知試験として意図的に失敗させる" | tee -a metrics-check.log
+            exit 1
+          fi
       # Railway のデプロイ失敗通知と同じ Slack チャンネルへ寄せる。
       # SLACK_WEBHOOK_URL が未登録の間は何もしない（ジョブの失敗自体は残る）
       - name: Notify Slack

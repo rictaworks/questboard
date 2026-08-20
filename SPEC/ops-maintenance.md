@@ -72,6 +72,15 @@ CI の `Security / Sync metrics threshold` ジョブが日次 cron（06:00 JST�
 - 閾値を超えると `SLACK_WEBHOOK_URL`（GitHub Actions Secrets）宛に Slack 通知を送る。Railway のデプロイ失敗通知と同じチャンネルに寄せている
   - **Secret が未登録の間は通知ステップが何もせず終了する。** ジョブの失敗自体は残るので、気づけないわけではないが Slack には出ない
 - 閾値を変えたら `workflow_dispatch` で即座に流して確認する。翌朝の cron を待たない
+- **通知経路そのものを試験できる。** `workflow_dispatch` の `alert_drill` を true にすると、
+  閾値を超えていなくてもジョブを失敗させて Slack 通知を発火させる
+
+```bash
+gh workflow run ci.yml --repo rictaworks/questboard --ref main -f alert_drill=true
+```
+
+  監視は設定しただけでは動いている保証にならない。通知先を変えたときは必ずこれで発火を確かめる
+  （backend の healthcheck を設定しただけで確認せず、11 回連続でデプロイを落とした前例がある。issue #232）
 
 手動実行（ローカル）:
 
