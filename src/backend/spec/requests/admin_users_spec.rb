@@ -21,15 +21,44 @@ RSpec.describe "Admin users", type: :request do
     expect(response.body).to include("手動ログイン許可（例外ユーザー）管理")
   end
 
-  it "redirects back to the users page and shows the validation flash" do
+  # 入力エラーはリダイレクトせずその場で描画する。リダイレクトを挟むと flash が
+  # セッション経由になり、同じ cookie を共有しているフロント側の API 呼び出しに
+  # 上書きされて消える（issue #187）。「1レスポンスで出す」ことを固定する。
+  it "renders the users page with the validation message without redirecting" do
     post "/admin/users", params: { x_user_id: "", display_name: "" }, headers: admin_headers
 
-    expect(response).to redirect_to(admin_users_path)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.body).to include(I18n.t("admin.users.create.params_missing"))
+  end
 
+  it "does not leave the validation message in the session" do
+    post "/admin/users", params: { x_user_id: "", display_name: "" }, headers: admin_headers
+
+    # flash.now を使っているので、次のリクエストにメッセージが持ち越されない。
+    # ここが redirect + flash に戻ると、この期待が落ちて気づける
     get admin_users_path, headers: admin_headers
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include(I18n.t("admin.users.create.params_missing"))
+    expect(response.body).not_to include(I18n.t("admin.users.create.params_missing"))
+  end
+
+  it "renders the users page with the failure message when the user cannot be saved" do
+    allow_any_instance_of(User).to receive(:save).and_return(false)
+
+    post "/admin/users", params: { x_user_id: "x-save-fails", display_name: "Save Fails" },
+                         headers: admin_headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.body).to include(I18n.t("admin.users.create.failure"))
+  end
+
+  # 成功時はリダイレクトのまま（POST-Redirect-Get で二重送信を防ぐ）
+  it "redirects after creating a user" do
+    post "/admin/users", params: { x_user_id: "x-created", display_name: "Created" },
+                         headers: admin_headers
+
+    expect(response).to redirect_to(admin_users_path)
+    expect(User.find_by(x_user_id: "x-created")).to be_present
   end
 
   it "toggles manual bypass without raising and shows the success flash" do
