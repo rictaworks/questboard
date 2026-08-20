@@ -270,8 +270,13 @@ jobs:
             echo "SLACK_WEBHOOK_URL が未設定のため Slack へは通知しない"
             exit 0
           fi
+          # ドリルの通知が本物のアラートと同じ見出しだと、受け取った側が判別できない
+          TITLE="*questboard: /metrics の閾値を超過しました*"
+          if [ "${{ inputs.alert_drill }}" = "true" ]; then
+            TITLE="*[通知試験] questboard: 閾値アラートの発火確認（実際の超過ではありません）*"
+          fi
           # 本文は jq で組み立てる。ログに引用符や改行が混ざっても JSON が壊れない
-          jq -Rs --arg url "$RUN_URL" \
-            '{text: ("*questboard: /metrics の閾値を超過しました*\n```" + . + "```\n" + $url)}' \
+          jq -Rs --arg url "$RUN_URL" --arg title "$TITLE" \
+            '{text: ($title + "\n```" + . + "```\n" + $url)}' \
             metrics-check.log > payload.json
           curl -sS -X POST -H 'Content-type: application/json' --data @payload.json "$SLACK_WEBHOOK_URL"
