@@ -242,4 +242,25 @@ jobs:
         env:
           SYNC_METRICS_URL: https://sync.questboard.rictaworks.jp/metrics
           SYNC_SERVER_METRICS_TOKEN: ${{ secrets.SYNC_SERVER_METRICS_TOKEN }}
-        run: node scripts/check-sync-metrics.mjs
+        # 通知本文に観測値を載せたいので出力を残す。tee を挟むとスクリプトの
+        # 終了コードが握りつぶされるため pipefail で戻す
+        run: |
+          set -o pipefail
+          node scripts/check-sync-metrics.mjs 2>&1 | tee metrics-check.log
+      # Railway のデプロイ失敗通知と同じ Slack チャンネルへ寄せる。
+      # SLACK_WEBHOOK_URL が未登録の間は何もしない（ジョブの失敗自体は残る）
+      - name: Notify Slack
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK_URL" ]; then
+            echo "SLACK_WEBHOOK_URL が未設定のため Slack へは通知しない"
+            exit 0
+          fi
+          # 本文は jq で組み立てる。ログに引用符や改行が混ざっても JSON が壊れない
+          jq -Rs --arg url "$RUN_URL" \
+            '{text: ("*questboard: /metrics の閾値を超過しました*\n```" + . + "```\n" + $url)}' \
+            metrics-check.log > payload.json
+          curl -sS -X POST -H 'Content-type: application/json' --data @payload.json "$SLACK_WEBHOOK_URL"
