@@ -36,7 +36,12 @@ RSpec.describe "コントローラのユーザー向け文言" do
   def known_message_literals
     {
       "app/controllers/health_controller.rb" => "6437c52449b723e4",
-      "app/controllers/objects_controller.rb" => "45ca6edf00af9a20"
+      "app/controllers/objects_controller.rb" => "45ca6edf00af9a20",
+      # 入力エラーで render :index するようになり（#187）、一覧取得に使う SQL 断片と
+      # プランコードが応答経路のリテラルとして計上されるようになった。
+      # 内訳は ["%%", "member", "none", "x_user_id = ? OR display_name LIKE ?"] で、
+      # 利用者に見せる文言は含まれない
+      "app/controllers/admin/users_controller.rb" => "0e085eae2a063cc7"
     }
   end
 
