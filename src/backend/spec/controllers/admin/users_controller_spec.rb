@@ -86,13 +86,16 @@ RSpec.describe Admin::UsersController, type: :controller do
       expect(response).to redirect_to(admin_users_path)
     end
 
-    it "fails to create user and sets alert when params are missing" do
+    # 入力エラーはリダイレクトせずその場で描画する。リダイレクトを挟むと flash が
+    # セッション経由になり、同じ cookie を共有しているフロント側の API 呼び出しに
+    # 上書きされて消える（#187）
+    it "fails to create user and renders the index with an alert when params are missing" do
       expect {
         post :create, params: { x_user_id: "", display_name: "" }
       }.not_to change(User, :count)
 
       expect(flash[:alert]).to eq(I18n.t("admin.users.create.params_missing"))
-      expect(response).to redirect_to(admin_users_path)
+      expect(response).to have_http_status(:unprocessable_content)
     end
 
     it "self-heals missing member plan and succeeds" do
