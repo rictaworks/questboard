@@ -89,10 +89,64 @@ SYNC_METRICS_URL=https://sync.questboard.rictaworks.jp/metrics \
 SYNC_SERVER_METRICS_TOKEN=<token> node scripts/check-sync-metrics.mjs
 ```
 
+## 外形監視（設定済み）
+
+UptimeRobot（無料枠）から 5 分間隔でポーリングし、失敗時はアカウントのメールに通知する。
+
+| 監視 | URL | 種別 |
+|---|---|---|
+| トップページ | `https://questboard.rictaworks.jp` | HTTP(s) |
+| backend | `https://api.questboard.rictaworks.jp/healthz` | Keyword `"status":"ok"` |
+| sync-server | `https://sync.questboard.rictaworks.jp/healthz` | Keyword `"status":"ok"` |
+
+- キーワード条件は「**存在しなければ障害**」。200 を返しつつ中身が変わった場合に HTTP 監視では気づけないため
+- `/metrics` は監視対象に入れない。Bearer 認証が必要で、認証なしのポーリングは 401 になり鳴り続ける
+- 設定手順と、無料プランでは API から監視を作れない件は `20_開発/questboard-monitoring/README.md`（このリポジトリ外）
+
+**外形監視だけは自前インフラの外に置く。** 本体が落ちたときに一緒に落ちる場所へ監視を置くと、「アラートが来ない」と「正常」が区別できなくなる。
+
+## 週次パッチ運用
+
+依存更新は **Dependabot が PR を作り、osv-scanner が検知する**。人が毎週見るのは Dependabot の PR だけでよい。
+
+### 自動で動くもの
+
+| 仕組み | 頻度 | 役割 |
+|---|---|---|
+| Dependabot（npm / bundler / gomod） | 毎週月曜 06:00 JST | 更新 PR の作成 |
+| Dependabot（github-actions） | 月次 | CI で使う action の更新（サプライチェーンの一部） |
+| CI `Security / Dependency scan`（osv-scanner） | 日次 06:00 JST ＋ 全 PR | 脆弱性の検知 |
+| CI `Backend / Brakeman` | 全 PR | Rails の静的セキュリティ検査 |
+
+- 通常の minor / patch はグループ化されて 1 本の PR にまとまる。個別 PR が乱立すると確認しきれないため
+- **セキュリティ更新は `open-pull-requests-limit` と無関係に別 PR で来る**。上限に達していても止まらない
+
+### 毎週やること
+
+1. Dependabot の PR を見る。CI が緑なら順にマージする
+2. `Security / Dependency scan` が赤い週は、Dependabot の PR だけでは解決していない。下記「Dependabot で閉じない場合」へ
+3. マージしただけでは本番に出ない。**反映は Release の発行**（`release-deploy.yml` が Railway → Vercel の順にデプロイする）
+
+### Dependabot で閉じない場合
+
+- **推移的依存**は Dependabot が直接上げられないことがある。親の依存を上げて解消する（例：gin と quic-go を同時に更新した PR #223）
+- **Go の stdlib** は `go.mod` の `go` ディレクティブが要求バージョンとして照合される。宣言が古いままだと、修正済みの stdlib 脆弱性を抱えた状態として検出され続ける
+
+### 週次で見る場所
+
+| 見るもの | どこ |
+|---|---|
+| デプロイ失敗・クラッシュ | Slack `#questboard-alerts`（Railway Webhook） |
+| 全 Railway プロジェクトの健全性 | 同上（この端末の日次横断点検） |
+| 外形監視の障害 | UptimeRobot からのメール |
+| `/metrics` の閾値超過 | Slack `#questboard-alerts`（日次 CI） |
+| 利用状況・KPI | `/admin` の KPI ダッシュボード |
+
+通知が来ていなければ健全、という前提で運用する。**そのため通知経路が生きていること自体を定期的に確かめる**（`alert_drill` と横断点検の `--drill`）。設定しただけの監視は動いている保証にならない。
+
 ## 未実施（TASKS で管理）
 
-以下は本リポジトリのコードとしては存在せず、実装済みとして扱ってはならない。デプロイフェーズ以降の対応として `TASKS/` に記載する。
+以下は本リポジトリのコードとしては存在せず、実装済みとして扱ってはならない。
 
-- 外形監視（UptimeRobot 等）の外部サービスからのポーリング設定（issue #23）
 - 分単位の粒度でのメトリクス監視。日次スナップショットのため、日中に発生して回復した劣化は取りこぼす（issue #23）
-- 上記アラートの整備を前提とした週次パッチ運用フロー・監視ダッシュボード観測手順
+  - 実現には Grafana Cloud 等への remote-write と、Railway への収集エージェント追加が要る。取りこぼしが実際に問題になってから判断する
