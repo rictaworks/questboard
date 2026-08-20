@@ -9,6 +9,7 @@ on:
   # 更新の無い期間に検知できないため、日次でも走らせる（v1.0.0 で20件を溜めた反省）。
   schedule:
     - cron: "0 21 * * *" # 06:00 JST
+  workflow_dispatch:
 
 jobs:
   frontend-lint:
@@ -222,3 +223,23 @@ jobs:
             --lockfile src/backend/Gemfile.lock \
             --lockfile go.mod \
             --lockfile src/sync-server/go.mod
+
+  metrics-threshold:
+    name: Security / Sync metrics threshold
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 本番の値を見るジョブなので PR・push では走らせない。日次 cron と手動実行のみ。
+    # 外形監視（UptimeRobot）は「落ちている」ことしか見ないため、稼働したまま性能が
+    # 劣化するケースはここで拾う（issue #23）。
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      # 依存を入れない。スクリプトは Node 標準の fetch だけで動く
+      - name: Check sync-server metrics
+        env:
+          SYNC_METRICS_URL: https://sync.questboard.rictaworks.jp/metrics
+          SYNC_SERVER_METRICS_TOKEN: ${{ secrets.SYNC_SERVER_METRICS_TOKEN }}
+        run: node scripts/check-sync-metrics.mjs
