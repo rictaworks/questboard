@@ -14,7 +14,21 @@
 ## 死活監視・障害通知（設定済み）
 
 - Railway の `backend` / `sync-server` に healthcheck パス `/healthz` を設定済み。デプロイ時にヘルスチェックが通らなければ切り替えを中止する
+- **backend には `PORT=80` を明示的に設定してある。消さないこと**（issue #232）
+  - Railway はコンテナに `PORT=8080` を注入し、**healthcheck はその `PORT` を叩く**
+  - backend の起動は `./bin/thrust ./bin/rails server`。Thruster は自身の待受に `HTTP_PORT`（既定 80）を使い、`PORT` は Puma 用に `TARGET_PORT`（既定 3000）として渡すだけなので、**8080 は誰も listen しない**
+  - 公開トラフィックはドメインの targetPort=80 経由なので正常に見え、**healthcheck だけが落ちる**。この状態で 11 回連続でデプロイが失敗した
+  - sync-server は Go 側が `PORT` をそのまま使うため、この問題は起きない
+
 - Railway の Webhook で Deployment Failed / Crashed を Slack に通知する。Webhook URL は Railway 側にのみ保持し、リポジトリには置かない
+
+コンテナ内から確認する場合（Railway のサービス → Console）:
+
+```bash
+env | grep -E '^(PORT|HTTP_PORT|TARGET_PORT)='
+awk 'NR>1 && $4=="0A" {print $2}' /proc/net/tcp6   # 0050=80, 1F90=8080
+curl -sS -o /dev/null -w '%{http_code}\n' "http://[::1]:${PORT}/healthz"
+```
 
 ## tombstone 保持期間（実装済み）
 
