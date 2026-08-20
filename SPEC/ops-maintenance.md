@@ -42,10 +42,34 @@ DRY_RUN=true bundle exec rails board_objects:purge_tombstones  # 件数のみ出
   実行履歴は Deployments ではなくサービスのログで確認する（`[purge_tombstones] purged=N skipped=N`）
 - 対象が 0 件でも毎日起動する。ログに行が出ていなければスケジューラ自体を疑う
 
+## 閾値チェック（実装済み）
+
+`scripts/check-sync-metrics.mjs` が本番の `/metrics` を取得し、閾値を超えていれば非ゼロ終了する。
+CI の `Security / Sync metrics threshold` ジョブが日次 cron（06:00 JST）と手動実行で走らせる。
+
+| 系列 | 既定の閾値 | 意図 |
+|---|---|---|
+| `sync_server_websocket_connections` | 500 超で失敗 | 切断漏れで接続が積み上がる異常 |
+| `sync_server_slow_client_drops_total` | 20 件超で失敗 | 配信が詰まって遅いクライアントを切り続けている |
+| `sync_server_sync_operation_duration_seconds` | 1秒超が 1% を上回ると失敗 | 同期処理の劣化 |
+
+- 標本が 20 件未満のときは比率を判定しない。起動直後の数件で毎回鳴ると、アラート自体が無視されるようになる
+- 系列そのものが消えていた場合も失敗させる。エンドポイントが 200 でも中身が変わったことに気づけないため
+- 通知経路は現状 GitHub Actions の失敗通知のみ。Slack への集約は未実施（下記参照）
+- 閾値を変えたら `workflow_dispatch` で即座に流して確認する。翌朝の cron を待たない
+
+手動実行（ローカル）:
+
+```bash
+SYNC_METRICS_URL=https://sync.questboard.rictaworks.jp/metrics \
+SYNC_SERVER_METRICS_TOKEN=<token> node scripts/check-sync-metrics.mjs
+```
+
 ## 未実施（TASKS で管理）
 
 以下は本リポジトリのコードとしては存在せず、実装済みとして扱ってはならない。デプロイフェーズ以降の対応として `TASKS/` に記載する。
 
 - 外形監視（UptimeRobot 等）の外部サービスからのポーリング設定（issue #23）
-- `/metrics` の値に対する閾値アラート（Prometheus アラートルール等）。現状の通知はデプロイ失敗・クラッシュのみで、稼働中の性能劣化は検知できない（issue #23）
+- 閾値超過の Slack 通知。現状は GitHub Actions の失敗通知に依存しており、Railway のデプロイ失敗通知と経路が分かれている（issue #23）
+- 分単位の粒度でのメトリクス監視。日次スナップショットのため、日中に発生して回復した劣化は取りこぼす（issue #23）
 - 上記アラートの整備を前提とした週次パッチ運用フロー・監視ダッシュボード観測手順
