@@ -3,6 +3,13 @@ version: 2
 # osv-scanner（CI の Security / Dependency scan）が「検知」を担い、
 # Dependabot が「更新 PR の作成」を担う。両輪で、脆弱性を溜めずに回す。
 # セキュリティ更新の PR は open-pull-requests-limit に関係なく作成される。
+#
+# cooldown は公開直後の版を即座に取り込まないための待機期間（issue #242）。
+# 公開直後の版には、取り込み後に問題が判明するもの（不安定な版、公開元の
+# 乗っ取りによる悪意ある版）が混じりうる。
+#
+# **cooldown は通常の版更新にのみ効き、セキュリティ更新には適用されない。**
+# 脆弱性の修正が待たされることはない（GitHub のドキュメントに明記されている）。
 updates:
   - package-ecosystem: npm
     directory: /
@@ -11,6 +18,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       # 個別 PR が乱立すると確認しきれないため、通常更新はまとめる。
@@ -25,6 +34,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       bundler-minor-patch:
@@ -37,6 +48,8 @@ updates:
       day: monday
       time: "06:00"
       timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
 
   # CI で使う action 自体も更新対象にする（サプライチェーンの一部であるため）
@@ -45,4 +58,6 @@ updates:
     schedule:
       interval: monthly
       timezone: Asia/Tokyo
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 3
