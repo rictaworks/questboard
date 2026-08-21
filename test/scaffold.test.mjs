@@ -474,3 +474,21 @@ test('.env.example lists every NEXT_PUBLIC_ variable the frontend reads', async 
 
   assert.deepEqual(missing, [], `.env.example に ${missing.join(', ')} が無い`);
 });
+
+// 版数の正はリリースタグ。package.json には version を置かない（issue #244）。
+//
+// 以前は "1.0.0" のまま残り、タグが v1.0.3 まで進んでも更新されていなかった。
+// このリポジトリは private: true でパッケージとして公開しないため version は
+// 誰にも読まれず、置いておくと必ずタグとずれる。ずれた値は監査で不適合になる。
+//
+// 同期する運用に戻すなら、このテストを消してタグ発行手順に同期を組み込むこと。
+test('package.json に version を置いていない', async () => {
+  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
+
+  assert.equal(manifest.private, true, 'private でないなら version が必要になる');
+  assert.equal(
+    manifest.version,
+    undefined,
+    'version を置くとリリースタグとずれる。版数の正はタグ側にある'
+  );
+});

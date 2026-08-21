@@ -1,6 +1,5 @@
 {
   "name": "questboard",
-  "version": "1.0.0",
   "description": "Questboard frontend scaffold",
   "private": true,
   "type": "module",
