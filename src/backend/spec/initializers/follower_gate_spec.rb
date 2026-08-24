@@ -1,25 +1,27 @@
 require "rails_helper"
 
 RSpec.describe "follower_gate initializer" do
-  let(:original_base_url) { ENV["X_FOLLOWER_GATE_BASE_URL"] }
-  let(:original_client_id) { ENV["X_FOLLOWER_GATE_CLIENT_ID"] }
-  let(:original_credential) { ENV["X_FOLLOWER_GATE_CREDENTIAL"] }
+  KEYS = %w[X_FOLLOWER_GATE_BASE_URL X_FOLLOWER_GATE_CLIENT_ID X_FOLLOWER_GATE_CREDENTIAL].freeze
 
   def load_initializer
     load Rails.root.join("config/initializers/follower_gate.rb").to_s
+  end
+
+  # 例の中で環境変数を壊すため、元の値は before より先に控える必要がある。
+  # after で控えると、壊した後の値を「元の値」として書き戻してしまう。
+  around do |example|
+    originals = KEYS.to_h { |key| [ key, ENV[key] ] }
+
+    example.run
+  ensure
+    originals.each { |key, value| ENV[key] = value }
+    load_initializer
   end
 
   before do
     ENV["X_FOLLOWER_GATE_BASE_URL"] = "https://follower-gate.test"
     ENV["X_FOLLOWER_GATE_CLIENT_ID"] = "questboard"
     ENV["X_FOLLOWER_GATE_CREDENTIAL"] = "test-credential"
-  end
-
-  after do
-    ENV["X_FOLLOWER_GATE_BASE_URL"] = original_base_url
-    ENV["X_FOLLOWER_GATE_CLIENT_ID"] = original_client_id
-    ENV["X_FOLLOWER_GATE_CREDENTIAL"] = original_credential
-    load_initializer
   end
 
   it "reads the connection settings" do

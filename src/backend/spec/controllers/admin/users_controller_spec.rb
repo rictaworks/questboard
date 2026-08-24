@@ -21,6 +21,7 @@ RSpec.describe Admin::UsersController, type: :controller do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Ada Lovelace")
+      expect(response.body).to include("MEMBER")
     end
 
     it "limits the listing to 50 users" do
@@ -28,7 +29,7 @@ RSpec.describe Admin::UsersController, type: :controller do
 
       get :index
 
-      expect(assigns(:users).size).to eq(50)
+      expect(response.body.scan(/x-limit-\d+/).uniq.size).to eq(50)
     end
 
     it "filters users by the search term" do
@@ -37,7 +38,8 @@ RSpec.describe Admin::UsersController, type: :controller do
 
       get :index, params: { search_user: "search-target" }
 
-      expect(assigns(:users).map(&:x_user_id)).to eq([ "search-target" ])
+      expect(response.body).to include("Target")
+      expect(response.body).not_to include("search-other")
     end
 
     # 救済は判定サービス（x-follower-gate）のオーバーライドへ一本化した。

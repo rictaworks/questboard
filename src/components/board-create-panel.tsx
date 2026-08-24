@@ -18,6 +18,8 @@ import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  // 拒否画面で運用者へ申告するための照会用ID（判定サービスの inquiry_id）。
+  inquiryId?: string;
   planCode?: string;
 };
 

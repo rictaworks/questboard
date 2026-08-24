@@ -32,13 +32,16 @@ RSpec.describe "Admin users", type: :request do
   it "no longer exposes the manual bypass route" do
     user = User.create!(x_user_id: "x-toggle-target", display_name: "Toggle Target")
 
-    expect { patch "/admin/users/#{user.id}/toggle_bypass", headers: admin_headers }
-      .to raise_error(ActionController::RoutingError)
+    patch "/admin/users/#{user.id}/toggle_bypass", headers: admin_headers
+
+    expect(response).to have_http_status(:not_found)
   end
 
   it "no longer accepts user creation from the admin screen" do
-    expect { post "/admin/users", params: { x_user_id: "x-created", display_name: "Created" }, headers: admin_headers }
-      .to raise_error(ActionController::RoutingError)
+    post "/admin/users", params: { x_user_id: "x-created", display_name: "Created" }, headers: admin_headers
+
+    expect(response).to have_http_status(:not_found)
+    expect(User.find_by(x_user_id: "x-created")).to be_nil
   end
 
   private
