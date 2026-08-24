@@ -11,12 +11,7 @@ class SessionController < ApplicationController
 
     render json: {
       authenticated: true,
-      user: {
-        id: user.id,
-        xUserId: user.x_user_id,
-        displayName: user.display_name,
-        planCode: user.plan&.code
-      }
+      user: serialize_user(user)
     }
   end
 
@@ -25,12 +20,7 @@ class SessionController < ApplicationController
 
     render json: {
       authenticated: true,
-      user: {
-        id: user.id,
-        xUserId: user.x_user_id,
-        displayName: user.display_name,
-        planCode: user.plan&.code
-      }
+      user: serialize_user(user)
     }
   end
 
@@ -40,6 +30,19 @@ class SessionController < ApplicationController
   end
 
   private
+
+  def serialize_user(user)
+    {
+      id: user.id,
+      xUserId: user.x_user_id,
+      displayName: user.display_name,
+      planCode: user.plan&.code,
+      # 拒否された利用者が運用者へ申告する値。判定サービスの照会用IDは判定に用いる
+      # 数値ユーザーIDそのものと定められている（x-follower-gate requirements.md 第13章）。
+      # 応答との食い違いは Auth::FollowerGateClient が記録に残す。
+      inquiryId: user.x_user_id
+    }
+  end
 
   def require_current_user!
     head :unauthorized unless current_user

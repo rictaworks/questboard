@@ -546,6 +546,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
       <PlanUnavailablePanel
         errorMessage={errorMessage}
         followTargetHandle={followTargetHandle}
+        inquiryId={sessionState?.inquiryId ?? null}
         headingId="board-invite-heading"
         headingLevel="h1"
         onManualRecheck={handleManualRecheck}

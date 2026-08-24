@@ -1,8 +1,6 @@
 require "rails_helper"
 
 RSpec.describe "X authentication", type: :request do
-  include ActiveSupport::Testing::TimeHelpers
-
   let(:session_creator) { instance_double(Auth::XSessionCreator) }
   let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
   let(:none_plan) { Plan.find_or_create_by!(code: "none") }
@@ -41,7 +39,8 @@ RSpec.describe "X authentication", type: :request do
         "id" => user.id,
         "xUserId" => "x-sub-123",
         "displayName" => "Ada Lovelace",
-        "planCode" => "none"
+        "planCode" => "none",
+        "inquiryId" => "x-sub-123"
       }
     )
 
@@ -54,45 +53,49 @@ RSpec.describe "X authentication", type: :request do
         "id" => user.id,
         "xUserId" => "x-sub-123",
         "displayName" => "Ada Lovelace",
-        "planCode" => "none"
+        "planCode" => "none",
+        "inquiryId" => "x-sub-123"
       }
     )
   end
 
-  it "rechecks the current user's plan after the cooldown has elapsed" do
-    recheck_client = instance_double(Auth::XFollowersClient)
-    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
-    allow(recheck_client).to receive(:fetch_followers_page).and_return(
-      Auth::XFollowersClient::Page.new(ids: [ "x-sub-123" ], next_token: nil)
+  it "rechecks the current user's plan through the follower gate" do
+    recheck_client = instance_double(Auth::FollowerGateClient)
+    allow(Auth::FollowerGateClient).to receive(:new).and_return(recheck_client)
+    allow(recheck_client).to receive(:request_recheck).and_return(
+      Auth::FollowerGateClient::RecheckResult.new(
+        result: "accepted", retry_after: nil, plan: "full", inquiry_id: "x-sub-123"
+      )
     )
     allow(session_creator).to receive(:call).and_return(user)
 
-    travel_to(Time.zone.local(2026, 8, 13, 12, 0, 0)) do
-      post "/auth/x_sessions", params: {
-        code: "authorization-code",
-        code_verifier: "pkce-verifier",
-        recaptcha_token: "recaptcha-token"
-      }, as: :json
+    post "/auth/x_sessions", params: {
+      code: "authorization-code",
+      code_verifier: "pkce-verifier",
+      recaptcha_token: "recaptcha-token"
+    }, as: :json
 
-      post "/session/recheck", as: :json
+    post "/session/recheck", as: :json
 
-      expect(response).to have_http_status(:ok)
-      expect(JSON.parse(response.body)).to eq(
-        "authenticated" => true,
-        "user" => {
-          "id" => user.id,
-          "xUserId" => "x-sub-123",
-          "displayName" => "Ada Lovelace",
-          "planCode" => "member"
-        }
-      )
-      expect(recheck_client).to have_received(:fetch_followers_page)
-    end
+    expect(response).to have_http_status(:ok)
+    expect(JSON.parse(response.body)).to eq(
+      "authenticated" => true,
+      "user" => {
+        "id" => user.id,
+        "xUserId" => "x-sub-123",
+        "displayName" => "Ada Lovelace",
+        "planCode" => "member",
+        "inquiryId" => "x-sub-123"
+      }
+    )
+    expect(recheck_client).to have_received(:request_recheck)
   end
 
-  it "returns a cooldown response when the manual recheck service rejects the request" do
+  # 待機の判断は判定サービスが行う（x-follower-gate 第11章）。questboard 側は
+  # 判定サービスが返した再要求可能時刻をそのまま渡すだけで、残り時間を数え直さない。
+  it "returns the retry time the follower gate reported when the recheck is throttled" do
     allow(Auth::ManualFollowerRecheck).to receive(:new).and_raise(
-      Auth::ManualFollowerRecheck::CooldownError.new(remaining_seconds: 900)
+      Auth::ManualFollowerRecheck::ThrottledError.new(retry_after: "2026-08-25T12:15:00.000+09:00")
     )
     allow(session_creator).to receive(:call).and_return(user)
 
@@ -106,57 +109,29 @@ RSpec.describe "X authentication", type: :request do
 
     expect(response).to have_http_status(:too_many_requests)
     expect(JSON.parse(response.body)).to eq(
-      "error" => "手動再判定はあと15分0秒後にできます",
-      "remainingMinutes" => 15,
-      "remainingSeconds" => 0
+      "error" => "手動再判定の要求が続いています。しばらく時間をおいて再度お試しください",
+      "retryAfter" => "2026-08-25T12:15:00.000+09:00"
     )
   end
 
-  # クールダウン判定はサービス層の spec でも見ているが、それだけでは
-  # 「コントローラ側でクールダウン判定より前にX APIへ到達する経路が生えた」場合に
-  # 気づけない。Issue #133 の受け入れ要件は「連打がX APIに到達しないこと」なので、
-  # エンドポイント経由でX APIクライアントが呼ばれないことをここで固定する。
-  it "never reaches the X API when the endpoint is hit again during the cooldown" do
-    recheck_client = instance_double(Auth::XFollowersClient)
-    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
-    allow(recheck_client).to receive(:fetch_followers_page).and_return(
-      Auth::XFollowersClient::Page.new(ids: [], next_token: nil)
-    )
-    allow(session_creator).to receive(:call).and_return(user)
-
-    travel_to(Time.zone.local(2026, 8, 13, 12, 0, 0)) do
-      post "/auth/x_sessions", params: {
-        code: "authorization-code",
-        code_verifier: "pkce-verifier",
-        recaptcha_token: "recaptcha-token"
-      }, as: :json
-
-      post "/session/recheck", as: :json
-      expect(response).to have_http_status(:ok)
-
-      # 1回目でX APIへ到達した回数を確定させ、以降の連打で増えないことを見る。
-      calls_after_first = 0
-      allow(recheck_client).to receive(:fetch_followers_page) do
-        calls_after_first += 1
-        Auth::XFollowersClient::Page.new(ids: [], next_token: nil)
-      end
-
-      3.times do
-        post "/session/recheck", as: :json
-        expect(response).to have_http_status(:too_many_requests)
-      end
-
-      expect(calls_after_first).to eq(0)
+  # Issue #133 の受け入れ要件は「連打が X API に到達しないこと」。委譲後、questboard は
+  # X API へ到達する経路そのものを持たない。連打の抑止は判定サービスのクールダウンが担い、
+  # questboard 側は要求を素通しするだけなので、ここでは「X API を呼ぶ器が無いこと」を固定する。
+  it "has no path from questboard to the X API" do
+    offenders = Dir[Rails.root.join("app/**/*.rb")].select do |path|
+      File.read(path).match?(/api\.x\.com\/2\/users\/[^\s]*followers/)
     end
+
+    expect(offenders).to be_empty
   end
 
-  # 設計書 4.4「X API障害 → 一時的な失敗として通知 / plan は据え置く」。
+  # 設計書 4.4「上流の障害 → 一時的な失敗として通知 / plan は据え置く」。
   # rescue_from が無いと素の 500 になり、利用者にも運用にも障害だと伝わらない。
-  it "reports an X API outage as a temporary failure and keeps the plan unchanged" do
-    recheck_client = instance_double(Auth::XFollowersClient)
-    allow(Auth::XFollowersClient).to receive(:new).and_return(recheck_client)
-    allow(recheck_client).to receive(:fetch_followers_page)
-      .and_raise(Auth::XFollowersClient::RequestError, "X API is unavailable")
+  it "reports a follower gate outage as a temporary failure and keeps the plan unchanged" do
+    recheck_client = instance_double(Auth::FollowerGateClient)
+    allow(Auth::FollowerGateClient).to receive(:new).and_return(recheck_client)
+    allow(recheck_client).to receive(:request_recheck)
+      .and_raise(Auth::FollowerGateClient::RequestError, "follower gate is unavailable")
     allow(session_creator).to receive(:call).and_return(user)
 
     post "/auth/x_sessions", params: {

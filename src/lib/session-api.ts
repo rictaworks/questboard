@@ -7,13 +7,15 @@ export const MEMBER_PLAN_CODE = "member";
 export type SessionUser = {
   authenticated: boolean;
   displayName?: string;
+  // 拒否された利用者が運用者へ申告する値（判定サービスの照会用ID）。
+  inquiryId?: string;
   planCode?: string;
   xUserId?: string;
 };
 
 type SessionPayload = {
   authenticated: boolean;
-  user?: {displayName?: string; planCode?: string; xUserId?: string};
+  user?: {displayName?: string; inquiryId?: string; planCode?: string; xUserId?: string};
 };
 
 // セッションが切れた場合と、再判定そのものが失敗した場合を呼び出し側で区別できるようにする。
@@ -74,6 +76,7 @@ export function toSessionUser(payload: SessionPayload): SessionUser {
   return {
     authenticated: payload.authenticated,
     displayName: payload.user?.displayName,
+    inquiryId: payload.user?.inquiryId,
     planCode: payload.user?.planCode,
     xUserId: payload.user?.xUserId
   };

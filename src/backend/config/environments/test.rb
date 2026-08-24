@@ -6,9 +6,11 @@
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
-  ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"] = ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"].to_s.strip.presence || "123456789"
-  ENV["X_FOLLOWER_CACHE_SYNC_PAGE_SIZE"] = ENV["X_FOLLOWER_CACHE_SYNC_PAGE_SIZE"].to_s.strip.presence || "100"
-  ENV["X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN"] = ENV["X_FOLLOWER_CACHE_SYNC_BEARER_TOKEN"].to_s.strip.presence || "test-bearer-token"
+  # 判定サービス（x-follower-gate）への接続設定。テストでは実際に接続せず、
+  # Auth::FollowerGateClient を差し替えるか WebMock で止める。
+  ENV["X_FOLLOWER_GATE_BASE_URL"] = ENV["X_FOLLOWER_GATE_BASE_URL"].to_s.strip.presence || "https://follower-gate.test"
+  ENV["X_FOLLOWER_GATE_CLIENT_ID"] = ENV["X_FOLLOWER_GATE_CLIENT_ID"].to_s.strip.presence || "test-client-id"
+  ENV["X_FOLLOWER_GATE_CREDENTIAL"] = ENV["X_FOLLOWER_GATE_CREDENTIAL"].to_s.strip.presence || "test-credential"
 
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false

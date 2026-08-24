@@ -107,8 +107,8 @@ class ApplicationController < ActionController::API
   rescue_from "UserSettingsController::InvalidIntensityError", with: :render_invalid_intensity
   rescue_from "Auth::RecaptchaVerifier::Error", with: :render_recaptcha_verification_failed
   rescue_from "Auth::XOauthClient::Error", with: :render_x_oauth_failed
-  rescue_from "Auth::ManualFollowerRecheck::CooldownError", with: :render_manual_follower_recheck_cooldown
-  rescue_from "Auth::XFollowersClient::Error", with: :render_x_followers_unavailable
+  rescue_from "Auth::ManualFollowerRecheck::ThrottledError", with: :render_manual_follower_recheck_throttled
+  rescue_from "Auth::FollowerGateClient::Error", with: :render_follower_gate_unavailable
   rescue_from ActiveRecord::RecordNotFound, with: :render_record_not_found
   rescue_from LamportTsMustBeAnIntegerError, with: :render_api_error
   rescue_from ObjectLockedByAnotherUserError, with: :render_api_error
@@ -213,27 +213,22 @@ class ApplicationController < ActionController::API
     render json: { error: I18n.t("api.errors.x_oauth_failed") }, status: :bad_gateway
   end
 
-  # X API 障害時。設計書 4.4 のとおり「一時的な失敗」として通知し、plan は据え置く
-  # （Auth::ManualFollowerRecheck は取得成功後にしか plan を更新しない）。
+  # 判定サービス（x-follower-gate）へ到達できない、または応答が想定と異なる場合。
+  # **拒否として扱わない。** プラン値は据え置き、一時的な失敗として通知する（Issue #253）。
   # 上流の障害なので 5xx 系のうち 502 を返し、原因追跡のため詳細はログに残す。
-  def render_x_followers_unavailable(error)
+  def render_follower_gate_unavailable(error)
     logger.error("[#{self.class.name}##{action_name}] #{error.class}: #{error.message}")
 
-    render json: { error: I18n.t("api.errors.x_followers_unavailable") }, status: :bad_gateway
+    render json: { error: I18n.t("api.errors.follower_gate_unavailable") }, status: :bad_gateway
   end
 
-  def render_manual_follower_recheck_cooldown(error)
-    remaining_minutes = error.remaining_seconds / 60
-    remaining_seconds = error.remaining_seconds % 60
-
+  # 判定サービスが待機と判断した場合（x-follower-gate SPEC/api/recheck.md の throttled）。
+  # 再要求可能となる時刻は判定サービスが返した値をそのまま渡す。こちらで残り時間へ
+  # 読み替えると、画面に出す値と実際に受理される時刻が食い違う。
+  def render_manual_follower_recheck_throttled(error)
     render json: {
-      error: I18n.t(
-        "api.errors.manual_recheck_cooldown_active",
-        remainingMinutes: remaining_minutes,
-        remainingSeconds: remaining_seconds
-      ),
-      remainingMinutes: remaining_minutes,
-      remainingSeconds: remaining_seconds
+      error: I18n.t("api.errors.manual_recheck_throttled"),
+      retryAfter: error.retry_after
     }, status: :too_many_requests
   end
 

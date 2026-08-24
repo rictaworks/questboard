@@ -199,6 +199,7 @@ export default function BoardCreatePanel() {
       <PlanUnavailablePanel
         errorMessage={errorMessage}
         followTargetHandle={followTargetHandle}
+        inquiryId={sessionState?.inquiryId ?? null}
         headingId="board-create-heading"
         headingLevel="h2"
         onManualRecheck={handleManualRecheck}
