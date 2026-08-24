@@ -261,7 +261,7 @@ RSpec.describe PermissionService do
       helper_source = File.readlines(helper_file)[(helper_line - 1), 4].join
 
       expect(helper_source).to include('current_user&.plan&.code == "member"')
-      expect(helper_source).not_to match(/FollowerCache|follower_cache|FollowerGate|XFollowersClient|XOauthClient|resolve_plan/)
+      expect(helper_source).not_to match(/FollowerCache|follower_cache|FollowerGate|XOauthClient|resolve_plan/)
 
       source_paths = %w[
         app/controllers/boards_controller.rb
@@ -274,7 +274,6 @@ RSpec.describe PermissionService do
         /FollowerCache/,
         /follower_cache/,
         /FollowerGate/,
-        /XFollowersClient/,
         /XOauthClient/,
         /resolve_plan/
       ]

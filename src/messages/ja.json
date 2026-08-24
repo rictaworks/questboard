@@ -83,6 +83,7 @@
     "unavailableHeading": "このプランでは利用できません",
     "unavailableDescription": "現在の判定では、ボード作成や参加は利用できません。",
     "unavailableFollowGuide": "ボードを使うには {handle} をフォローしてください。フォロー後に手動再判定を実行すると利用できるようになります。",
+    "unavailableInquiryGuide": "フォロー済みなのに解除されない場合は、次の照会用IDを添えて運営へお問い合わせください: ",
     "manualRecheckButton": "手動再判定",
     "manualRecheckingButton": "再判定中",
     "manualRecheckError": "手動再判定に失敗しました",

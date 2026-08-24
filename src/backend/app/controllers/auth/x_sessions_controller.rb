@@ -23,7 +23,9 @@ module Auth
         id: user.id,
         xUserId: user.x_user_id,
         displayName: user.display_name,
-        planCode: user.plan&.code
+        planCode: user.plan&.code,
+        # SessionController#serialize_user と同じ値。拒否画面で照会用IDを出すために返す。
+        inquiryId: user.x_user_id
       }
     end
   end

@@ -42,7 +42,6 @@ RSpec.describe "Questboard database schema and seeds" do
       "object_ops",
       "frame_locks",
       "comments",
-      "follower_cache",
       "quests",
       "user_quests",
       "event_defs",
@@ -62,11 +61,6 @@ RSpec.describe "Questboard database schema and seeds" do
     expect(plan_columns).to include("code")
     plan_indexes = connection.indexes("plans")
     expect(plan_indexes.any? { |index| index.unique && index.columns == %w[code] }).to be(true)
-
-    follower_cache_columns = connection.columns("follower_cache").map(&:name)
-    expect(follower_cache_columns).to include("x_user_id", "fetched_at")
-    expect(connection.primary_key("follower_cache")).to eq("x_user_id")
-    expect(connection.foreign_keys("follower_cache")).to be_empty
 
     object_columns = connection.columns("objects").map(&:name)
     expect(object_columns).to include("geometry", "text_crdt", "parent_frame_id", "deleted_at")

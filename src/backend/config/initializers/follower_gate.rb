@@ -1,21 +1,42 @@
-target_account_id = ENV["X_FOLLOWER_GATE_TARGET_ACCOUNT_ID"].to_s.strip
-manual_recheck_cooldown_minutes = ENV.fetch("X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES", "15").to_s.strip
+# フォロワー判定サービス（x-follower-gate）への接続設定（Issue #253）。
+#
+# **判定サービスのベースURLをリポジトリへ書かない。** 環境変数のみに置く
+# （x-follower-gate requirements.md 12.3）。秘匿を認可の根拠にはしないが、
+# 探索の対象になる面を減らす。
+#
+# **未設定のとき既定値へ倒さない。** 既定で動かすと、資格情報が設定されていないことに
+# 気づかないまま公開され、内部APIの認証がすべて失敗する。
+base_url = ENV["X_FOLLOWER_GATE_BASE_URL"].to_s.strip
+client_id = ENV["X_FOLLOWER_GATE_CLIENT_ID"].to_s.strip
+credential = ENV["X_FOLLOWER_GATE_CREDENTIAL"].to_s.strip
 
-if target_account_id.empty?
-  raise StandardError, "X_FOLLOWER_GATE_TARGET_ACCOUNT_ID is required and must be non-empty."
+if base_url.empty?
+  raise StandardError, "X_FOLLOWER_GATE_BASE_URL is required and must be non-empty."
 end
 
-unless target_account_id.match?(/\A\d+\z/)
-  raise StandardError, "X_FOLLOWER_GATE_TARGET_ACCOUNT_ID must be a numeric ID."
+if client_id.empty?
+  raise StandardError, "X_FOLLOWER_GATE_CLIENT_ID is required and must be non-empty."
 end
 
-unless manual_recheck_cooldown_minutes.match?(/\A[1-9]\d*\z/)
-  raise StandardError, "X_FOLLOWER_GATE_MANUAL_RECHECK_COOLDOWN_MINUTES must be a positive integer."
+if credential.empty?
+  raise StandardError, "X_FOLLOWER_GATE_CREDENTIAL is required and must be non-empty."
 end
 
-bypass_ids_raw = ENV.fetch("X_FOLLOWER_GATE_BYPASS_USER_IDS", "").to_s.strip
-bypass_ids = bypass_ids_raw.split(",").map(&:strip).reject(&:empty?).to_set
+parsed_base_url = begin
+  URI.parse(base_url)
+rescue URI::InvalidURIError
+  raise StandardError, "X_FOLLOWER_GATE_BASE_URL must be a valid URL."
+end
 
-Rails.configuration.x.follower_gate_target_account_id = target_account_id
-Rails.configuration.x.follower_gate_bypass_user_ids = bypass_ids
-Rails.configuration.x.follower_gate_manual_recheck_cooldown_minutes = manual_recheck_cooldown_minutes.to_i
+unless parsed_base_url.is_a?(URI::HTTP) && parsed_base_url.host.present?
+  raise StandardError, "X_FOLLOWER_GATE_BASE_URL must be an http(s) URL with a host."
+end
+
+# 資格情報を平文で載せるため、本番では暗号化された経路のみを許可する。
+if Rails.env.production? && parsed_base_url.scheme != "https"
+  raise StandardError, "X_FOLLOWER_GATE_BASE_URL must use https in production."
+end
+
+Rails.configuration.x.follower_gate_base_url = base_url
+Rails.configuration.x.follower_gate_client_id = client_id
+Rails.configuration.x.follower_gate_credential = credential

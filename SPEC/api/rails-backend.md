@@ -107,8 +107,6 @@
 |---|---|---|
 | GET | `/admin` | KPIダッシュボード（HTML）。D1/D7継続率・同時編集人数・ラジアルメニュー到達率・クエスト完了率・演出強度分布等を表示 |
 | GET | `/admin/users` | ユーザー検索・一覧、フォロワーキャッシュ検索・一覧を表示 |
-| POST | `/admin/users` | `x_user_id`/`display_name`を指定してユーザーを手動作成し、`member`プラン・`is_manual_member: true`を付与 |
-| PATCH | `/admin/users/:id/toggle_bypass` | ユーザーの手動許可（`is_manual_member`）を切り替える。解除時はフォロワーゲートのロジックからプランを再計算する |
 
 ## 監視/エラートラッキング
 

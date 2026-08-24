@@ -2,7 +2,7 @@ require "rails_helper"
 
 RSpec.describe "RequestOriginGuard", type: :request do
   # config/application.rb で Rack::MethodOverride をアプリ全体のミドルウェアスタックに
-  # 追加した（issue #181, admin/usersのtoggle_bypassボタン対応）。このミドルウェアは
+  # 追加した（issue #181, admin/users の管理画面フォーム対応）。このミドルウェアは
   # POSTリクエストのボディ中の _method パラメータを読んでHTTPメソッドを読み替えるため、
   # ブラウザのHTMLフォーム（application/x-www-form-urlencoded、CORSプリフライト対象外）
   # から DELETE/PATCH/PUT 相当のリクエストを偽装できるようになる。

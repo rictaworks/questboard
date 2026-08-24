@@ -1,45 +1,58 @@
 require "rails_helper"
 
 RSpec.describe Auth::FollowerGate do
+  subject(:gate) { described_class.new(client: client) }
+
   let!(:member_plan) { Plan.find_or_create_by!(code: "member") }
   let!(:none_plan) { Plan.find_or_create_by!(code: "none") }
+  let(:client) { instance_double(Auth::FollowerGateClient) }
 
-  it "returns the member plan when the follower cache contains the user" do
-    FollowerCache.create!(x_user_id: "x-1", fetched_at: Time.current)
-
-    plan = described_class.new.resolve_plan("x-1")
-
-    expect(plan).to eq(member_plan)
+  def decision(plan:, confirmed: true, recheck_available: false, inquiry_id: "123456789")
+    Auth::FollowerGateClient::Decision.new(
+      plan: plan, decided_at: nil, recheck_available: recheck_available,
+      inquiry_id: inquiry_id, confirmed: confirmed
+    )
   end
 
-  it "returns the none plan when the follower cache misses the user" do
-    plan = described_class.new.resolve_plan("x-2")
+  it "maps the full plan to the member plan" do
+    allow(client).to receive(:fetch_decision).with("123456789").and_return(decision(plan: "full"))
 
-    expect(plan).to eq(none_plan)
+    expect(gate.resolve("123456789").plan).to eq(member_plan)
   end
 
-  it "returns the member plan when the user is in the bypass list" do
-    gate = described_class.new(bypass_user_ids: Set.new([ "x-3" ]))
-    plan = gate.resolve_plan("x-3")
+  it "maps the restricted plan to the none plan" do
+    allow(client).to receive(:fetch_decision).and_return(decision(plan: "restricted"))
 
-    expect(plan).to eq(member_plan)
+    expect(gate.resolve("123456789").plan).to eq(none_plan)
   end
 
-  it "self-heals missing plans when resolving plan" do
+  it "carries the inquiry id and the confirmation flag through" do
+    allow(client).to receive(:fetch_decision).and_return(
+      decision(plan: "restricted", confirmed: false, recheck_available: true, inquiry_id: "999")
+    )
+
+    resolution = gate.resolve("999")
+
+    expect(resolution.inquiry_id).to eq("999")
+    expect(resolution.confirmed).to be(false)
+    expect(resolution.recheck_available).to be(true)
+  end
+
+  it "self-heals missing plans" do
     UserQuest.delete_all
     User.delete_all
     Plan.where(code: %w[member none]).delete_all
+    allow(client).to receive(:fetch_decision).and_return(decision(plan: "full"))
 
-    # member プランが自己修復されること
-    FollowerCache.create!(x_user_id: "x-1", fetched_at: Time.current)
-    plan = described_class.new.resolve_plan("x-1")
-    expect(plan.code).to eq("member")
+    expect(gate.resolve("123456789").plan.code).to eq("member")
     expect(Plan.find_by(code: "member")).to be_present
+  end
 
-    # none プランが自己修復されること
-    Plan.where(code: %w[member none]).delete_all
-    plan = described_class.new.resolve_plan("x-2")
-    expect(plan.code).to eq("none")
-    expect(Plan.find_by(code: "none")).to be_present
+  # 判定・救済は判定サービス側にある。questboard 側にフォロワー集合や例外指定を
+  # 持ち込むと判定が2か所へ戻るため、その痕跡が無いことを固定する。
+  it "does not read follower data or bypass settings of its own" do
+    source = File.read(Rails.root.join("app/services/auth/follower_gate.rb"))
+
+    expect(source).not_to match(/FollowerCache|is_manual_member|bypass/i)
   end
 end

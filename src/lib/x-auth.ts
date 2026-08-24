@@ -36,7 +36,7 @@ export function readXAuthSettings() {
 }
 
 // 利用不可画面のフォロー案内で表示する対象アカウントのハンドル（先頭の @ は含まない）。
-// バックエンドの X_FOLLOWER_GATE_TARGET_ACCOUNT_ID は数値IDでハンドルを含まないため、
+// フォロワー判定は数値ユーザーIDで行われ、ハンドルを含まないため、
 // 表示用の値は別に持つ。未設定時に既定値へ倒すと「誰をフォローすればよいか分からない
 // 案内」を出してしまうため、フォールバックせず例外にする。
 export function readFollowTargetHandle(): string {

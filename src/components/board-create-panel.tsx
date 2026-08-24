@@ -18,6 +18,8 @@ import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 type SessionState = {
   authenticated: boolean;
   displayName?: string;
+  // 拒否画面で運用者へ申告するための照会用ID（判定サービスの inquiry_id）。
+  inquiryId?: string;
   planCode?: string;
 };
 
@@ -199,6 +201,7 @@ export default function BoardCreatePanel() {
       <PlanUnavailablePanel
         errorMessage={errorMessage}
         followTargetHandle={followTargetHandle}
+        inquiryId={sessionState?.inquiryId ?? null}
         headingId="board-create-heading"
         headingLevel="h2"
         onManualRecheck={handleManualRecheck}

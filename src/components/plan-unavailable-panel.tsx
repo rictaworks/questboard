@@ -16,6 +16,11 @@ type PlanUnavailablePanelProps = {
   // 呼び出し側で「ハンドルがあるときだけ利用不可画面を出す」と書くと、環境変数の
   // 設定漏れがそのまま機能の露出（fail-open）になるため、分岐はこちらに寄せる。
   followTargetHandle: string | null;
+  // 拒否された利用者が運用者へ申告する値。判定サービス（x-follower-gate）の照会用IDで、
+  // 判定に用いる数値ユーザーIDそのものと定められている。運用者はこの値で個別の許可を
+  // 登録するため、拒否画面から読み取れないと申告の手立てが無くなる。
+  // セッションから解決できない場合は null を受け取り、案内だけを出す。
+  inquiryId: string | null;
   // 親セクションの aria-labelledby が参照するID。参照先が存在しないと
   // スクリーンリーダーでセクション名が失われるため、呼び出し側が必ず渡す。
   headingId: string;
@@ -30,6 +35,7 @@ type PlanUnavailablePanelProps = {
 export default function PlanUnavailablePanel({
   errorMessage,
   followTargetHandle,
+  inquiryId,
   headingId,
   headingLevel: Heading,
   onManualRecheck,
@@ -61,6 +67,12 @@ export default function PlanUnavailablePanel({
           </a>
         </>
       ) : null}
+      {inquiryId === null ? null : (
+        <p className="board-copy">
+          {t('unavailableInquiryGuide')}
+          <code>{inquiryId}</code>
+        </p>
+      )}
       {errorMessage ? <p className="auth-error" role="alert">{errorMessage}</p> : null}
       <button className="button button-primary auth-button" disabled={rechecking} type="button" onClick={() => void onManualRecheck()}>
         {rechecking ? (

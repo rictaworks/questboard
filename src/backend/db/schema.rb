@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_19_050000) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_25_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -58,10 +58,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_050000) do
     t.integer "effect_id", null: false
     t.index ["code"], name: "index_event_defs_on_code", unique: true
     t.index ["effect_id"], name: "index_event_defs_on_effect_id"
-  end
-
-  create_table "follower_cache", primary_key: "x_user_id", id: :string, comment: "Xフォロワー判定キャッシュ", force: :cascade do |t|
-    t.datetime "fetched_at", null: false
   end
 
   create_table "frame_locks", force: :cascade do |t|
@@ -175,8 +171,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_19_050000) do
   create_table "users", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "display_name", null: false, comment: "X表示名"
-    t.boolean "is_manual_member", default: false, null: false
-    t.datetime "manual_rechecked_at"
     t.bigint "plan_id", null: false
     t.string "x_user_id", null: false, comment: "XユーザーID"
     t.index ["plan_id"], name: "index_users_on_plan_id"

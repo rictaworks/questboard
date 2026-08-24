@@ -38,7 +38,7 @@
 |---|---|---|
 | フロント | Next（TypeScript）+ Canvas/WebGL描画 | ボード描画、HUD、ラジアルメニュー、ミニマップ、演出 |
 | 入力レイヤ | @use-gesture/vanilla | ジェスチャ正規化、CanvasInputControllerへの橋渡し |
-| API | Rails | 認証（X OAuth、フォロワーキャッシュ照合、プラン管理、reCAPTCHA）、ボード/権限CRUD、クエスト、管理画面（BASIC認証）。X APIへのフォロワー照会は定期バッチと手動再判定からのみ行う |
+| API | Rails | 認証（X OAuth、フォロワー判定サービスへの照会、プラン管理、reCAPTCHA）、ボード/権限CRUD、クエスト、管理画面（BASIC認証）。X APIへは到達しない |
 | リアルタイム | Gin（Go）+ WebSocket | 操作同期、プレゼンス、競合解決（高速並列処理要件のため採用） |
 | DB | PostgreSQL | 永続化。テキスト本文はCRDT状態をJSONBで保持 |
 | 計測 | Rails集約＋バッチ投入 | KPIイベント |
@@ -95,20 +95,21 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 イベント（eventId, boardId, userId=XユーザーID, timestamp, 属性）を検証し、PII（氏名・メール・住所・電話・生年月日）を含む属性を拒否した上でバッファへ積む。10秒経過または20件到達でバッチ送信。オフライン時はローカルバッファ（上限500件、超過は古い順に破棄）。KPI：D1/D7継続率、ボードあたり同時編集人数、ラジアルメニュー到達率、クエスト完了率、演出強度の設定分布。
 
 #### F9 認証・アクセス権判定関数
-（XユーザーID、フォロワーキャッシュ、reCAPTCHA結果）→ プラン値（`member`/`none`）。X OAuthで取得したXユーザーIDを `users.x_user_id` に紐づけ、`@rictaworks` フォロワーのみ `member` とする。
+（XユーザーID、フォロワー判定サービスの応答、reCAPTCHA結果）→ プラン値（`member`/`none`）。X OAuthで取得したXユーザーIDを `users.x_user_id` に紐づけ、判定サービスが `full` と答えたXユーザーIDのみ `member` とする。
 
-**ログイン経路からX APIを呼び出してはならない。** ログイン時はFOLLOWER_CACHEの存在照合のみを行う（キャッシュに行があること自体がフォロワーの証であり、有効期限や真偽値は持たない）。キャッシュに存在すれば `member` を付与し、存在しなければ新規ユーザーには `none` を付与して利用不可画面へ誘導する。フォロー直後などキャッシュ未反映のユーザーもログイン自体は成立させ、ログインを拒否する分岐は設けない。
+**フォロワー判定は questboard では行わない。** 判定は共有サービス `rictaworks/x-follower-gate` に集約し、questboard は数値ユーザーIDを渡してプラン値を受け取るだけの利用側アプリとなる（Issue #253）。フォロワー集合も判定根拠も受け取らないため、questboard 側に再解釈の余地は無い。
 
-**ログイン経路でプラン値を降格させてはならない。** 既に `member` のユーザーがキャッシュmissとなった場合、`none` へ落とさず既存の `member` を据え置く。キャッシュ同期の遅延や部分的な失敗といった一時的な状態で、正当なフォロワーが利用中に締め出されることを防ぐためである。`member` から `none` への降格は、フォロワー一覧を全件走査してアンフォローを検出できる定期バッチのフル同期でのみ行う。
+- 判定の取得：`GET /internal/decision`。応答の `plan`（`full`/`restricted`）を `member`/`none` へ写す
+- 手動再判定：`POST /internal/recheck`。連打の抑止（クールダウン）は判定サービスが利用者単位・資格情報単位で行う
+- 接続はバックエンドからのみ行い、資格情報（`client_id` と鍵）はブラウザへ渡さない
 
-X APIへの照会は次の2経路のみとする。ログイン試行や連打がX APIのレート制限・従量課金を消費しないようにするための制約である。
+**questboard から X API へは到達しない。** フォロワー一覧の取得・ページングは判定サービスだけが行う。同じ一覧を2系統で走査すると、レート制限と従量課金を二重に消費する。
 
-1. 定期バッチによるフォロワーキャッシュ同期。フル同期は全件を走査して新規フォローとアンフォローの双方を反映する。増分同期は先頭から既知のキャッシュ済みIDに到達するまでを見て、新規フォローのみを反映する
-2. クールダウン（既定15分・設定値。ハードコードしない）を通過した手動再判定。これは「フォロー直後の取りこぼしの救済」を目的とする**差分取得**で、増分同期と同じく先頭ページから「自分が見つかる」か「既知のキャッシュ済みIDに到達する」までで打ち切る
+**判定が確定していない応答でプラン値を降格させてはならない。** 判定サービスは X API の障害でプラン値を確定できなかった場合に `confirmed: false` を返す。このとき既存の `member` は据え置く。判定サービスへ到達できなかった場合も同様に据え置き、ログイン自体は成立させる（ログインを拒否する分岐は設けない）。
 
-**差分取得は降格の根拠にならない。** 先頭ページしか見ない以上「フォロワー一覧に居ない」ことを証明できないため、増分同期と手動再判定は昇格（`none` → `member`）専用とし、キャッシュ行の削除は行わない。手動再判定でフォロワーと確認できなかった場合、`none` のユーザーは `none` のまま据え置く。この制約が無いと、手動再判定は「自分が見つかるまで走査する」＝フォロワーでない利用者ほど全ページを走査することになり、クールダウンを設けた目的そのものを打ち消す。
+**確定した拒否は降格として反映する。** `confirmed: true` かつ `restricted` はアンフォローが確定した状態であり、ログイン時にそのまま `none` へ落とす。委譲後は questboard 側にフル同期が無く、ここが唯一の降格経路になる。
 
-`member` への例外的な引き上げとして、設定によるバイパス指定と管理画面での手動メンバー指定を認める。機能側の可否判定はプラン値（`users.plan_id`）のみを参照し、フォロワーキャッシュやX APIを直接参照しない。
+`member` への例外的な引き上げ（手動での許可）は判定サービスのオーバーライドで行う。**questboard 側は例外経路を持たない。** 両方に置くと、運用者がどちらを見ればよいか分からなくなり、判定が2か所へ戻る。機能側の可否判定はプラン値（`users.plan_id`）のみを参照する。
 
 ### 1.6 テスト結果サマリ
 
@@ -125,7 +126,7 @@ X APIへの照会は次の2経路のみとする。ログイン試行や連打�
 | F9 認証・アクセス権 | 5判定×2キャッシュ状態×2API状態＝20（改訂前ロジック） | 94% | 99% | **100%** |
 | **合計** | **638** | **84.3%** | **96.6%** | **100%** |
 
-主な改善履歴：ペンのパーム拒否追加、長押し/ドラッグの閾値分離（500ms・8px）、F2冒頭のF7フィルタ必須化、タッチ範囲選択の投げ縄限定、削除済みオブジェクト編集の破棄+復元提案、演出のF4強制経由、空ボードのカメラ既定値、フレームロック解除権限の是正、F9のログイン経路からのX API呼び出し排除（キャッシュ存在照合のみ）とクールダウン付き手動再判定への一本化、ペンをポインタ同等へ是正、ピンチのorigin委譲明記。なおF9行の組み合わせ表は改訂前ロジックに対する結果であり、是正後のロジックは実装側の自動テスト（`spec/services/auth/follower_gate_spec.rb` 等）で担保する。
+主な改善履歴：ペンのパーム拒否追加、長押し/ドラッグの閾値分離（500ms・8px）、F2冒頭のF7フィルタ必須化、タッチ範囲選択の投げ縄限定、削除済みオブジェクト編集の破棄+復元提案、演出のF4強制経由、空ボードのカメラ既定値、フレームロック解除権限の是正、F9のログイン経路からのX API呼び出し排除、F9のフォロワー判定そのものの共有サービス（x-follower-gate）への委譲、ペンをポインタ同等へ是正、ピンチのorigin委譲明記。なおF9行の組み合わせ表は改訂前ロジックに対する結果であり、是正後のロジックは実装側の自動テスト（`spec/services/auth/follower_gate_spec.rb` 等）で担保する。
 
 ### 1.7 マスタデータ件数（製品版フルエディション）
 
@@ -180,13 +181,8 @@ erDiagram
         bigint id PK
         string x_user_id UK "XユーザーID"
         int plan_id FK "NOT NULL"
-        boolean is_manual_member "管理画面での手動メンバー指定"
         string display_name "Xアカウント表示名"
         datetime created_at
-    }
-    FOLLOWER_CACHE {
-        string x_user_id PK "フォロワーのXユーザーID"
-        datetime fetched_at "同期時刻"
     }
     ROLES {
         int id PK
@@ -285,7 +281,7 @@ erDiagram
     }
 ```
 
-> **FOLLOWER_CACHE は `users` から独立したテーブルとする。** 主キーはXユーザーIDで、`users` への外部キーを持たない。定期バッチは「まだログインしたことがない `@rictaworks` フォロワー」も先行してキャッシュへ取り込むため、`users` に行が存在することを前提にできないからである。行が存在すること自体がフォロワーである証で、有効期限やフォロー可否の真偽値は持たない（アンフォローは同期時に行を落として表現する）。
+> **フォロワー集合を questboard の表として持たない。** フォロワーの数値ユーザーIDは判定サービス（x-follower-gate）のみが保持する。questboard 側に写しを置くと、個人データの保管点が増えるうえ、どちらが判定の根拠なのかが読み手に分からなくなる。questboard が持つのは判定の結果であるプラン値（`users.plan_id`）だけとする。
 
 ## 3. DFD（データフロー図）
 
@@ -308,7 +304,7 @@ flowchart LR
     end
     subgraph API["APIサーバー（Rails / Railway）"]
         P9(("P9 プラン判定 F9<br/>ログイン経路"))
-        P10(("P10 フォロワーキャッシュ同期<br/>定期バッチ / 手動再判定"))
+        P10(("P10 手動再判定の取次<br/>判定サービスへ委譲"))
         P7(("P7 権限判定 F7"))
         P5(("P5 クエスト進行 F5"))
         P8(("P8 計測集約 F8"))
@@ -316,10 +312,11 @@ flowchart LR
     end
     X["X OAuth"] -->|"認可コード/アクセストークン"| P9
     RC[reCAPTCHA] -->|検証| P9
-    P9 -->|"キャッシュ存在照合のみ"| D5[(D5 users/plans/follower_cache)]
+    P9 -->|"プラン値の書き込み"| D5[(D5 users/plans)]
     P9 -->|"plan（member/none）"| P7
-    XAPI["X API"] -->|"フォロワー一覧（バッチ・手動再判定のみ）"| P10
-    P10 -->|"キャッシュ更新・plan再付与"| D5
+    GATE["フォロワー判定サービス<br/>x-follower-gate"] -->|"プラン値（full/restricted）"| P9
+    P10 -->|"再判定の要求"| GATE
+    P10 -->|"plan再付与"| D5
     P6 <-->|"opブロードキャスト"| OTHERS[他の参加者]
     P6 -->|確定op| D1[(D1 objects/object_ops)]
     P7 -->|可否| P6
@@ -379,7 +376,7 @@ sequenceDiagram
     WS-->>B: 確定(赤)へ収束通知
 ```
 
-### 4.3 Xログイン（フォロワーキャッシュ照合のみ）
+### 4.3 Xログイン（判定サービスへの照会）
 
 ```mermaid
 sequenceDiagram
@@ -388,36 +385,34 @@ sequenceDiagram
     participant X as X OAuth
     participant API as Rails
     participant DB as PostgreSQL
-    participant CACHE as FOLLOWER_CACHE
+    participant GATE as フォロワー判定サービス
 
     U->>FE: ログイン
     FE->>X: OAuth認可要求
     X-->>FE: 認可コード
     FE->>API: コード+reCAPTCHAトークン
     API->>X: トークン交換・x_user_id/表示名取得
-    API->>CACHE: x_user_id の存在照合
-    alt キャッシュに存在（＝フォロワー）
-        CACHE-->>API: hit
+    API->>GATE: GET /internal/decision（x_user_id）
+    alt plan=full
+        GATE-->>API: full / confirmed
         API->>DB: users UPSERT(x_user_id, display_name, plan=member)
         API-->>FE: セッション発行
         FE-->>U: ボードを表示
-    else キャッシュに無い
-        CACHE-->>API: miss
-        API->>DB: 既存ユーザーの現プラン値を照会
-        alt 既存ユーザーが member
-            API->>DB: users UPSERT(x_user_id, display_name, plan=member据え置き)
-            API-->>FE: セッション発行
-            FE-->>U: ボードを表示
-        else 新規ユーザー、または既存が none
-            API->>DB: users UPSERT(x_user_id, display_name, plan=none)
-            API-->>FE: セッション発行
-            FE-->>U: 利用不可画面（フォロー案内＋手動再判定ボタン）
-        end
+    else plan=restricted かつ confirmed
+        GATE-->>API: restricted / confirmed
+        API->>DB: users UPSERT(x_user_id, display_name, plan=none)
+        API-->>FE: セッション発行
+        FE-->>U: 利用不可画面（フォロー案内＋照会用ID＋手動再判定ボタン）
+    else 未確定、または判定サービスへ到達できない
+        GATE-->>API: confirmed=false / error
+        API->>DB: 既存の plan を据え置き（新規は none）
+        API-->>FE: セッション発行
+        FE-->>U: 既存 member はボード、それ以外は利用不可画面
     end
-    Note over API,CACHE: ログイン経路からX APIは呼ばず、プラン値の降格も行わない。<br/>キャッシュ未反映のユーザーもログインは成立する
+    Note over API,GATE: questboard から X API へは到達しない。<br/>判定が確定していない状態でプラン値を降格させない
 ```
 
-### 4.4 フォロワー手動再判定（クールダウン付き）
+### 4.4 フォロワー手動再判定（判定サービスへ委譲）
 
 ```mermaid
 sequenceDiagram
@@ -425,28 +420,26 @@ sequenceDiagram
     participant FE as Next
     participant API as Rails
     participant DB as PostgreSQL
-    participant CACHE as FOLLOWER_CACHE
-    participant XAPI as X API
+    participant GATE as フォロワー判定サービス
 
     U->>FE: 再判定ボタン
     FE->>API: 手動再判定を要求
-    alt クールダウン未経過
-        API-->>FE: 拒否＋残り時間
-        FE-->>U: あと N 分お待ちくださいと表示
-        Note over API,XAPI: X APIへは到達しない（連打による消費を防ぐ）
-    else クールダウン経過済み（既定15分・設定値）
-        API->>XAPI: フォロワー差分取得（自分が見つかるか既知IDに到達するまで）
-        alt 取得成功
-            XAPI-->>API: フォロワー一覧（先頭からの差分）
-            API->>CACHE: 新規フォロワーを追加（削除はしない）
-            API->>DB: 再照合して plan を更新（昇格のみ）
-            API-->>FE: 判定結果（member/none）
-        else X API障害
-            XAPI-->>API: error
-            API-->>FE: 一時的な失敗として通知
-            Note over API,DB: 既存キャッシュを正とし、plan は据え置く
-        end
+    API->>GATE: POST /internal/recheck（x_user_id）
+    alt 受理（accepted）
+        GATE-->>API: accepted＋プラン値
+        API->>DB: plan を更新
+        API-->>FE: 判定結果（member/none）
+    else 待機（throttled）
+        GATE-->>API: throttled＋再要求可能時刻
+        API-->>FE: 429＋再要求可能時刻
+        FE-->>U: 時間をおいて再度お試しくださいと表示
+        Note over API,DB: plan は変更しない
+    else 判定サービスへ到達できない
+        GATE-->>API: error
+        API-->>FE: 502（一時的な失敗として通知）
+        Note over API,DB: plan は据え置く
     end
+    Note over API,GATE: 連打の抑止は判定サービスのクールダウンが担う。<br/>questboard 側はクールダウンを持たない
 ```
 
 ## 5. クラス図
@@ -475,15 +468,15 @@ classDiagram
         -clampElastic(bounds) void
     }
     class FollowerGate {
-        +resolvePlan(xUserId) Plan
-        -isBypassed(xUserId) bool
-        -isManualMember(user) bool
-        -cacheHit(xUserId) bool
+        +resolve(xUserId) Resolution
+        -planCodeFor(gatePlan) string
     }
-    class FollowerCacheSync {
-        +syncFromXApi() SyncResult
-        +manualRecheck(xUserId) Plan
-        -cooldownRemaining(xUserId) Duration
+    class FollowerGateClient {
+        +fetchDecision(xUserId) Decision
+        +requestRecheck(xUserId) RecheckResult
+    }
+    class ManualFollowerRecheck {
+        +call() User
     }
     class FeedbackDirector {
         +decide(event, intensity, reducedMotion) Effect
@@ -511,10 +504,6 @@ classDiagram
     class Plan {
         +code
         +name
-    }
-    class FollowerCache {
-        +xUserId
-        +fetchedAt
     }
     class Board {
         +id
@@ -547,7 +536,8 @@ classDiagram
     RadialMenuBuilder --> PermissionService : フィルタ
     SyncEngine --> PermissionService : 実行可否
     SyncEngine --> BoardObject : 状態更新
-    FollowerGate --> FollowerCache : キャッシュ参照
+    FollowerGate --> FollowerGateClient : 判定の取得
+    ManualFollowerRecheck --> FollowerGateClient : 再判定の要求
     FollowerGate --> PermissionService : アクセス制御
     User --> Plan
     InputIntentResolver --> AnalyticsTracker : イベント
@@ -618,17 +608,17 @@ stateDiagram-v2
 
 ```mermaid
 stateDiagram-v2
-    [*] --> member : ログイン時にキャッシュhit
-    [*] --> none : ログイン時にキャッシュmiss
-    none --> member : 定期同期でフォロー検出 / 手動再判定OK / 管理画面で手動メンバー指定
-    member --> none : 定期バッチのフル同期でアンフォロー検出 / 手動メンバー指定の解除
+    [*] --> member : ログイン時に判定サービスが full
+    [*] --> none : ログイン時に判定サービスが restricted
+    none --> member : 手動再判定が full / 判定サービスで allow を登録
+    member --> none : ログイン時に確定した restricted / 判定サービスで deny を登録
     member --> [*]
     none --> [*]
 
     note right of none
-        利用不可画面（フォロー案内＋手動再判定ボタン）。
-        再判定はクールダウン（既定15分）未経過なら
-        残時間を提示して拒否し、X APIへ到達させない。
+        利用不可画面（フォロー案内＋照会用ID＋手動再判定ボタン）。
+        待機の判断は判定サービスが行い、questboard は
+        返ってきた再要求可能時刻をそのまま提示する。
     end note
 ```
 
@@ -661,7 +651,7 @@ flowchart LR
     subgraph actors_right [" "]
         DEV["👤 開発者"]
         XO["🌐 X OAuth"]
-        XAPI["🌐 X API"]
+        GATE["🌐 フォロワー判定サービス"]
         RCApt["🌐 reCAPTCHA"]
         MONI["🌐 監視サービス"]
     end
@@ -672,7 +662,7 @@ flowchart LR
     VW --> UC1 & UC1b & UC9 & UC6
     DEV --> UC12 & UC13
     UC1 -.-> XO & RCApt
-    UC1b -.-> XAPI
+    UC1b -.-> GATE
     UC13 -.-> MONI
 ```
 
