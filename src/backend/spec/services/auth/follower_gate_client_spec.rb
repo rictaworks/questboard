@@ -87,6 +87,42 @@ RSpec.describe Auth::FollowerGateClient do
 
       expect { client.fetch_decision("123456789") }.to raise_error(described_class::RequestError)
     end
+
+    # 到達できない形はひととおり押さえる。1つでも漏れると、その状況でだけログインが
+    # 500 になる（#263）。名前解決の失敗は実際にこの穴から漏れていた。
+    {
+      "a name that cannot be resolved" => Socket::ResolutionError,
+      "a socket error" => SocketError,
+      "a write timeout" => Net::WriteTimeout,
+      "a protocol error" => Net::ProtocolError,
+      "a broken pipe" => Errno::EPIPE,
+      "a TLS failure" => OpenSSL::SSL::SSLError,
+      "a closed stream" => IOError
+    }.each do |description, error_class|
+      it "converts #{description} while connecting into a request error" do
+        allow(Net::HTTP).to receive(:start).and_raise(error_class)
+
+        expect { client.fetch_decision("123456789") }
+          .to raise_error(described_class::RequestError)
+      end
+    end
+
+    # 応答を読む段で上がるものは、接続を張ったあとに投げられる。接続時に差し替えると
+    # 実際の発生元とずれるため、要求の実行側から投げて確かめる。
+    {
+      "a malformed status line" => Net::HTTPBadResponse,
+      "a malformed content-length" => Net::HTTPHeaderSyntaxError,
+      "a body that is not gzip despite the header" => Zlib::DataError
+    }.each do |description, error_class|
+      it "converts #{description} into a request error" do
+        http_double = instance_double(Net::HTTP)
+        allow(Net::HTTP).to receive(:start).and_yield(http_double)
+        allow(http_double).to receive(:request).and_raise(error_class)
+
+        expect { client.fetch_decision("123456789") }
+          .to raise_error(described_class::RequestError)
+      end
+    end
   end
 
   describe "#request_recheck" do
