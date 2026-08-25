@@ -15,7 +15,9 @@ import {
   MEMBER_PLAN_CODE,
   requestManualRecheck,
   resolveFollowTargetHandle,
-  SessionExpiredError
+  SessionExpiredError,
+  toSessionUser,
+  type SessionPayload
 } from '@/lib/session-api';
 import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
@@ -270,13 +272,7 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           if (cancelled) {
             return;
           }
-          setSessionState({
-            authenticated: session.authenticated,
-            displayName: session.displayName,
-            inquiryId: session.inquiryId,
-            planCode: session.planCode,
-            xUserId: session.xUserId
-          });
+          setSessionState(session);
         })
         .catch((error: unknown) => {
           if (cancelled) {
@@ -309,17 +305,9 @@ export default function BoardInvitePanel({shareToken}: {shareToken: string}) {
           throw new Error(authT('sessionLoadError'));
         }
 
-        const payload = await response.json() as {
-          authenticated: boolean;
-          user?: {displayName?: string; planCode?: string; xUserId?: string};
-        };
-
-        const nextSession = {
-          authenticated: payload.authenticated,
-          displayName: payload.user?.displayName,
-          planCode: payload.user?.planCode,
-          xUserId: payload.user?.xUserId
-        };
+        // 応答の項目を手で書き写さない。書き写すと、項目が増えたときに黙って落ちる
+        // （#253 の照会用IDが拒否画面に出なかった原因）。変換は toSessionUser に一本化する。
+        const nextSession = toSessionUser(await response.json() as SessionPayload);
 
         const followTarget = resolveFollowTargetHandle(
           nextSession,

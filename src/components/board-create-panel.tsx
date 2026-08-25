@@ -11,7 +11,9 @@ import {
   MEMBER_PLAN_CODE,
   requestManualRecheck,
   resolveFollowTargetHandle,
-  SessionExpiredError
+  SessionExpiredError,
+  toSessionUser,
+  type SessionPayload
 } from '@/lib/session-api';
 import {readFollowTargetHandle, readXAuthSettings} from '@/lib/x-auth';
 
@@ -72,16 +74,9 @@ export default function BoardCreatePanel() {
           throw new Error(authT('sessionLoadError'));
         }
 
-        const payload = await response.json() as {
-          authenticated: boolean;
-          user?: {displayName?: string; planCode?: string};
-        };
-
-        const nextSession = {
-          authenticated: payload.authenticated,
-          displayName: payload.user?.displayName,
-          planCode: payload.user?.planCode
-        };
+        // 応答の項目を手で書き写さない。書き写すと、項目が増えたときに黙って落ちる
+        // （#253 の照会用IDが拒否画面に出なかった原因）。変換は toSessionUser に一本化する。
+        const nextSession = toSessionUser(await response.json() as SessionPayload);
 
         const followTarget = resolveFollowTargetHandle(
           nextSession,

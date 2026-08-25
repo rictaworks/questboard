@@ -13,7 +13,7 @@ export type SessionUser = {
   xUserId?: string;
 };
 
-type SessionPayload = {
+export type SessionPayload = {
   authenticated: boolean;
   user?: {displayName?: string; inquiryId?: string; planCode?: string; xUserId?: string};
 };
