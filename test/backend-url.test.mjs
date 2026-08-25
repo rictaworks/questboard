@@ -80,8 +80,8 @@ test('resolveBackendUrl in production returns the configured URL unchanged, igno
 
   try {
     assert.equal(
-      resolveBackendUrl('https://questboard-backend.up.railway.app'),
-      'https://questboard-backend.up.railway.app'
+      resolveBackendUrl('https://example-backend.up.railway.app'),
+      'https://example-backend.up.railway.app'
     );
   } finally {
     restoreWindow();
