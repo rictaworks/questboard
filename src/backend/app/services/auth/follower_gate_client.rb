@@ -144,11 +144,16 @@ module Auth
         ) do |http|
           http.request(request)
         end
-      rescue Net::OpenTimeout, Net::ReadTimeout => e
+      rescue Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout => e
         raise RequestError, "follower gate request to #{uri.host} timed out: #{e.class}"
-      rescue SystemCallError, OpenSSL::SSL::SSLError, IOError => e
+      rescue SocketError, SystemCallError, OpenSSL::SSL::SSLError, IOError,
+             Net::ProtocolError, Net::HTTPBadResponse => e
         # 接続の失敗をそのまま外へ出すと 500 になる。上流の障害として 502 へ倒すため
         # RequestError へ揃える。
+        #
+        # SocketError は名前解決の失敗（Socket::ResolutionError）を含む。これが漏れると、
+        # 判定サービスのホスト名が引けない状況でログインそのものが 500 になる（#263）。
+        # Net::HTTPBadResponse は Net::ProtocolError の子ではないため別に挙げる。
         raise RequestError, "follower gate request to #{uri.host} failed: #{e.class}"
       end
 
