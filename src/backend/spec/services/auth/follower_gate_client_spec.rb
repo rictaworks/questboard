@@ -113,6 +113,33 @@ RSpec.describe Auth::FollowerGateClient do
       expect(result.retry_after).to eq("2026-08-25T12:15:00.000+09:00")
     end
 
+    # 判定サービスは待機を 429 で返す。2xx 以外を一律で障害として扱うと、正常な待機が
+    # 「判定サービスの障害」に化け、利用者へ再要求可能時刻を示せなくなる（本番で踏んだ）。
+    it "reads the body of a throttled response instead of treating 429 as an outage" do
+      stub_response({ result: "throttled", retry_after: "2026-08-25T12:15:00.000+09:00",
+                      plan: nil, inquiry_id: "123456789" }.to_json, success: false, code: "429")
+
+      result = client.request_recheck("123456789")
+
+      expect(result.result).to eq(described_class::RESULT_THROTTLED)
+      expect(result.retry_after).to eq("2026-08-25T12:15:00.000+09:00")
+    end
+
+    # 資格情報の照合失敗も 429 で返るが、本文は待機の形をしていない。
+    # これを待機として通すと、締め出されていることに気づけなくなる。
+    it "still treats a 429 that is not a throttled result as an outage" do
+      stub_response({ error: "credential_throttled" }.to_json, success: false, code: "429")
+
+      expect { client.request_recheck("123456789") }.to raise_error(described_class::RequestError)
+    end
+
+    # 判定の取得には待機の応答が無い。こちらは 429 を障害のまま扱う。
+    it "keeps treating a non-success decision response as an outage" do
+      stub_response({ result: "throttled" }.to_json, success: false, code: "429")
+
+      expect { client.fetch_decision("123456789") }.to raise_error(described_class::RequestError)
+    end
+
     it "raises when the result is not one it knows" do
       stub_response({ result: "queued", inquiry_id: "123456789" }.to_json)
 

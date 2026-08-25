@@ -36,6 +36,11 @@ module Auth
     RESULT_THROTTLED = "throttled"
     RESULTS = [ RESULT_ACCEPTED, RESULT_THROTTLED ].freeze
 
+    # 判定サービスは待機を 429 で返す（x-follower-gate の Internal::RechecksController#status_for）。
+    # **待機は失敗ではない。** 2xx 以外を一律で障害として扱うと、正常な待機が
+    # 「判定サービスの障害」に化け、利用者へ再要求可能時刻を示せなくなる。
+    THROTTLED_STATUS_CODE = "429".freeze
+
     Decision = Struct.new(:plan, :decided_at, :recheck_available, :inquiry_id, :confirmed, keyword_init: true)
     RecheckResult = Struct.new(:result, :retry_after, :plan, :inquiry_id, keyword_init: true)
 
@@ -74,7 +79,7 @@ module Auth
       request["Content-Type"] = "application/json"
       request.body = JSON.generate(x_user_id: x_user_id.to_s)
 
-      payload = perform(request, uri)
+      payload = perform(request, uri, accept_status_codes: [ THROTTLED_STATUS_CODE ])
       result = payload["result"]
 
       unless RESULTS.include?(result)
@@ -123,7 +128,10 @@ module Auth
       inquiry_id
     end
 
-    def perform(request, uri)
+    # accept_status_codes には、成功ではないが本文を読むべき応答の状態コードを渡す。
+    # 資格情報の照合失敗による 429 も同じ状態コードで返るが、その本文は
+    # 待機の形をしていないため、呼び出し側の検証で弾かれて障害として扱われる。
+    def perform(request, uri, accept_status_codes: [])
       request["Authorization"] = "Bearer #{client_id}:#{credential}"
 
       response = begin
@@ -144,7 +152,7 @@ module Auth
         raise RequestError, "follower gate request to #{uri.host} failed: #{e.class}"
       end
 
-      unless response.is_a?(Net::HTTPSuccess)
+      unless response.is_a?(Net::HTTPSuccess) || accept_status_codes.include?(response.code)
         # **応答本文をメッセージへ含めない。** 資格情報の誤りを示す本文がログへ流れる。
         raise RequestError, "follower gate request failed with #{response.code}"
       end
