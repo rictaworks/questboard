@@ -29,6 +29,17 @@ RSpec.describe Auth::ManualFollowerRecheck do
     expect(result.plan).to eq(none_plan)
   end
 
+  # 委譲後は判定サービスが確定の有無を添えて答えるため、再判定を昇格専用にする理由が無い。
+  # 自前で差分取得していた頃の「差分取得は降格の根拠にならない」という制約は外れている。
+  it "demotes the user when the gate says restricted" do
+    user.update!(plan: member_plan)
+    allow(client).to receive(:request_recheck).and_return(recheck_result(result: "accepted", plan: "restricted"))
+
+    result = described_class.new(user:, client:).call
+
+    expect(result.plan).to eq(none_plan)
+  end
+
   # 待機は判定サービスが決める。questboard 側で残り時間を数え直すと、画面に出す値と
   # 実際に受理される時刻が食い違う。
   it "raises with the retry time the gate returned when the request is throttled" do

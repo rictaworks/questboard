@@ -107,7 +107,9 @@ CanvasInputControllerが`@use-gesture/vanilla`で正規化した入力を受け�
 
 **判定が確定していない応答でプラン値を降格させてはならない。** 判定サービスは X API の障害でプラン値を確定できなかった場合に `confirmed: false` を返す。このとき既存の `member` は据え置く。判定サービスへ到達できなかった場合も同様に据え置き、ログイン自体は成立させる（ログインを拒否する分岐は設けない）。
 
-**確定した拒否は降格として反映する。** `confirmed: true` かつ `restricted` はアンフォローが確定した状態であり、ログイン時にそのまま `none` へ落とす。委譲後は questboard 側にフル同期が無く、ここが唯一の降格経路になる。
+**確定した拒否は降格として反映する。** `confirmed: true` かつ `restricted` はアンフォローが確定した状態であり、ログイン時にそのまま `none` へ落とす。手動再判定が受理された場合も同じで、返ってきたプラン値を昇格・降格の別なくそのまま反映する。委譲後は questboard 側にフル同期が無く、この2経路が降格の入口になる。
+
+自前でフォロワー一覧を差分取得していた頃は、先頭ページしか見ない以上「一覧に居ない」ことを証明できないため、再判定を昇格専用としていた。委譲後は判定サービスが確定の有無（`confirmed`）を添えて答えるため、この制約は要らない。
 
 `member` への例外的な引き上げ（手動での許可）は判定サービスのオーバーライドで行う。**questboard 側は例外経路を持たない。** 両方に置くと、運用者がどちらを見ればよいか分からなくなり、判定が2か所へ戻る。機能側の可否判定はプラン値（`users.plan_id`）のみを参照する。
 
@@ -427,7 +429,7 @@ sequenceDiagram
     API->>GATE: POST /internal/recheck（x_user_id）
     alt 受理（accepted）
         GATE-->>API: accepted＋プラン値
-        API->>DB: plan を更新
+        API->>DB: plan を更新（昇格・降格の別なく反映）
         API-->>FE: 判定結果（member/none）
     else 待機（throttled）
         GATE-->>API: throttled＋再要求可能時刻
@@ -611,7 +613,7 @@ stateDiagram-v2
     [*] --> member : ログイン時に判定サービスが full
     [*] --> none : ログイン時に判定サービスが restricted
     none --> member : 手動再判定が full / 判定サービスで allow を登録
-    member --> none : ログイン時に確定した restricted / 判定サービスで deny を登録
+    member --> none : ログイン時または手動再判定で確定した restricted / 判定サービスで deny を登録
     member --> [*]
     none --> [*]
 
