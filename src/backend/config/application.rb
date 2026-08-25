@@ -45,13 +45,33 @@ module Backend
     # Middleware like session, flash, cookies can be added back manually.
     # Skip views, helpers and assets when generating a new resource.
     config.api_only = true
+    # セッションの有効期限（Issue #258）。
+    #
+    # **これが降格の担保である。** フォロワー判定を x-follower-gate へ委譲した後、
+    # プラン値が落ちる経路はログイン時と手動再判定だけになった。手動再判定は
+    # 利用不可画面にしか導線が無く、member の利用者は押さない。期限が無いと
+    # セッションが続く限りログイン処理が走らず、アンフォローしても使い続けられる。
+    #
+    # 期限が切れれば次の来訪でログイン処理が走り、そこで判定を取り直す。
+    # **降格の遅れの上限はこの値そのものである。** 利用者ごとの最終確認日時や
+    # 定期的な取り直しの仕組みを別に置かない。2つ置くと、どちらが効いて
+    # 降格したのかが読めなくなる。
+    #
+    # 初期化処理（config/initializers）はここより後に読まれるため、
+    # 値の取得と検証をこの場で行う。
+    session_expire_after_days = ENV.fetch("SESSION_EXPIRE_AFTER_DAYS", "7").to_s.strip
+    unless session_expire_after_days.match?(/\A[1-9]\d*\z/)
+      raise StandardError, "SESSION_EXPIRE_AFTER_DAYS must be a positive integer."
+    end
+
     # 上位ドメイン（rictaworks.jp）を指定すると無関係なデモサイトにも cookie が送信される。
     # 必ず questboard.rictaworks.jp に限定すること。
     config.session_store :cookie_store,
       key: "_questboard_session",
       domain: Rails.env.production? ? "questboard.rictaworks.jp" : nil,
       same_site: :lax,
-      secure: Rails.env.production?
+      secure: Rails.env.production?,
+      expire_after: session_expire_after_days.to_i.days
 
     # config.api_only = true は Rack::MethodOverride も既定のスタックから除外する。
     # admin/users の button_to ..., method: :patch は実ブラウザでは method="post" の
