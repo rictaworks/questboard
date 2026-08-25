@@ -126,7 +126,13 @@ RSpec.describe "Board lists", type: :request do
       Comment.create!(board_object:, user: owner, body: "Thanks")
     end
 
-    board_list = fetch_board_list(page: 1, per_page: 2)
+    # セッションには有効期限がある（#258）。この例は時刻を過去へ動かしており、
+    # その間のリクエストで cookie が過去の時刻で再発行される。現在時刻へ戻して
+    # 一覧を取ると、その cookie は期限切れとして扱われて 401 になる。
+    # 一覧の取得時刻はこの例の主題ではないので、同じ時間軸のまま取る。
+    board_list = travel_to(Time.zone.parse("2026-08-01 10:35:00")) do
+      fetch_board_list(page: 1, per_page: 2)
+    end
 
     expect(board_list.fetch("boards").map { |entry| entry.fetch("title") }).to eq([ "Commented Board", "Later Board" ])
     expect(board_list.fetch("boards").first.fetch("roleCode")).to eq("owner")
