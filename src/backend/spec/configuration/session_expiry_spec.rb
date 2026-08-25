@@ -9,8 +9,20 @@ RSpec.describe "セッションの有効期限" do
     expect(options[:expire_after]).to be_present
   end
 
-  it "既定は7日" do
-    expect(options[:expire_after]).to eq(7.days)
+  # 環境変数が設定されていればその値が正しい。7日固定を期待すると、
+  # 手元で期限を変えて動きを見たときに実装ではなくテストが赤くなる。
+  # .env.example で 7 を配っているため、変更されうる前提で書く。
+  it "環境変数で与えた日数と一致する" do
+    expected_days = ENV.fetch("SESSION_EXPIRE_AFTER_DAYS", "7").to_i
+
+    expect(options[:expire_after]).to eq(expected_days.days)
+  end
+
+  # 既定値そのものは実装側の定数として固定する。環境変数に依存しない。
+  it "未設定のときの既定が7日である" do
+    source = File.read(Rails.root.join("config/application.rb"))
+
+    expect(source).to match(/ENV\.fetch\("SESSION_EXPIRE_AFTER_DAYS", "7"\)/)
   end
 
   # 値を config/application.rb へ直書きすると、運用で伸ばし縮めできない。
@@ -29,9 +41,13 @@ RSpec.describe "セッションの有効期限" do
   end
 
   # 降格の担保を2か所に置かない。どちらが効いて降格したのかが読めなくなる。
+  #
+  # 複数の引数を渡した include は「すべてを含む」を意味するため、その否定は
+  # 「すべてが揃ったときだけ失敗」になる。1本だけ足された場合を取り逃がすので、
+  # 積集合が空であることで確かめる。
   it "利用者ごとの最終確認日時を持たない" do
-    columns = User.column_names
+    forbidden = %w[plan_checked_at last_decision_at manual_rechecked_at]
 
-    expect(columns).not_to include("plan_checked_at", "last_decision_at", "manual_rechecked_at")
+    expect(User.column_names & forbidden).to be_empty
   end
 end
